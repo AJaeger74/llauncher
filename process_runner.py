@@ -180,7 +180,7 @@ def check_running_processes():
             with open(cmdline_path, 'r') as f:
                 cmdline = f.read()
             args = [arg for arg in cmdline.split('\x00') if arg]
-            result.append(f"PID {pid}: {' '.join(args[:10])}...")
+            result.append(f"PID {pid}: {' '.join(args)}")
         except (FileNotFoundError, PermissionError):
             result.append(f"PID {pid}: Zugriff verweigert")
     

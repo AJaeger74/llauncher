@@ -1277,7 +1277,7 @@ class llauncher(QMainWindow):
     # save_benchmark jetzt in preset_manager.py ausgelagert
     
     def save_preset(self):
-        name, preset = show_preset_save_dialog(
+        result = show_preset_save_dialog(
             self,
             self.param_sliders,
             self.PARAM_DEFINITIONS,
@@ -1286,6 +1286,11 @@ class llauncher(QMainWindow):
             self.selected_model,
             self.mmproj_line,
         )
+        
+        if not result:
+            return
+            
+        name, preset = result
         
         if not name or not preset:
             return
