@@ -80,5 +80,7 @@
   "tooltip_host": "IP-Adresse und Port für llama-server WebUI-Zugriff (localhost = nur lokaler Rechner)",
   "tooltip_slot_save_path": "Verzeichnispfad zum Speichern und Cachen von Slot-Zuständen zwischen Anfragen (RAM-Disk für Performance empfohlen)",
   "tooltip_parallel_slots": "Anzahl paralleler Server-Slots zur Verarbeitung mehrerer gleichzeitiger Anfragen (Standard: 1)",
-  "msg_preset_saved_title": "Preset gespeichert"
+  "msg_preset_saved_title": "Preset gespeichert",
+  "lbl_models_label": "Modelle:",
+  "lbl_exe_label": "llama.cpp:"
 }

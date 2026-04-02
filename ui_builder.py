@@ -86,8 +86,8 @@ def build_llauncher_ui(window):
     model_row_layout.addWidget(window.model_line)
     model_row_layout.addWidget(browse_model_btn)
 
-    paths_layout.addRow("llama.cpp:", exe_row)
-    paths_layout.addRow("Modelle:", model_row)
+    paths_layout.addRow(gettext("lbl_exe_label"), exe_row)
+    paths_layout.addRow(gettext("lbl_models_label"), model_row)
 
     window.exe_combo = QComboBox()
     # find_executables() wird später bei apply_presets() aufgerufen
