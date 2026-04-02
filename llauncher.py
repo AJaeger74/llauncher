@@ -658,19 +658,29 @@ class llauncher(QMainWindow):
             else:
                 # Integer-Slider
                 if isinstance(slider, dict):
-                    value = slider["slider"].value()
+                    # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
+                    edit_widget = slider.get("edit")
+                    if edit_widget:
+                        try:
+                            value = int(edit_widget.text())
+                        except ValueError:
+                            value = slider["slider"].value()
+                    else:
+                        value = slider["slider"].value()
                 else:
                     value = slider.value()
                 
                 # Sonderfall: -ngl mit "all" Checkbox
                 if param_key == "-ngl":
                     if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
-                        if value != config["default"]:  # Nur wenn vom Default abweichend (oder aktiv)
-                            args.append(param_key)
-                            args.append("all")
+                        args.append(param_key)
+                        args.append("all")
                     elif value != config["default"]:
                         args.append(param_key)
                         args.append(str(value))
+                elif value != config["default"]:
+                    args.append(param_key)
+                    args.append(str(value))
 
         return args
     
@@ -757,10 +767,15 @@ class llauncher(QMainWindow):
                 else:
                     # Integer-Slider
                     if isinstance(slider, dict):
-                        slider_widget = slider.get("slider")
-                        if not slider_widget:
-                            continue
-                        value = slider_widget.value()
+                        # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
+                        edit_widget = slider.get("edit")
+                        if edit_widget:
+                            try:
+                                value = int(edit_widget.text())
+                            except ValueError:
+                                value = slider["slider"].value()
+                        else:
+                            value = slider["slider"].value()
                     else:
                         value = slider.value()
                     
