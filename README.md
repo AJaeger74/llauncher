@@ -109,7 +109,7 @@ For vision models:
 - **GPU Monitoring**: nvidia-smi (NVIDIA-only)
 - **Process Management**: QThread with multi-signal shutdown (SIGINT→SIGTERM→SIGKILL)
 - **Styling**: Qt Style Sheet (QSS)
-- **Modularized**: ~600 lines in llauncher.py, other modules < 200 lines
+- **Modularized**: ~1500 lines in llauncher.py, other modules < 500 lines
 
 ## Extension Possibilities
 
