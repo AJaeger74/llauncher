@@ -840,7 +840,8 @@ class llauncher(QMainWindow):
             self.debug_text,
             self.status_label,
             tps,
-            token_count
+            token_count,
+            self._last_benchmark_command
         )
     
     def toggle_process(self):
@@ -1065,6 +1066,9 @@ class llauncher(QMainWindow):
     def run_benchmark_streaming(self):
         """Run HTTP-based benchmark in streaming mode for live display."""
         
+        # Build and store command for benchmark completion handler
+        self._last_benchmark_command = self.build_full_command()
+        
         # Enable cancel button during benchmark
         if hasattr(self, 'cancel_bench_btn'):
             self.cancel_bench_btn.setEnabled(True)
@@ -1084,10 +1088,10 @@ class llauncher(QMainWindow):
             self.gpu_monitor.gpu_update.connect(self.update_gpu_display)
             self.gpu_monitor.start()
         
-        # Get max_tokens from -n slider (default 64)
-        n_slider = self.param_sliders.get("-n")
-        if n_slider and isinstance(n_slider, dict):
-            max_tokens = n_slider["slider"].value()
+     # Get max_tokens from -n slider (default 64)
+        n_slider_data = self.param_sliders.get("-n")
+        if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
+            max_tokens = n_slider_data["slider"].value()
         else:
             max_tokens = 64
         
@@ -1129,14 +1133,17 @@ class llauncher(QMainWindow):
     def run_benchmark(self):
         """Run HTTP-based benchmark in standard mode."""
         
+        # Build and store command for benchmark completion handler
+        self._last_benchmark_command = self.build_full_command()
+        
         # Enable cancel button during benchmark
         if hasattr(self, 'cancel_bench_btn'):
             self.cancel_bench_btn.setEnabled(True)
         
-# Get max_tokens from -n slider (default 64)
-        n_slider = self.param_sliders.get("-n")
-        if n_slider and isinstance(n_slider, dict):
-            max_tokens = n_slider["slider"].value()
+        # Get max_tokens from -n slider (default 64)
+        n_slider_data = self.param_sliders.get("-n")
+        if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
+            max_tokens = n_slider_data["slider"].value()
         else:
             max_tokens = 64
         
