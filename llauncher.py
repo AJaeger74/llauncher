@@ -221,14 +221,6 @@ class llauncher(QMainWindow):
             "type": "path_input",
             "default": "/dev/shm/llama-slots",
             "tooltip_key": "tooltip_slot_save_path",
-   },
-        "--parallel": {
-            "label_key": "param_parallel_slots",  # Muss noch in JSONs hinzugefügt werden
-            "type": "slider",
-            "min": 1,
-            "max": "{{CPU_COUNT}}",
-            "default": 1,
-            "tooltip_key": "tooltip_parallel_slots",
         },
     }
 
