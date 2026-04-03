@@ -279,6 +279,7 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
     PARAM_ALIAS_MAP = {
         '--ctx-size': '-c',
         '--batch-size': '-b',
+        '--parallel': '-np',
         '--ubatch-size': None,
         '--image-min-tokens': None,
         '--cont-batching': None,
@@ -321,6 +322,10 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
             normalized_args[mapped_key] = value
     
     external_args = normalized_args
+    
+    # Filter out managed parameters from external_args
+    managed_keys = set(param_definitions.keys())
+    external_args = {k: v for k, v in external_args.items() if k not in managed_keys}
     
     for key, value in external_args.items():
         if key in ('-m', '--model'):
