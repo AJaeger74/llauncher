@@ -163,7 +163,7 @@ class llauncher(QMainWindow):
             "label_key": "param_batch_size",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": 1,
-            "max": 512,
+            "max": 8192,
             "default": 512,
             "tooltip_key": "tooltip_batch_size",
         },
