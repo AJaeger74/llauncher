@@ -34,12 +34,10 @@ class HTTPBenchmarkRunner(QThread):
                     config = json.load(f)
                 benchmark_cfg = config.get("benchmark", {}) if config else {}
             except Exception:
-                benchmark_cfg = {"prompt": "", "max_tokens": 64, "temperature": 0.8, "top_p": 0.95}
+                benchmark_cfg = {"prompt": "", "max_tokens": 256}
         
         self.prompt = benchmark_cfg.get("prompt", "")
-        self.max_tokens = benchmark_cfg.get("max_tokens", 64)
-        self.temperature = benchmark_cfg.get("temperature", 0.8)
-        self.top_p = benchmark_cfg.get("top_p", 0.95)
+        self.max_tokens = benchmark_cfg.get("max_tokens", 256)
         
         self.output_signal.emit(f"[DEBUG] Prompt loaded: {len(self.prompt)} chars")
         
@@ -107,8 +105,6 @@ class HTTPBenchmarkRunner(QThread):
         payload = json.dumps({
             "prompt": self.prompt,
             "max_tokens": self.max_tokens,
-            "temperature": 0.8,
-            "top_p": 0.95,
             "stream": True,
         }).encode("utf-8")
         
@@ -282,12 +278,12 @@ class HTTPBenchmarkRunner(QThread):
                 
                 for line in sse_lines[:-1]:
                     try:
-                        line_str = line.decode("utf-8", errors="ignore").strip()
-                        
-                        if not line_str or not line_str.startswith("data: "):
+                        line_bytes = line.strip()
+                        if not line_bytes or not line_bytes.startswith(b"data: "):
                             continue
                         
-                        data = json.loads(line_str[6:])
+                        line_str = line_bytes[6:].decode("utf-8")
+                        data = json.loads(line_str)
                         
                         # Use safe helper function to extract text
                         text = self._safe_get_text_from_response(data)
@@ -299,7 +295,6 @@ class HTTPBenchmarkRunner(QThread):
                         
                         # Also add to live buffer (preserving original newlines within chunks)
                         live_buffer += text
-                    
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         pass
                 
@@ -378,8 +373,6 @@ class HTTPBenchmarkRunner(QThread):
                 payload = json.dumps({
                     "prompt": self.prompt,
                     "max_tokens": self.max_tokens,
-                    "temperature": 0.8,
-                    "top_p": 0.95,
                 }).encode("utf-8")
                 
                 request_line = f"POST {self.SERVER_PATH} HTTP/1.1\r\n"
