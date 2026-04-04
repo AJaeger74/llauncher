@@ -382,12 +382,19 @@ def build_llauncher_ui(window):
     load_btn = QPushButton(gettext("btn_load_preset"))
     load_btn.clicked.connect(window.load_preset_dialog)
 
-    # Benchmark Buttons (Standard + Streaming)
+      # Benchmark Buttons (Standard + Streaming)
     run_bench_btn = QPushButton(gettext("btn_run_benchmark"))
     run_bench_btn.clicked.connect(window.run_benchmark)
     
     run_bench_streaming_btn = QPushButton(gettext("btn_run_benchmark_live"))
     run_bench_streaming_btn.clicked.connect(window.run_benchmark_streaming)
+    
+    # Edit prompt button
+    edit_prompt_btn = QPushButton("✏️")
+    edit_prompt_btn.setToolTip(gettext("tooltip_edit_prompt"))
+    edit_prompt_btn.setFixedSize(40, 30)
+    edit_prompt_btn.setStyleSheet("font-size: 14px;")
+    edit_prompt_btn.clicked.connect(window.edit_prompt_dialog)
     
     # Cancel button for running benchmarks (hidden by default)
     window.cancel_bench_btn = QPushButton(gettext("btn_cancel"))
@@ -410,6 +417,7 @@ def build_llauncher_ui(window):
     presets_layout.addWidget(load_btn)
     presets_layout.addWidget(run_bench_btn)
     presets_layout.addWidget(run_bench_streaming_btn)
+    presets_layout.addWidget(edit_prompt_btn)
     presets_layout.addWidget(window.cancel_bench_btn)
     presets_layout.addWidget(check_proc_btn)
     presets_layout.addWidget(load_args_btn)
