@@ -1089,13 +1089,13 @@ class llauncher(QMainWindow):
         self.debug_text.clear()
         self.status_label.setText("Benchmark (Live) läuft...")
         
-        # Start GPU monitoring during benchmark (if not already running)
+       # Start GPU monitoring during benchmark (if not already running)
         if not hasattr(self, 'gpu_monitor') or not self.gpu_monitor.isRunning():
             self.gpu_monitor = GPUMonitor()
             self.gpu_monitor.gpu_update.connect(self.update_gpu_display)
             self.gpu_monitor.start()
         
-     # Get max_tokens from -n slider (default 64)
+        # Get max_tokens from -n slider (default 64)
         n_slider_data = self.param_sliders.get("-n")
         if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
             max_tokens = n_slider_data["slider"].value()
@@ -1108,7 +1108,8 @@ class llauncher(QMainWindow):
         self.bench_thread = HTTPBenchmarkRunner(
             max_tokens=max_tokens,
             server_pid=self.external_runner_pid,
-            streaming=True
+            streaming=True,
+            model_path=self.selected_model
         )
         self.bench_thread.output_signal.connect(self.debug_text.append)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
@@ -1160,7 +1161,8 @@ class llauncher(QMainWindow):
         self.bench_thread = HTTPBenchmarkRunner(
             max_tokens=max_tokens,
             server_pid=self.external_runner_pid,
-            streaming=False
+            streaming=False,
+            model_path=self.selected_model
         )
         self.bench_thread.output_signal.connect(self.debug_text.append)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)

@@ -22,7 +22,7 @@ class HTTPBenchmarkRunner(QThread):
     SERVER_PORT = 8080
     SERVER_PATH = "/v1/completions"
     
-    def __init__(self, max_tokens: int = 64, server_pid: int = None, streaming: bool = False):
+    def __init__(self, max_tokens: int = 64, server_pid: int = None, streaming: bool = False, model_path: str = None):
         super().__init__()
         
         config_path = Path.home() / ".llauncher" / "config.json"
@@ -36,10 +36,13 @@ class HTTPBenchmarkRunner(QThread):
             except Exception:
                 benchmark_cfg = {"prompt": "", "max_tokens": 256}
         
-        self.prompt = benchmark_cfg.get("prompt", "")
+        self.raw_prompt = benchmark_cfg.get("prompt", "")
         self.max_tokens = benchmark_cfg.get("max_tokens", 256)
         
-        self.output_signal.emit(f"[DEBUG] Prompt loaded: {len(self.prompt)} chars")
+        # Apply chat template if model path is provided
+        self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt, model_path)
+        
+        self.output_signal.emit(f"[DEBUG] Prompt loaded: {len(self.raw_prompt)} chars (template applied: {len(self.prompt)} chars)")
         
         self.server_pid = server_pid
         self.streaming = streaming
@@ -67,6 +70,19 @@ class HTTPBenchmarkRunner(QThread):
             except Exception:
                 pass
     
+    def _apply_chat_template_to_prompt(self, prompt: str, model_path: str = None) -> str:
+        """Apply chat template to prompt based on model family."""
+        if not model_path:
+            return prompt
+        
+        try:
+            from chat_templates import detect_model_family, apply_chat_template
+            model_family = detect_model_family(model_path)
+            return apply_chat_template(prompt, model_family)
+        except Exception as e:
+            self.output_signal.emit(f"[DEBUG] Chat template warning: {e}")
+            return prompt
+    
     def _clean_text_for_display(self, text):
         """Clean text for live display - remove thinking blocks and normalize whitespace."""
         # Remove complete think blocks
@@ -83,6 +99,26 @@ class HTTPBenchmarkRunner(QThread):
         cleaned = ' '.join(cleaned.split())
         
         return cleaned
+    
+    def _is_server_debug_log(self, line: str) -> bool:
+        """Check if a line is a llama.cpp server debug log (not user response)."""
+        # llama.cpp server debug patterns
+        server_patterns = [
+            'slot ',           # slot launch_slot_, slot update_slots, slot release
+            'srv ',            # srv log_server_r, srv update_slots
+            'kv_cache ',       # kv_cache add/remove
+            'n_ctx = ',        # context size info
+            'n_probs = ',      # probability info
+            'time_prompt = ',  # timing info
+            't_sample = ',     # sampling timing
+            't_eval = ',       # evaluation timing
+            't_tokenize = ',   # tokenization timing
+        ]
+        return any(pattern in line for pattern in server_patterns)
+    
+    def _emit_with_prefix(self, text: str, prefix: str):
+        """Emit text with a prefix to distinguish log types."""
+        self.output_signal.emit(f"{prefix}{text}")
     
     def _safe_get_text_from_response(self, data):
         """Safely extract text from SSE response data."""
@@ -231,7 +267,11 @@ class HTTPBenchmarkRunner(QThread):
                     for para in paragraphs:
                         cleaned_para = self._clean_text_for_display(para.strip())
                         if cleaned_para:
-                            self.output_signal.emit(cleaned_para + "\n")
+                            # Prefix server logs for visual distinction
+                            if self._is_server_debug_log(cleaned_para):
+                                self._emit_with_prefix(cleaned_para, "🔧 ")
+                            else:
+                                self.output_signal.emit(cleaned_para + "\n")
                     next_flush_time = current_time + LIVE_FLUSH_INTERVAL
                 
                 if len(ready_r) > 0:
@@ -254,7 +294,11 @@ class HTTPBenchmarkRunner(QThread):
                             for para in paragraphs:
                                 cleaned_para = self._clean_text_for_display(para.strip())
                                 if cleaned_para:
-                                    self.output_signal.emit(cleaned_para + "\n")
+                                    # Prefix server logs for visual distinction
+                                    if self._is_server_debug_log(cleaned_para):
+                                        self._emit_with_prefix(cleaned_para, "🔧 ")
+                                    else:
+                                        self.output_signal.emit(cleaned_para + "\n")
                         break
                     
                     continue
@@ -477,7 +521,7 @@ class HTTPBenchmarkRunner(QThread):
             answer_text = ""
         
         self.output_signal.emit(f"\nAnswer:\n{answer_text}")
-        self.output_signal.emit(f"\nTPS: {tps:.2f} (tokens={tokens}, latency={latency:.3f}s)")
+        self.output_signal.emit(f"\nTPS: {tps:.2f} (tokens={tokens} latency={latency:.3f}s)")
         
         # Signal completion to UI
         self.finished_signal.emit(tps, tokens)
