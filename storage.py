@@ -158,7 +158,8 @@ def apply_preset(window, preset: dict):
 
     # mmproj setzen (voller Pfad! - immer setzen, nicht nur wenn existiert!)
     mmproj_path = preset.get("mmproj_path", "")
-    if mmproj_path:
+    # Wichtig: mmproj_line muss auch bei leerem String gesetzt werden (None-Check, nicht Truth-Check!)
+    if mmproj_path is not None:
         window.mmproj_line.setText(mmproj_path)
 
     # Parameter-Slider setzen
