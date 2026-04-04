@@ -39,6 +39,22 @@ class HTTPBenchmarkRunner(QThread):
         self.raw_prompt = benchmark_cfg.get("prompt", "")
         self.max_tokens = benchmark_cfg.get("max_tokens", 256)
         
+        # Lade Benchmark-Datei wenn vorhanden (vor der Fragegenerierung)
+        benchmark_file_path = benchmark_cfg.get("benchmark_file_path", "")
+        self.context_content = ""
+        if benchmark_file_path:
+            try:
+                with open(benchmark_file_path, 'r', encoding='utf-8') as f:
+                    self.context_content = f.read()
+                self.output_signal.emit(f"✓ Benchmark file loaded: {benchmark_file_path} ({len(self.context_content)} chars)")
+            except Exception as e:
+                self.output_signal.emit(f"⚠️ Error loading benchmark file: {e}")
+                self.context_content = ""
+        
+        # Prompt mit Kontext kombinieren
+        if self.context_content:
+            self.raw_prompt = f"{self.context_content}\n\n{self.raw_prompt}"
+        
         # Apply chat template if model path is provided
         self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt, model_path)
         
