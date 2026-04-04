@@ -214,6 +214,42 @@ def build_llauncher_ui(window):
             params_layout.addRow(label, row_widget)
             window.param_sliders[param_key] = {"edit": path_edit}
         
+        elif config.get("type") == "file_input":
+            # Datei-Eingabe mit Select/Löschen-Buttons (z.B. benchmark_file_path)
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            
+            file_edit = QLineEdit()
+            file_edit.setText(config["default"])
+            file_edit.setPlaceholderText(gettext("lbl_no_file_selected"))
+            file_edit.setReadOnly(True)
+            file_edit.setFixedHeight(30)
+            
+            select_btn = QPushButton(gettext("btn_select_file"))
+            select_btn.setFixedWidth(80)
+            select_btn.clicked.connect(lambda: window.on_select_benchmark_file(file_edit))
+            
+            clear_btn = QPushButton("X")
+            clear_btn.setFixedWidth(30)
+            clear_btn.clicked.connect(lambda: window.on_clear_benchmark_file(file_edit))
+            
+            row_layout.addWidget(file_edit, stretch=1)
+            row_layout.addWidget(select_btn)
+            row_layout.addWidget(clear_btn)
+            
+            # Debug-Output live aktualisieren wenn Text geändert wird
+            file_edit.textChanged.connect(window.on_param_changed)
+            
+            # Übersetztes Label verwenden
+            label_text = gettext(config.get("label_key", config.get("label", param_key)))
+            label = QLabel(f"{label_text} ({param_key})")
+            tooltip_key = config.get("tooltip_key")
+            if tooltip_key:
+                label.setToolTip(gettext(tooltip_key))
+            
+            params_layout.addRow(label, row_widget)
+            window.param_sliders[param_key] = {"edit": file_edit}
+        
         elif config.get("type") == "slider":
             # Integer-Slider: Ausgelagert nach float_slider_sync.py
             row_widget, slider_dict = create_int_slider(param_key, config)

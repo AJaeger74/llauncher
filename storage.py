@@ -164,6 +164,10 @@ def apply_preset(window, preset: dict):
 
     # Parameter-Slider setzen
     for param_key, value in preset.get("params", {}).items():
+        # benchmark_file_path NICHT überschreiben (rein user-spezifisch)
+        if param_key == "benchmark_file_path":
+            continue
+            
         if param_key in window.param_sliders:
             config = window.PARAM_DEFINITIONS[param_key]
             
