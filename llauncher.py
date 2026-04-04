@@ -567,6 +567,19 @@ class llauncher(QMainWindow):
                 filepath = selected_files[0]
                 line_edit.setText(filepath)
                 
+                # Speichere Dateipfad in Config
+                try:
+                    config_path = Path.home() / ".llauncher" / "config.json"
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    if "benchmark" not in config:
+                        config["benchmark"] = {}
+                    config["benchmark"]["benchmark_file_path"] = filepath
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                except Exception as e:
+                    self.debug_text.append(f"⚠️ Konnte Config nicht speichern: {e}")
+                
                 # Debug-Output mit Dateiinfo
                 try:
                     import subprocess
@@ -593,6 +606,7 @@ class llauncher(QMainWindow):
                     self.debug_text.append(f"  → Size: {size_str}")
                     self.debug_text.append(f"  → file: {file_desc}")
                     self.debug_text.append(f"  → MIME: {mime_type}")
+                    self.debug_text.append(f"  → Saved to config.json[benchmark][benchmark_file_path]")
                     
                 except Exception as e:
                     self.debug_text.append(f"⚠️ Konnte Dateiinfo nicht lesen: {e}")
@@ -600,6 +614,19 @@ class llauncher(QMainWindow):
     def on_clear_benchmark_file(self, line_edit: QLineEdit):
         """Benchmark File Field leeren"""
         line_edit.setText("")
+        
+        # Lösche Dateipfad aus Config
+        try:
+            config_path = Path.home() / ".llauncher" / "config.json"
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            if "benchmark" in config and "benchmark_file_path" in config["benchmark"]:
+                del config["benchmark"]["benchmark_file_path"]
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=2)
+        except Exception as e:
+            self.debug_text.append(f"⚠️ Konnte Config nicht aktualisieren: {e}")
+        
         self.debug_text.append("ℹ Benchmark File: (none)")
     
     def _format_file_size(self, size_bytes: int) -> str:
