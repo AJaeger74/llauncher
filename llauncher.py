@@ -233,11 +233,17 @@ class llauncher(QMainWindow):
             "default": "localhost",
             "tooltip_key": "tooltip_host",
         },
-        "--slot-save-path": {
-            "label_key": "param_slot_save_path",  # Muss noch in JSONs hinzugefügt werden
+       "--slot-save-path": {
+            "label_key": "param_slot_save_path",
             "type": "path_input",
             "default": "/dev/shm/llama-slots",
             "tooltip_key": "tooltip_slot_save_path",
+        },
+        "benchmark_file_path": {
+            "label_key": "param_benchmark_file",
+            "type": "file_input",
+            "default": "",
+            "tooltip_key": "tooltip_benchmark_file",
         },
     }
 
@@ -546,7 +552,64 @@ class llauncher(QMainWindow):
             selected_paths = dialog.selectedFiles()
             if selected_paths:
                 line_edit.setText(selected_paths[0])
-
+    
+    def on_select_benchmark_file(self, line_edit: QLineEdit):
+        """Dateidialog für Benchmark File öffnen"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        dialog = QFileDialog(self, "Benchmark Datei wählen", str(Path.home()))
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        dialog.setNameFilters(["Alle Dateien (*)"])
+        
+        if dialog.exec():
+            selected_files = dialog.selectedFiles()
+            if selected_files:
+                filepath = selected_files[0]
+                line_edit.setText(filepath)
+                
+                # Debug-Output mit Dateiinfo
+                try:
+                    import subprocess
+                    import os
+                    
+                    file_size = os.path.getsize(filepath)
+                    size_str = self._format_file_size(file_size)
+                    
+                    # file command ausführen
+                    try:
+                        file_result = subprocess.run(['file', '-b', filepath], capture_output=True, text=True, timeout=2)
+                        file_desc = file_result.stdout.strip() if file_result.returncode == 0 else "Unbekannt"
+                    except:
+                        file_desc = "Nicht verfügbar"
+                    
+                    # MIME Type
+                    try:
+                        mime_result = subprocess.run(['file', '-b', '--mime-type', filepath], capture_output=True, text=True, timeout=2)
+                        mime_type = mime_result.stdout.strip() if mime_result.returncode == 0 else "Unbekannt"
+                    except:
+                        mime_type = "Nicht verfügbar"
+                    
+                    self.debug_text.append(f"✓ Benchmark File: {filepath}")
+                    self.debug_text.append(f"  → Size: {size_str}")
+                    self.debug_text.append(f"  → file: {file_desc}")
+                    self.debug_text.append(f"  → MIME: {mime_type}")
+                    
+                except Exception as e:
+                    self.debug_text.append(f"⚠️ Konnte Dateiinfo nicht lesen: {e}")
+    
+    def on_clear_benchmark_file(self, line_edit: QLineEdit):
+        """Benchmark File Field leeren"""
+        line_edit.setText("")
+        self.debug_text.append("ℹ Benchmark File: (none)")
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Größe in lesbarem Format ausgeben"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}" if unit != 'B' else f"{size_bytes} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} TB"
+    
     def find_models(self) -> list[Path]:
         models_dir = Path(self.model_directory)
         if not models_dir.exists():
