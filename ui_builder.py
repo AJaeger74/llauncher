@@ -6,6 +6,7 @@ Extrahiert init_ui() aus llauncher.py zur besseren Wartbarkeit.
 Baute alle Layouts, Sliders, Buttons und Labels auf.
 """
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -532,6 +533,18 @@ def setup_timers_and_load(window):
     # Konfiguration und Dropdowns laden
     window.load_config()
     window.update_model_dropdown()
+    
+    # Benchmark-Datei aus Config laden und ins UI-Feld setzen
+    try:
+        config_path = Path.home() / ".llauncher" / "config.json"
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        benchmark_file_path = config.get("benchmark", {}).get("benchmark_file_path", "")
+        if benchmark_file_path and hasattr(window, "param_sliders") and "benchmark_file_path" in window.param_sliders:
+            window.param_sliders["benchmark_file_path"]["edit"].setText(benchmark_file_path)
+            window.debug_text.append(f"✓ Loaded benchmark file: {benchmark_file_path}")
+    except Exception as e:
+        window.debug_text.append(f"⚠ Could not load benchmark file from config: {e}")
     
     # Erst Prozess prüfen, dann Parameter laden (statt umgekehrt)
     # WICHTIG: Nur wenn kein Preset geladen werden soll - sonst UI zerstören
