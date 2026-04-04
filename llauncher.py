@@ -1241,6 +1241,62 @@ class llauncher(QMainWindow):
         if hasattr(self, 'cancel_bench_btn'):
             self.cancel_bench_btn.setEnabled(False)
 
+    def edit_prompt_dialog(self):
+        """Show dialog to edit benchmark prompt."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QMessageBox
+        from PyQt6.QtCore import Qt
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Benchmark Prompt")
+        dialog.setMinimumSize(700, 500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        info_label = QLabel("Edit the prompt for benchmarks. This will be saved to config.json:")
+        layout.addWidget(info_label)
+        
+        config_path = Path.home() / ".llauncher" / "config.json"
+        current_prompt = ""
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                current_prompt = config.get("benchmark", {}).get("prompt", "")
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not read config: {e}")
+        
+        prompt_edit = QTextEdit()
+        prompt_edit.setPlainText(current_prompt)
+        prompt_edit.setPlaceholderText("Enter benchmark prompt here...")
+        layout.addWidget(prompt_edit)
+        
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        def on_save():
+            new_prompt = prompt_edit.toPlainText()
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                if "benchmark" not in config:
+                    config["benchmark"] = {}
+                config["benchmark"]["prompt"] = new_prompt
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=2)
+                dialog.accept()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not save config: {e}")
+        
+        save_btn.clicked.connect(on_save)
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.exec()
+
     def run_benchmark(self):
         """Run HTTP-based benchmark in standard mode."""
         
