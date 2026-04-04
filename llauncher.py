@@ -719,8 +719,8 @@ class llauncher(QMainWindow):
                     args.append(param_key)
                     args.append(value)
             
-            elif config.get("type") in ("text_input", "path_input"):
-                # Textfeld oder Pfad-Eingabe – Wert als String lesen
+            elif config.get("type") in ("text_input", "path_input", "file_input"):
+                # Textfeld, Pfad oder Datei-Eingabe – Wert als String lesen
                 # WICHTIG: benchmark_file_path NICHT in Command Line (nur für Benchmark)
                 if param_key == "benchmark_file_path":
                     continue
