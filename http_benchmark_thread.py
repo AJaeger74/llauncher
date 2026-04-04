@@ -44,8 +44,21 @@ class HTTPBenchmarkRunner(QThread):
         self.context_content = ""
         if benchmark_file_path:
             try:
-                with open(benchmark_file_path, 'r', encoding='utf-8') as f:
-                    self.context_content = f.read()
+                self.output_signal.emit(f"ℹ Loading file: {benchmark_file_path}")
+                
+                # Dateiendung prüfen für PDF-Extraktion
+                file_ext = Path(benchmark_file_path).suffix.lower()
+                
+                if file_ext == '.pdf':
+                    # PDF-Text extrahieren
+                    self.context_content = self._extract_pdf_text(benchmark_file_path)
+                    if not self.context_content:
+                        raise Exception("PDF-Textextraktion fehlgeschlagen")
+                else:
+                    # Normale Textdatei
+                    with open(benchmark_file_path, 'r', encoding='utf-8') as f:
+                        self.context_content = f.read()
+                
                 self.output_signal.emit(f"✓ Benchmark file loaded: {benchmark_file_path} ({len(self.context_content)} chars)")
             except Exception as e:
                 self.output_signal.emit(f"⚠️ Error loading benchmark file: {e}")
@@ -97,6 +110,42 @@ class HTTPBenchmarkRunner(QThread):
             return apply_chat_template(prompt, model_family)
         except Exception as e:
             self.output_signal.emit(f"[DEBUG] Chat template warning: {e}")
+
+    def _extract_pdf_text(self, pdf_path: str) -> str:
+        """Extract text from PDF file using pdfplumber or PyMuPDF."""
+        # Versuche pdfplumber zuerst (einfacher)
+        try:
+            import pdfplumber
+            text_parts = []
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+            return '\n\n'.join(text_parts)
+        except ImportError:
+            self.output_signal.emit("ℹ pdfplumber nicht installiert, versuche PyMuPDF...")
+        except Exception as e:
+            self.output_signal.emit(f"⚠️ pdfplumber failed: {e}")
+        
+        # Fallback: PyMuPDF (fitz)
+        try:
+            import fitz  # PyMuPDF
+            text_parts = []
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                text = page.get_text()
+                if text.strip():
+                    text_parts.append(text)
+            doc.close()
+            return '\n\n'.join(text_parts)
+        except ImportError:
+            self.output_signal.emit("⚠️ PyMuPDF (fitz) nicht installiert")
+            return ""
+        except Exception as e:
+            self.output_signal.emit(f"⚠️ PyMuPDF failed: {e}")
+            return ""
+
             return prompt
     
     def _clean_text_for_display(self, text):
