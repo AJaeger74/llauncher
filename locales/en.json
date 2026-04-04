@@ -61,6 +61,7 @@
   "param_top_k": "Top K",
   "param_min_p": "Min P",
   "param_repeat_penalty": "Repeat Penalty",
+  "lbl_model_select": "Model (.gguf):",
   "param_flash_attn": "Flash Attention",
   "param_host": "Server Host",
   "param_slot_save_path": "Slot Save Path",
