@@ -92,5 +92,7 @@
   "tooltip_parallel_slots": "Anzahl paralleler Server-Slots zur Verarbeitung mehrerer gleichzeitiger Anfragen (Standard: 1)",
   "msg_preset_saved_title": "Preset gespeichert",
   "lbl_models_label": "Modelle:",
-  "lbl_exe_label": "llama.cpp:"
+  "lbl_exe_label": "llama.cpp:",
+  "lbl_benchmark_file_loaded": "Benchmark-Datei geladen",
+  "lbl_error_loading_config": "Fehler beim Laden der Konfiguration"
 }

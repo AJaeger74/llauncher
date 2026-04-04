@@ -542,9 +542,9 @@ def setup_timers_and_load(window):
         benchmark_file_path = config.get("benchmark", {}).get("benchmark_file_path", "")
         if benchmark_file_path and hasattr(window, "param_sliders") and "benchmark_file_path" in window.param_sliders:
             window.param_sliders["benchmark_file_path"]["edit"].setText(benchmark_file_path)
-            window.debug_text.append(f"✓ Loaded benchmark file: {benchmark_file_path}")
+            window.debug_text.append(f"✓ {gettext('lbl_benchmark_file_loaded')}: {benchmark_file_path}")
     except Exception as e:
-        window.debug_text.append(f"⚠ Could not load benchmark file from config: {e}")
+        window.debug_text.append(f"⚠ {gettext('lbl_error_loading_config')}: {e}")
     
     # Erst Prozess prüfen, dann Parameter laden (statt umgekehrt)
     # WICHTIG: Nur wenn kein Preset geladen werden soll - sonst UI zerstören
