@@ -184,7 +184,7 @@ class llauncher(QMainWindow):
             "step": 0.1,
             "tooltip_key": "tooltip_temperature",
         },
-"--top-p": {
+       "--top-p": {
             "label_key": "param_top_p",  # Muss noch in JSONs hinzugefügt werden
             "type": "float_slider",
             "min": 0.1,
@@ -193,7 +193,24 @@ class llauncher(QMainWindow):
             "step": 0.05,
             "tooltip_key": "tooltip_top_p",
         },
-"--repeat-penalty": {
+        "--top-k": {
+            "label_key": "param_top_k",
+            "type": "slider",
+            "min": 0,
+            "max": 1000,
+            "default": 40,
+            "tooltip_key": "tooltip_top_k",
+        },
+        "--min-p": {
+            "label_key": "param_min_p",
+            "type": "float_slider",
+            "min": 0.0,
+            "max": 0.5,
+            "default": 0.05,
+            "step": 0.01,
+            "tooltip_key": "tooltip_min_p",
+        },
+        "--repeat-penalty": {
             "label_key": "param_repeat_penalty",  # Muss noch in JSONs hinzugefügt werden
             "type": "float_slider",
             "min": 0.5,
