@@ -101,7 +101,7 @@ def build_llauncher_ui(window):
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
 
     paths_layout.addRow("Executable:", window.exe_combo)
-    paths_layout.addRow("Modell (.gguf):", window.model_combo)
+    paths_layout.addRow("Model (.gguf):", window.model_combo)
     paths_layout.addRow("mmproj (Vision):", window.mmproj_line)
 
     left_layout.addWidget(paths_frame)
