@@ -732,13 +732,18 @@ class llauncher(QMainWindow):
                 if isinstance(slider, dict):
                     # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
                     edit_widget = slider.get("edit")
+                    slider_widget = slider.get("slider")
+                    
                     if edit_widget:
                         try:
                             value = int(edit_widget.text())
                         except ValueError:
-                            value = slider["slider"].value()
+                            # Fallback auf Slider-Widget, falls Edit leer/ungültig
+                            value = slider_widget.value() if slider_widget else 0
+                    elif slider_widget:
+                        value = slider_widget.value()
                     else:
-                        value = slider["slider"].value()
+                        value = 0
                 else:
                     value = slider.value()
                 
