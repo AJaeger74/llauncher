@@ -411,7 +411,7 @@ class llauncher(QMainWindow):
             self.debug_text.append(f"⚠️ Konnte Debug-Ausgabe nicht aktualisieren: {e}")
         
         if external_args is not None:
-            self.debug_text.append(f"✓ Geladene Parameter für PID {pid_found}: {len(external_args)} externe Args")
+            self.debug_text.append(translatable("msg_loaded_params", pid=pid_found, count=len(external_args)))
         
         # Flag zurücksetzen – jetzt darf on_model_selected() wieder normal arbeiten
         self.loading_running_args = False

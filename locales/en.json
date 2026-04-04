@@ -62,6 +62,7 @@
   "param_min_p": "Min P",
   "param_repeat_penalty": "Repeat Penalty",
   "lbl_model_select": "Model (.gguf):",
+  "msg_loaded_params": "✓ Loaded parameters for PID {pid}: {count} external args",
   "param_flash_attn": "Flash Attention",
   "param_host": "Server Host",
   "param_slot_save_path": "Slot Save Path",
