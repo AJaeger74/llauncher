@@ -55,8 +55,10 @@ Dark theme with `#0078d7` accent color, adapts to system settings
 
 Prerequisites:
 ```bash
-pip install PyQt6 psutil
+pip install PyQt6 psutil PyMuPDF
 ```
+
+For PDF benchmarking, PyMuPDF is required. Alternative: `pip install pdfplumber`
 
 Arch Linux: `pacman -S python-pyqt6 python-psutil`
 

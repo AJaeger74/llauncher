@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""HTTP-based benchmark thread for llauncher – runs asynchronously with streaming support."""
+"""HTTP-based benchmark thread for llauncher - runs asynchronously with streaming support."""
 
-import json, os, select, socket, threading, time, re
+import json, os, select, socket, threading, time, re, traceback
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 
 class HTTPBenchmarkRunner(QThread):
-    """Runs a single HTTP benchmark request without blocking the UI.
+    """Runs a single HTTP benchmark request without blocking the UI."""
     
-    Supports two modes:
-    - Standard: Single HTTP POST request (fast)
-    - Streaming: Read output line-by-line until silence (for live display)
-    """
-    
-    output_signal = pyqtSignal(str)  # Lines to append to debug text
-    finished_signal = pyqtSignal(float, int)  # TPS and token count
+    output_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(float, int)
     
     SERVER_HOST = "127.0.0.1"
     SERVER_PORT = 8080
@@ -25,6 +20,7 @@ class HTTPBenchmarkRunner(QThread):
     def __init__(self, max_tokens: int = 64, server_pid: int = None, streaming: bool = False, model_path: str = None):
         super().__init__()
         
+        # Load config but DON'T emit signals yet (thread not started)
         config_path = Path.home() / ".llauncher" / "config.json"
         if not config_path.exists():
             benchmark_cfg = {"prompt": "", "max_tokens": 64, "temperature": 0.8, "top_p": 0.95}
@@ -36,63 +32,23 @@ class HTTPBenchmarkRunner(QThread):
             except Exception:
                 benchmark_cfg = {"prompt": "", "max_tokens": 256}
         
+        self.benchmark_cfg = benchmark_cfg
         self.raw_prompt = benchmark_cfg.get("prompt", "")
-        self.max_tokens = benchmark_cfg.get("max_tokens", 256)
-        
-        # Lade Benchmark-Datei wenn vorhanden (vor der Fragegenerierung)
-        benchmark_file_path = benchmark_cfg.get("benchmark_file_path", "")
-        self.context_content = ""
-        if benchmark_file_path:
-            try:
-                self.output_signal.emit(f"ℹ Loading file: {benchmark_file_path}")
-                
-                # Dateiendung prüfen für PDF-Extraktion
-                file_ext = Path(benchmark_file_path).suffix.lower()
-                
-                if file_ext == '.pdf':
-                    # PDF-Text extrahieren
-                    self.context_content = self._extract_pdf_text(benchmark_file_path)
-                    if not self.context_content:
-                        raise Exception("PDF-Textextraktion fehlgeschlagen")
-                else:
-                    # Normale Textdatei
-                    with open(benchmark_file_path, 'r', encoding='utf-8') as f:
-                        self.context_content = f.read()
-                
-                self.output_signal.emit(f"✓ Benchmark file loaded: {benchmark_file_path} ({len(self.context_content)} chars)")
-            except Exception as e:
-                self.output_signal.emit(f"⚠️ Error loading benchmark file: {e}")
-                self.context_content = ""
-        
-        # Prompt mit Kontext kombinieren
-        if self.context_content:
-            self.raw_prompt = f"{self.context_content}\n\n{self.raw_prompt}"
-        
-        # Apply chat template if model path is provided
-        self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt, model_path)
-        
-        self.output_signal.emit(f"[DEBUG] Prompt loaded: {len(self.raw_prompt)} chars (template applied: {len(self.prompt)} chars)")
-        
         self.server_pid = server_pid
         self.streaming = streaming
         self._cancelled = False
-        
-        # Create a pipe for cancel signaling - this allows us to interrupt select()
         self._cancel_read, self._cancel_write = os.pipe()
+        self._stream_buffer = ""
+        self._context_content = ""  # Will be loaded in run()
     
     def cancel(self):
-        """Cancel the benchmark and close socket to interrupt recv()."""
         if self._cancelled:
-            return  # Already cancelled
-        
+            return
         self._cancelled = True
-        
-        # Write to cancel pipe FIRST to wake up select() immediately, THEN close socket
         try:
             os.write(self._cancel_write, b"x")
         except Exception:
             pass
-        
         if hasattr(self, '_sock') and self._sock:
             try:
                 self._sock.close()
@@ -100,22 +56,19 @@ class HTTPBenchmarkRunner(QThread):
                 pass
     
     def _apply_chat_template_to_prompt(self, prompt: str, model_path: str = None) -> str:
-        """Apply chat template to prompt based on model family."""
         if not model_path:
             return prompt
-        
         try:
             from chat_templates import detect_model_family, apply_chat_template
             model_family = detect_model_family(model_path)
             return apply_chat_template(prompt, model_family)
         except Exception as e:
-            self.output_signal.emit(f"[DEBUG] Chat template warning: {e}")
+            self.output_signal.emit(f"Chat template warning: {e}")
             return prompt
     
     def _extract_pdf_text(self, pdf_path: str) -> str:
-        """Extract text from PDF file using PyMuPDF."""
         try:
-            import fitz  # PyMuPDF
+            import fitz
             text_parts = []
             doc = fitz.open(pdf_path)
             for page in doc:
@@ -125,39 +78,73 @@ class HTTPBenchmarkRunner(QThread):
             doc.close()
             return '\n\n'.join(text_parts)
         except ImportError:
-            self.output_signal.emit("⚠️ PyMuPDF (fitz) nicht installiert")
+            self.output_signal.emit("PyMuPDF not installed")
             return ""
         except Exception as e:
-            self.output_signal.emit(f"⚠️ PyMuPDF failed: {e}")
+            self.output_signal.emit(f"PyMuPDF failed: {e}")
+            return ""
+    
+    def _load_benchmark_file(self):
+        """Load benchmark file and return context content."""
+        benchmark_file_path = self.benchmark_cfg.get("benchmark_file_path", "")
+        self.output_signal.emit(f"DEBUG: benchmark_file_path='{benchmark_file_path}'")
+        
+        if not benchmark_file_path:
+            self.output_signal.emit("WARNING: No benchmark_file_path in config!")
+            return ""
+        
+        try:
+            self.output_signal.emit(f"Loading file: {benchmark_file_path}")
+            file_ext = Path(benchmark_file_path).suffix.lower()
+            self.output_signal.emit(f"DEBUG: file_ext={file_ext}")
+            
+            if file_ext == '.pdf':
+                context = self._extract_pdf_text(benchmark_file_path)
+                self.output_signal.emit(f"DEBUG: PDF extraction result: {len(context)} chars")
+                if not context:
+                    raise Exception("PDF extraction failed")
+            else:
+                with open(benchmark_file_path, 'r', encoding='utf-8') as f:
+                    context = f.read()
+                self.output_signal.emit(f"DEBUG: TXT read result: {len(context)} chars")
+            
+            self.output_signal.emit(f"File loaded: {benchmark_file_path} ({len(context)} chars)")
+            return context
+            
+        except Exception as e:
+            self.output_signal.emit(f"Error loading benchmark file: {e}")
+            self.output_signal.emit(f"DEBUG: traceback:\n{traceback.format_exc()}")
             return ""
     
     def _clean_text_for_display(self, text):
-        """Clean text for live display - remove thinking blocks and normalize whitespace."""
-        # Remove complete think blocks
         cleaned = re.sub(r'</think>.*?</think>', ' ', text, flags=re.DOTALL)
-        
-        # Also remove orphaned opening/closing tags
-        cleaned = re.sub(r'<think>.*?</think>', ' ', cleaned, flags=re.DOTALL)
-        
-        # Remove orphaned tags
+        cleaned = re.sub(r'</think>', ' ', cleaned, flags=re.DOTALL)
         cleaned = re.sub(r'<\w+>', ' ', cleaned)
-        cleaned = re.sub(r'\x1b\[[0-9;]*m', '', cleaned)  # ANSI escape codes
-        
-        # Normalize whitespace - collapse multiple spaces/newlines to single space
-        cleaned = ' '.join(cleaned.split())
-        
+        cleaned = re.sub(r'\x1b\[[0-9;]*m', '', cleaned)
         return cleaned
 
     def run(self):
-        """Run the benchmark request."""
         import urllib.request, urllib.error
         
-        # Build request
+        self.output_signal.emit("DEBUG: run() started!")
+        
+        # Load benchmark file in run() where signals work
+        self._context_content = self._load_benchmark_file()
+        
+        # Combine prompt with context
+        if self._context_content:
+            self.raw_prompt = f"{self._context_content}\n\n{self.raw_prompt}"
+            self.output_signal.emit(f"DEBUG: Combined prompt length: {len(self.raw_prompt)} chars")
+        
+        # Build final prompt
+        self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt)
+        self.output_signal.emit(f"DEBUG: Final prompt length: {len(self.prompt)} chars")
+        
         url = f"http://{self.SERVER_HOST}:{self.SERVER_PORT}{self.SERVER_PATH}"
         
         data = {
             "prompt": self.prompt,
-            "max_tokens": self.max_tokens,
+            "max_tokens": self.benchmark_cfg.get("max_tokens", 4096),
             "stream": self.streaming,
         }
         
@@ -167,11 +154,10 @@ class HTTPBenchmarkRunner(QThread):
             else:
                 self._run_standard(url, data)
         except Exception as e:
-            self.output_signal.emit(f"⚠️ Benchmark error: {e}")
+            self.output_signal.emit(f"Benchmark error: {e}")
             raise
     
     def _run_standard(self, url: str, data: dict):
-        """Run standard (non-streaming) benchmark."""
         import urllib.request, urllib.error, json
         
         try:
@@ -185,24 +171,23 @@ class HTTPBenchmarkRunner(QThread):
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
-                token_count = len(text.split())
+                token_count = len(text)
                 tps = token_count / latency if latency > 0 else 0
                 
-                self.output_signal.emit(f"✓ Response: {len(text)} chars")
+                self.output_signal.emit(f"Response: {len(text)} chars")
                 self.finished_signal.emit(tps, token_count)
             else:
-                self.output_signal.emit("⚠️ No choices in response")
+                self.output_signal.emit("No choices in response")
                 self.finished_signal.emit(0, 0)
                 
         except urllib.error.URLError as e:
-            self.output_signal.emit(f"⚠️ Network error: {e}")
+            self.output_signal.emit(f"Network error: {e}")
             self.finished_signal.emit(0, 0)
         except Exception as e:
-            self.output_signal.emit(f"⚠️ Error: {e}")
+            self.output_signal.emit(f"Error: {e}")
             self.finished_signal.emit(0, 0)
-    
+
     def _run_streaming(self, url: str, data: dict):
-        """Run streaming benchmark."""
         import urllib.request, json
         
         try:
@@ -228,36 +213,39 @@ class HTTPBenchmarkRunner(QThread):
                     
                     try:
                         json_data = json.loads(data_line)
-                        if 'choices' in json_data and len(json_data['choices']) > 0:
-                            delta = json_data['choices'][0].get('delta', {})
-                            text = delta.get('text', '')
+                        text = json_data.get('choices', [{}])[0].get('text', '')
+                        
+                        if text:
+                            token_count += 1
+                            cleaned = self._clean_text_for_display(text)
+                            self._stream_buffer += cleaned
                             
-                            if text:
-                                token_count += 1
-                                cleaned = self._clean_text_for_display(text)
-                                self.output_signal.emit(cleaned)
-                                
-                                # Track TPS
-                                now = time.time()
-                                if now - last_token_time >= 0.5:
-                                    elapsed = now - start_time
-                                    if elapsed > 0:
-                                        tps = token_count / elapsed
-                                        self.output_signal.emit(f"[TPS: {tps:.2f}]")
-                                    last_token_time = now
+                            now = time.time()
+                            if now - last_token_time >= 0.5:
+                                elapsed = now - start_time
+                                if elapsed > 0:
+                                    tps = token_count / elapsed
+                                    if self._stream_buffer:
+                                        self.output_signal.emit(self._stream_buffer)
+                                        self._stream_buffer = ""
+                                    self.output_signal.emit(f"[TPS: {tps:.2f}]")
+                                last_token_time = now
                     except json.JSONDecodeError:
                         continue
             
+            if self._stream_buffer:
+                self.output_signal.emit(self._stream_buffer)
+                self._stream_buffer = ""
+            
             latency = time.time() - start_time
             tps = token_count / latency if latency > 0 else 0
-            self.output_signal.emit(f"✓ Completed: {token_count} tokens, TPS: {tps:.2f}")
+            self.output_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}")
             self.finished_signal.emit(tps, token_count)
             
         except urllib.error.URLError as e:
-            self.output_signal.emit(f"⚠️ Network error: {e}")
+            self.output_signal.emit(f"Network error: {e}")
             self.finished_signal.emit(0, 0)
         except Exception as e:
             if not self._cancelled:
-                self.output_signal.emit(f"⚠️ Error: {e}")
+                self.output_signal.emit(f"Error: {e}")
             self.finished_signal.emit(0, 0)
-

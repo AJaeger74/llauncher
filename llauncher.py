@@ -1225,7 +1225,7 @@ class llauncher(QMainWindow):
             self.gpu_monitor.gpu_update.connect(self.update_gpu_display)
             self.gpu_monitor.start()
         
-        # Get max_tokens from -n slider (default 64)
+     # Get max_tokens from -n slider (default 64)
         n_slider_data = self.param_sliders.get("-n")
         if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
             max_tokens = n_slider_data["slider"].value()
@@ -1334,7 +1334,7 @@ class llauncher(QMainWindow):
         if hasattr(self, 'cancel_bench_btn'):
             self.cancel_bench_btn.setEnabled(True)
         
-        # Get max_tokens from -n slider (default 64)
+     # Get max_tokens from -n slider (default 64)
         n_slider_data = self.param_sliders.get("-n")
         if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
             max_tokens = n_slider_data["slider"].value()
