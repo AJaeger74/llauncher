@@ -918,6 +918,11 @@ class llauncher(QMainWindow):
                     # Button zurücksetzen auf "Start"
                     self.start_stop_btn.setText(gettext("btn_start"))
                     self.start_stop_btn.setObjectName("")
+                    # Wichtig: PID auf None setzen damit nächster Klick neu starten kann
+                    if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
+                        self.external_runner_pid = None
+                    if hasattr(self, 'runner') and self.runner:
+                        self.runner = None
             
             # Output überwachen für "all slots are idle" Signal
             def on_output(line):
