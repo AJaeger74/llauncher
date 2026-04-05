@@ -193,11 +193,12 @@ class HTTPBenchmarkRunner(QThread):
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
+                cleaned_text = self._clean_text_for_display(text)
                 # We use a simple word count as fallback for standard mode
                 token_count = len(text.split())
                 tps = token_count / latency if latency > 0 else 0
                 
-                self.output_signal.emit(f"Response: {len(text)} chars")
+                self.output_signal.emit(cleaned_text)
                 self.finished_signal.emit(tps, token_count)
             else:
                 self.output_signal.emit("No choices in response")
