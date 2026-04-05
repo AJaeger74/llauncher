@@ -11,6 +11,7 @@ class HTTPBenchmarkRunner(QThread):
     """Runs a single HTTP benchmark request without blocking the UI."""
     
     output_signal = pyqtSignal(str)
+    status_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(float, int)
     
     SERVER_HOST = "127.0.0.1"
@@ -36,6 +37,7 @@ class HTTPBenchmarkRunner(QThread):
         self.raw_prompt = benchmark_cfg.get("prompt", "")
         self.server_pid = server_pid
         self.streaming = streaming
+        self.model_path = model_path
         self._cancelled = False
         self._cancel_read, self._cancel_write = os.pipe()
         self._stream_buffer = ""
@@ -61,6 +63,7 @@ class HTTPBenchmarkRunner(QThread):
         try:
             from chat_templates import detect_model_family, apply_chat_template
             model_family = detect_model_family(model_path)
+            self.status_signal.emit(f"DEBUG: Using template for family: {model_family}")
             return apply_chat_template(prompt, model_family)
         except Exception as e:
             self.output_signal.emit(f"Chat template warning: {e}")
@@ -117,10 +120,29 @@ class HTTPBenchmarkRunner(QThread):
             return ""
     
     def _clean_text_for_display(self, text):
-        cleaned = re.sub(r'</think>.*?</think>', ' ', text, flags=re.DOTALL)
+        # Remove <think> blocks
+        cleaned = re.sub(r'<think>.*?</think>', ' ', text, flags=re.DOTALL)
         cleaned = re.sub(r'</think>', ' ', cleaned, flags=re.DOTALL)
+        # Remove generic XML tags
         cleaned = re.sub(r'<\w+>', ' ', cleaned)
-        cleaned = re.sub(r'\x1b\[[0-9;]*m', '', cleaned)
+        # Remove ANSI escape codes (colors)
+        cleaned = re.sub(r'\x1b\[[0-9;]*m', ' ', cleaned)
+        
+        # Remove llama.cpp server internal logs that leak into the text stream
+        # We replace with a space ' ' instead of '' to prevent words from merging
+        log_patterns = [
+            r'\[TPS: [0-9.]+\]',
+            r'slot print_timing: .*',
+            r'prompt eval time = .*',
+            r'eval time = .*',
+            r'total time = .*',
+            r'slot release: .*',
+            r'srv update_slots: .*'
+        ]
+        for pattern in log_patterns:
+            cleaned = re.sub(pattern, ' ', cleaned)
+            
+        # IMPORTANT: DO NOT strip here! Strip only when emitting to preserve word boundaries
         return cleaned
 
     def run(self):
@@ -137,7 +159,7 @@ class HTTPBenchmarkRunner(QThread):
             self.output_signal.emit(f"DEBUG: Combined prompt length: {len(self.raw_prompt)} chars")
         
         # Build final prompt
-        self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt)
+        self.prompt = self._apply_chat_template_to_prompt(self.raw_prompt, self.model_path)
         self.output_signal.emit(f"DEBUG: Final prompt length: {len(self.prompt)} chars")
         
         url = f"http://{self.SERVER_HOST}:{self.SERVER_PORT}{self.SERVER_PATH}"
@@ -171,7 +193,8 @@ class HTTPBenchmarkRunner(QThread):
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
-                token_count = len(text)
+                # We use a simple word count as fallback for standard mode
+                token_count = len(text.split())
                 tps = token_count / latency if latency > 0 else 0
                 
                 self.output_signal.emit(f"Response: {len(text)} chars")
@@ -186,7 +209,7 @@ class HTTPBenchmarkRunner(QThread):
         except Exception as e:
             self.output_signal.emit(f"Error: {e}")
             self.finished_signal.emit(0, 0)
-
+    
     def _run_streaming(self, url: str, data: dict):
         import urllib.request, json
         
@@ -196,7 +219,7 @@ class HTTPBenchmarkRunner(QThread):
             
             start_time = time.time()
             token_count = 0
-            last_token_time = start_time
+            last_token_time = time.time()
             
             with urllib.request.urlopen(req, timeout=300) as response:
                 for line in response:
@@ -226,20 +249,22 @@ class HTTPBenchmarkRunner(QThread):
                                 if elapsed > 0:
                                     tps = token_count / elapsed
                                     if self._stream_buffer:
-                                        self.output_signal.emit(self._stream_buffer)
+                                        # Strip only on emit, not before append
+                                        self.output_signal.emit(self._stream_buffer.strip())
                                         self._stream_buffer = ""
-                                    self.output_signal.emit(f"[TPS: {tps:.2f}]")
+                                    self.status_signal.emit(f"[TPS: {tps:.2f}]")
                                 last_token_time = now
                     except json.JSONDecodeError:
                         continue
             
+           # Strip only trailing whitespace from the accumulated buffer
             if self._stream_buffer:
-                self.output_signal.emit(self._stream_buffer)
+                self.output_signal.emit(self._stream_buffer.strip())
                 self._stream_buffer = ""
             
             latency = time.time() - start_time
             tps = token_count / latency if latency > 0 else 0
-            self.output_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}")
+            self.status_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}")
             self.finished_signal.emit(tps, token_count)
             
         except urllib.error.URLError as e:
