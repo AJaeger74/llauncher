@@ -114,7 +114,7 @@ class llauncher(QMainWindow):
    "-c": {
         "label_key": "param_context_size",
         "type": "slider",
-        "min": 512,
+        "min": 2048,
         "max": 8192,
         "default": 4096,
         "tooltip_key": "tooltip_context_size",
@@ -140,7 +140,7 @@ class llauncher(QMainWindow):
             "type": "slider",
             "min": -1,
             "max": 8192,
-            "default": 512,
+           "default": 4096,
             "tooltip_key": "tooltip_max_tokens",
         },
         "-np": {
@@ -164,7 +164,7 @@ class llauncher(QMainWindow):
             "type": "slider",
             "min": 1,
             "max": 8192,
-            "default": 512,
+           "default": 2048,
             "tooltip_key": "tooltip_batch_size",
         },
         "-ngl": {
