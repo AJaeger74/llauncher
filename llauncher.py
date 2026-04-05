@@ -1242,6 +1242,7 @@ class llauncher(QMainWindow):
             model_path=self.selected_model
         )
         self.bench_thread.output_signal.connect(self.debug_text.append)
+        self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.start()
 
@@ -1351,6 +1352,7 @@ class llauncher(QMainWindow):
             model_path=self.selected_model
         )
         self.bench_thread.output_signal.connect(self.debug_text.append)
+        self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.start()
 
