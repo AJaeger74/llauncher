@@ -128,21 +128,21 @@ class HTTPBenchmarkRunner(QThread):
         # Remove ANSI escape codes (colors)
         cleaned = re.sub(r'\x1b\[[0-9;]*m', ' ', cleaned)
         
-        # Remove llama.cpp server internal logs that leak into the text stream
+       # Remove llama.cpp server internal logs that leak into the text stream
         # We replace with a space ' ' instead of '' to prevent words from merging
         log_patterns = [
             r'\[TPS: [0-9.]+\]',
-            r'slot print_timing: .*',
-            r'prompt eval time = .*',
-            r'eval time = .*',
-            r'total time = .*',
-            r'slot release: .*',
-            r'srv update_slots: .*'
+            r'slot\s+print_timing: .*',
+            r'prompt\s+eval\s+time\s+=\s+.*',
+            r'eval\s+time\s+=\s+.*',
+            r'total\s+time\s+=\s+.*',
+            r'slot\s+release: .*',
+            r'srv\s+update_slots: .*'
         ]
         for pattern in log_patterns:
-            cleaned = re.sub(pattern, ' ', cleaned)
+            cleaned = re.sub(pattern, ' ', cleaned, flags=re.MULTILINE)
             
-        # IMPORTANT: DO NOT strip here! Strip only when emitting to preserve word boundaries
+        return cleaned
         return cleaned
 
     def run(self):
