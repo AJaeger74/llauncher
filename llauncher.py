@@ -6,6 +6,7 @@ Ein Mischpult-Style Launcher zur Steuerung von llama.cpp mit Presets, Benchmarki
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -1035,7 +1036,7 @@ class llauncher(QMainWindow):
                 self.status_label.setText("")
                 return
             
-            # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
+         # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
             def on_process_finished(exit_code):
                 if exit_code != 0:
                     self.status_label.setText(gettext("status_failed"))
@@ -1055,20 +1056,20 @@ class llauncher(QMainWindow):
                     self.status_label.setText(gettext("status_running"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")
                 self.debug_text.append(line)
-            
-            # GPU Monitor sicherstellen: läuft er nicht mehr, neu erstellen und starten
-            if self.gpu_monitor is None or not self.gpu_monitor.isRunning():
-                if self.gpu_monitor is not None:
-                    self.gpu_monitor.stop()
-                self.gpu_monitor = GPUMonitor()
-                self.gpu_monitor.gpu_update.connect(lambda data: update_gpu_display(self.stats_label, data))
-                self.gpu_monitor.start()
-            
-            # Runner starten
-            self.runner = ProcessRunner(args, workdir=".")
-            self.runner.output_signal.connect(on_output)
-            self.runner.finished_signal.connect(on_process_finished)
-            self.runner.start()
+
+    def on_benchmark_output(self, text: str):
+        """Handles benchmark output to prevent line-break issues in streaming mode."""
+        if not text:
+            return
+        # Remove Think blocks and generic XML tags for clean streaming output
+        cleaned_text = re.sub(r'</think>', ' ', text)
+        cleaned_text = re.sub(r'<\w+>', ' ', cleaned_text)
+        # Accumulate text without adding newlines between chunks
+        # The benchmark thread already provides properly-formatted output
+        self.debug_text.moveCursor(self.debug_text.textCursor().MoveOperation.End)
+        self.debug_text.insertPlainText(cleaned_text)
+        # Ensure scroll to bottom
+        self.debug_text.ensureCursorVisible()
 
     def _get_free_gpu_memory(self) -> int:
         """Return free GPU memory in MB using nvidia-smi."""
@@ -1241,7 +1242,7 @@ class llauncher(QMainWindow):
             streaming=True,
             model_path=self.selected_model
         )
-        self.bench_thread.output_signal.connect(self.debug_text.append)
+        self.bench_thread.output_signal.connect(self.on_benchmark_output)
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.start()
@@ -1351,7 +1352,7 @@ class llauncher(QMainWindow):
             streaming=False,
             model_path=self.selected_model
         )
-        self.bench_thread.output_signal.connect(self.debug_text.append)
+        self.bench_thread.output_signal.connect(self.on_benchmark_output)
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.start()
