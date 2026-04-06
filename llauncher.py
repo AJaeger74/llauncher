@@ -1023,21 +1023,26 @@ class llauncher(QMainWindow):
             self.start_stop_btn.setObjectName("")
         else:
             # Starten - Status zuerst auf "Lade Modell..." setzen
+            print(f"[DEBUG toggle_process] Starting process...")
             self.start_stop_btn.setText(gettext("btn_stop"))
             self.start_stop_btn.setObjectName("StartButton")
             self.status_label.setText(gettext("status_loading_model"))
             self.status_label.setStyleSheet("color: orange; font-weight: bold;")
 
             args = self.get_current_args()
+            print(f"[DEBUG toggle_process] Args: {args}")
+            
             if not args or "-m" not in args:
+                print(f"[DEBUG toggle_process] ERROR: No model selected!")
                 QMessageBox.warning(self, gettext("msg_no_model_selected"))
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("StopButton")
                 self.status_label.setText("")
                 return
             
-         # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
+            # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
             def on_process_finished(exit_code):
+                print(f"[DEBUG on_process_finished] Exit code: {exit_code}")
                 if exit_code != 0:
                     self.status_label.setText(gettext("status_failed"))
                     self.status_label.setStyleSheet("color: red; font-weight: bold;")
@@ -1052,10 +1057,21 @@ class llauncher(QMainWindow):
             
             # Output überwachen für "all slots are idle" Signal
             def on_output(line):
+                print(f"[DEBUG on_output] {line[:100]}")
                 if "all slots are idle" in line and not getattr(self, 'benchmark_running', False):
                     self.status_label.setText(gettext("status_running"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")
                 self.debug_text.append(line)
+            
+            # Prozess starten
+            print(f"[DEBUG toggle_process] Creating ProcessRunner with args: {args}")
+            workdir = str(Path(self.llama_cpp_path))
+            self.runner = ProcessRunner(args, workdir)
+            self.runner.output_signal.connect(on_output)
+            self.runner.finished_signal.connect(on_process_finished)
+            print(f"[DEBUG toggle_process] Starting runner...")
+            self.runner.start()
+            print(f"[DEBUG toggle_process] Runner started!")
 
     def on_benchmark_output(self, text: str):
         """Handles benchmark output to prevent line-break issues in streaming mode."""
