@@ -1096,6 +1096,10 @@ class llauncher(QMainWindow):
                     self.status_label.setText(gettext("status_idle"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")
                     self._was_idle = True  # Mark that we're in idle state
+                    # Set progress bar to 100% when all slots are idle
+                    if hasattr(self, 'bench_progress_bar'):
+                        self.bench_progress_bar.setValue(100)
+                        self.bench_progress_bar.setToolTip("")
                 
                 # Any output after idle means we're active again
                 elif line.strip() and getattr(self, '_was_idle', False):
