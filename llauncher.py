@@ -1010,10 +1010,10 @@ class llauncher(QMainWindow):
                 self.status_label.setStyleSheet("")
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("")
-            # Reset progress bar to 100% (idle state) after stopping any process
+            # Reset progress bar to 0% after stopping external process (SIGINT×2 → SIGTERM → SIGKILL)
             if hasattr(self, 'bench_progress_bar'):
-                self.bench_progress_bar.setValue(100)
-                self.bench_progress_bar.setToolTip("")
+                self.bench_progress_bar.setValue(0)
+                self.bench_progress_bar.setToolTip("Stopped")
         elif self.runner and self.runner.isRunning():
             # Eigener Prozess stoppen - Button auf "Stoppe..." setzen, Status auch
             self.start_stop_btn.setText(gettext("btn_stop"))
@@ -1035,10 +1035,10 @@ class llauncher(QMainWindow):
             self.status_label.setStyleSheet("")  # CSS reset
             self.start_stop_btn.setText(gettext("btn_start"))
             self.start_stop_btn.setObjectName("")
-            # Reset progress bar to 100% (idle state) after stopping any process
+            # Reset progress bar to 0% after stopping internal process
             if hasattr(self, 'bench_progress_bar'):
-                self.bench_progress_bar.setValue(100)
-                self.bench_progress_bar.setToolTip("")
+                self.bench_progress_bar.setValue(0)
+                self.bench_progress_bar.setToolTip("Stopped")
         else:
             # Starten - Status zuerst auf "Lade Modell..." setzen
             print(f"[DEBUG toggle_process] Starting process...")
