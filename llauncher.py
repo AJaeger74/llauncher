@@ -1156,15 +1156,12 @@ class llauncher(QMainWindow):
             )
             
             if result.returncode != 0 or not result.stdout.strip():
-                # Kein Prozess läuft - UI zurücksetzen
+                # Kein Prozess läuft - UI zurücksetzen, aber Progress Bar auf 0% lassen
                 self.status_label.setText(gettext("status_ready"))
                 self.status_label.setStyleSheet("")
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("StartButton")
-                # Reset progress bar to 100% when idle
-                if hasattr(self, 'bench_progress_bar'):
-                    self.bench_progress_bar.setValue(100)
-                    self.bench_progress_bar.setToolTip("")
+                # Progress bar bleibt bei 0% - wird durch toggle_process() nach Stop gesetzt
                 return
             
             pids = [int(pid) for pid in result.stdout.strip().split() if pid.isdigit()]
