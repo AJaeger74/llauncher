@@ -405,16 +405,29 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         # Determine the actual key to use in param_definitions (for slider/combo params)
         actual_key = key if key in param_definitions else mapped_key if mapped_key in param_definitions else None
         
+        print(f"[DEBUG] Processing param: key={key}, value={value}, mapped={mapped_key}, actual={actual_key}")
+        
         if actual_key:
             if actual_key in ('-c', '-n', '-t', '-b', '-ngl', '-np') or key in ('-c', '-n', '-t', '-b', '-ngl', '-np'):
-                slider = getattr(window, f'{actual_key}_slider', None)
-                edit = getattr(window, f'{actual_key}_edit', None)
+                print(f"[DEBUG] Trying to set {actual_key} with value={value}")
+                
+                # Use param_sliders dict instead of direct attributes (widget attributes don't exist)
+                param_sliders_dict = getattr(window, 'param_sliders', {}).get(actual_key, {})
+                slider = param_sliders_dict.get('slider') if isinstance(param_sliders_dict, dict) else None
+                edit = param_sliders_dict.get('edit') if isinstance(param_sliders_dict, dict) else None
+                
+                print(f"[DEBUG] Found slider={slider is not None}, edit={edit is not None}")
+                
                 if slider and edit:
                     try:
                         slider.setValue(int(value))
                         edit.setText(value)
-                    except ValueError:
+                        print(f"[DEBUG] Successfully set {actual_key} to {value}")
+                    except ValueError as e:
+                        print(f"[DEBUG] ValueError setting {actual_key}: {e}")
                         pass  # Skip invalid int values
+                else:
+                    print(f"[DEBUG] WARNING: Could not find slider/edit for {actual_key}, param_sliders={list(getattr(window, 'param_sliders', {}).keys())}")
                 managed_args[actual_key] = value
                 # Also add to normalized_args with long form for external display
                 if key.startswith('--'):
