@@ -7,6 +7,7 @@
   "status_stopped": "Stopped",
   "status_failed": "Failed",
   "status_running": "Running",
+  "status_idle": "Idle",
   "status_gpu_stats": "GPU: X% | VRAM: Y/Z MB | Temp: T°C",
   "btn_start": "Start",
   "btn_stop": "Stop",
