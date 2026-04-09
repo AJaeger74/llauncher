@@ -989,15 +989,12 @@ class llauncher(QMainWindow):
             self.bench_progress_bar.setToolTip(f"Tokens: {token_count}")
     
     def toggle_process(self):
-        print(f"[DEBUG toggle_process] CALLED - external_runner_pid={getattr(self, 'external_runner_pid', 'NOT_SET')}")
         if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
             # Externer Prozess stoppen über terminate_by_pid (SIGINT×2 → SIGTERM → SIGKILL)
             self.start_stop_btn.setText(gettext("btn_stop"))
             self.status_label.setText(gettext("status_stopping"))
             
-            print(f"[DEBUG toggle_process] Calling terminate_by_pid({self.external_runner_pid})")
             stopped = ProcessRunner.terminate_by_pid(self.external_runner_pid)
-            print(f"[DEBUG toggle_process] terminate_by_pid returned: {stopped}")
 
             if not stopped:
 
@@ -1005,7 +1002,6 @@ class llauncher(QMainWindow):
                 self.status_label.setStyleSheet("color: red; font-weight: bold;")
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("")
-                print(f"[DEBUG toggle_process] STOP FAILED - process still running after terminate_by_pid")
             else:
                 self.external_runner_pid = None
                 self.external_runner_args = None
@@ -1014,17 +1010,10 @@ class llauncher(QMainWindow):
                 self.status_label.setStyleSheet("")
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("")
-                # Reset progress bar to 0% after stopping
-                if hasattr(self, 'bench_progress_bar'):
-                    print(f"[DEBUG toggle_process] Found bench_progress_bar, setting to 0%")
-                    self.bench_progress_bar.setValue(0)
-                    self.bench_progress_bar.setToolTip("Stopped")
-                    print(f"[DEBUG toggle_process] Progress bar value is now: {self.bench_progress_bar.value()}")
-            # Always reset progress bar when no process running
-            if not hasattr(self, 'external_runner_pid') or not self.external_runner_pid:
-                if hasattr(self, 'bench_progress_bar'):
-                    print(f"[DEBUG toggle_process] After stop check - setting progress to 0")
-                    self.bench_progress_bar.setValue(0)
+            # Reset progress bar to 0% after stopping any process
+            if hasattr(self, 'bench_progress_bar'):
+                self.bench_progress_bar.setValue(0)
+                self.bench_progress_bar.setToolTip("Stopped")
         elif self.runner and self.runner.isRunning():
             # Eigener Prozess stoppen - Button auf "Stoppe..." setzen, Status auch
             self.start_stop_btn.setText(gettext("btn_stop"))
@@ -1050,7 +1039,6 @@ class llauncher(QMainWindow):
             if hasattr(self, 'bench_progress_bar'):
                 self.bench_progress_bar.setValue(0)
                 self.bench_progress_bar.setToolTip("Stopped")
-                print(f"[DEBUG] Progress bar reset to 0%, visible={self.bench_progress_bar.isVisible()}")
         else:
             # Starten - Status zuerst auf "Lade Modell..." setzen
             print(f"[DEBUG toggle_process] Starting process...")
