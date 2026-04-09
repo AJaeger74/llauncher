@@ -101,9 +101,9 @@ def build_llauncher_ui(window):
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
 
-    paths_layout.addRow("Executable:", window.exe_combo)
+    paths_layout.addRow(gettext("lbl_exe_label"), window.exe_combo)
     paths_layout.addRow(gettext("lbl_model_select"), window.model_combo)
-    paths_layout.addRow("mmproj (Vision):", window.mmproj_line)
+    paths_layout.addRow(gettext("lbl_mmproj_vision"), window.mmproj_line)
 
     left_layout.addWidget(paths_frame)
 
@@ -230,7 +230,7 @@ def build_llauncher_ui(window):
             select_btn.setFixedWidth(80)
             select_btn.clicked.connect(lambda: window.on_select_benchmark_file(file_edit))
             
-            clear_btn = QPushButton("X")
+            clear_btn = QPushButton(gettext("btn_clear_file"))
             clear_btn.setFixedWidth(30)
             clear_btn.clicked.connect(lambda: window.on_clear_benchmark_file(file_edit))
             
@@ -269,8 +269,8 @@ def build_llauncher_ui(window):
             
             # Sonderfall: -ngl (GPU layers) mit "all" Checkbox
             if param_key == "-ngl":
-                ngl_all_checkbox = QCheckBox("all")
-                ngl_all_checkbox.setToolTip("Alle GPU-Layer laden (so viele wie möglich)")
+                ngl_all_checkbox = QCheckBox(gettext("lbl_all"))
+                ngl_all_checkbox.setToolTip(gettext("tooltip_all_layers"))
                 ngl_all_checkbox.setChecked(False)
                 
                 # Sync: Checkbox → Edit-Feld auf "all" setzen
@@ -407,8 +407,7 @@ def build_llauncher_ui(window):
     check_proc_btn.clicked.connect(window.on_check_process_click)
 
     load_args_btn = QPushButton(gettext("btn_load_process_args"))
-    load_args_btn.setToolTip("Parameter des laufenden llama-server in die App laden\n"
-                             "Unverwaltete Parameter werden separat angezeigt")
+    load_args_btn.setToolTip(gettext("tooltip_load_process_args"))
     # Explizit show_dialogs=True, damit Dialog immer erscheint wenn externe Args gefunden
     def on_load_args():
         window.load_running_process_args(show_dialogs=True)
@@ -456,17 +455,17 @@ def build_llauncher_ui(window):
     window.bench_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.bench_table.customContextMenuRequested.connect(window.show_bench_context_menu)
 
-    # ========== EXPORT BUTTON ==========
-    export_btn = QPushButton("Export")
+     # ========== EXPORT BUTTON ==========
+    export_btn = QPushButton(gettext("btn_export"))
     export_btn.setMaximumWidth(80)
     
     def on_export():
         from PyQt6.QtWidgets import QFileDialog
         
         file_path, _ = QFileDialog.getSaveFileName(
-            window, "Benchmark exportieren",
+            window, gettext("msg_benchmark_exported"),
             str(Path.home() / "Downloads" / "benchmarks.csv"),
-            "CSV-Dateien (*.csv);;JSON-Dateien (*.json);;Alle Dateien (*)"
+            "CSV (*.csv);;JSON (*.json);;All Files (*)"
         )
         
         if not file_path:
@@ -487,8 +486,8 @@ def build_llauncher_ui(window):
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(benchmarks, f, ensure_ascii=False, indent=2)
         
-        QMessageBox.information(window, "Export erfolgreich", 
-                               f"Benchmark exportiert nach:\n{file_path}")
+        QMessageBox.information(window, gettext("msg_export_success_title"),
+                               gettext("msg_benchmark_exported_body").format(path=file_path))
 
     export_btn.clicked.connect(on_export)
     

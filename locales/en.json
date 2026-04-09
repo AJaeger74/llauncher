@@ -73,7 +73,7 @@
   "tooltip_cache_type_k": "Quantization type for Key cache in KV cache (f16 = standard precision, q4_0 saves VRAM at cost of quality)",
   "tooltip_cache_type_v": "Quantization type for Value cache in KV cache (f16 = standard precision, q4_0 saves VRAM at cost of quality)",
   "tooltip_max_tokens": "Number of tokens to generate in response (-1 for unlimited generation until completion)",
-  "tooltip_edit_prompt": "Double-click to edit the quality rating",
+  "tooltip_edit_prompt": "Edit the benchmark prompt",
   "tooltip_np": "Number of parallel server slots for handling multiple requests (-1 for automatic calculation based on resources)",
   "tooltip_threads": "Number of CPU threads to use for text generation (more threads = faster processing)",
   "tooltip_batch_size": "Maximum batch size for processing input prompts (llama.cpp default: 2048)",
@@ -95,5 +95,12 @@
   "lbl_models_label": "Models:",
   "lbl_exe_label": "llama.cpp:",
   "lbl_benchmark_file_loaded": "Benchmark file loaded",
-  "lbl_error_loading_config": "Error loading configuration"
+  "lbl_error_loading_config": "Error loading configuration",
+  "lbl_mmproj_vision": "mmproj (Vision):",
+  "btn_clear_file": "X",
+  "lbl_all": "all",
+  "tooltip_all_layers": "Load all GPU layers (as many as possible)",
+  "tooltip_load_process_args": "Load parameters from running llama-server into the app\nUnmanaged parameters will be displayed separately",
+  "msg_export_success_title": "Export successful",
+  "msg_benchmark_exported_body": "Benchmark results exported to:\n{path}"
 }

@@ -94,5 +94,12 @@
   "lbl_models_label": "Modelle:",
   "lbl_exe_label": "llama.cpp:",
   "lbl_benchmark_file_loaded": "Benchmark-Datei geladen",
-  "lbl_error_loading_config": "Fehler beim Laden der Konfiguration"
+  "lbl_error_loading_config": "Fehler beim Laden der Konfiguration",
+  "lbl_mmproj_vision": "mmproj (Vision):",
+  "btn_clear_file": "X",
+  "lbl_all": "all",
+  "tooltip_all_layers": "Alle GPU-Layer laden (so viele wie möglich)",
+  "tooltip_load_process_args": "Parameter des laufenden llama-server in die App laden\nUnverwaltete Parameter werden separat angezeigt",
+  "msg_export_success_title": "Export erfolgreich",
+  "msg_benchmark_exported_body": "Benchmark-Ergebnisse exportiert nach:\n{path}"
 }
