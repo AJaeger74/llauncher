@@ -966,7 +966,7 @@ class llauncher(QMainWindow):
         # Reset status
         self.status_label.setText(gettext("status_ready"))
         
-        # Save benchmark result using preset_manager helper
+         # Save benchmark result using preset_manager helper
         ask_quality_and_save_benchmark(
             self,
             self.debug_text,
@@ -975,6 +975,21 @@ class llauncher(QMainWindow):
             token_count,
             self._last_benchmark_command
         )
+        
+        # Hide progress bar after completion
+        if hasattr(self, 'bench_progress_bar'):
+            self.bench_progress_bar.setVisible(False)
+    
+    def on_benchmark_token_update(self, token_count: int):
+        """Update progress bar with current token count."""
+        if hasattr(self, 'bench_progress_bar'):
+            # Use a reasonable max value based on typical benchmark token counts
+            # Set max to 1024 tokens, clamp display to avoid overly long bars
+            max_tokens = 1024
+            display_value = min(token_count, max_tokens)
+            self.bench_progress_bar.setValue(display_value)
+            # Show token count as tooltip
+            self.bench_progress_bar.setToolTip(f"Tokens: {token_count}")
     
     def toggle_process(self):
         if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
@@ -1270,6 +1285,11 @@ class llauncher(QMainWindow):
         self.bench_thread.output_signal.connect(self.on_benchmark_output)
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
+        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
+        # Show progress bar
+        if hasattr(self, 'bench_progress_bar'):
+            self.bench_progress_bar.setVisible(True)
+            self.bench_progress_bar.setValue(0)  # Marquee mode (infinite)
         self.bench_thread.start()
 
     def cancel_benchmark(self):
@@ -1376,10 +1396,15 @@ class llauncher(QMainWindow):
             server_pid=self.external_runner_pid,
             streaming=False,
             model_path=self.selected_model
-        )
+         )
         self.bench_thread.output_signal.connect(self.on_benchmark_output)
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
+        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
+        # Show progress bar
+        if hasattr(self, 'bench_progress_bar'):
+            self.bench_progress_bar.setVisible(True)
+            self.bench_progress_bar.setValue(0)  # Marquee mode (infinite)
         self.bench_thread.start()
 
     def _get_model_info(self) -> str:

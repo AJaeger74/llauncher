@@ -13,6 +13,7 @@ class HTTPBenchmarkRunner(QThread):
     output_signal = pyqtSignal(str)
     status_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(float, int)
+    token_update_signal = pyqtSignal(int)  # Emit current token count
     
     SERVER_HOST = "127.0.0.1"
     SERVER_PORT = 8080
@@ -244,6 +245,10 @@ class HTTPBenchmarkRunner(QThread):
                             # Accumulate full response text to count tokens correctly at the end
                             self._stream_buffer += text
                             cleaned = self._clean_text_for_display(text)
+                            
+                            # Estimate token count for progress bar (4 chars ≈ 1 token)
+                            estimated_tokens = len(self._stream_buffer) // 4
+                            self.token_update_signal.emit(estimated_tokens)
                             
                             now = time.time()
                             if now - last_token_time >= 0.5:

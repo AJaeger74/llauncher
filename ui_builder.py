@@ -23,7 +23,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QPlainTextEdit, QSlider,
+    QMessageBox, QPushButton, QProgressBar, QScrollArea, QPlainTextEdit, QSlider,
     QTextEdit, QVBoxLayout, QWidget, QTableWidget, QHeaderView, QSplitter,
     QCheckBox,
 )
@@ -318,10 +318,29 @@ def build_llauncher_ui(window):
     
     splitter.addWidget(left_col)
     
-    # ========== RECHTE SPALTE: Debug Output ==========
+   # ========== RECHTE SPALTE: Debug Output ==========
     debug_frame = QFrame()
     debug_layout = QVBoxLayout(debug_frame)
-
+    
+    # Progress Bar for token count
+    window.bench_progress_bar = QProgressBar()
+    window.bench_progress_bar.setRange(0, 0)  # 0 = infinite (marquee mode)
+    window.bench_progress_bar.setVisible(False)
+    window.bench_progress_bar.setStyleSheet("""
+        QProgressBar {
+            border: 1px solid gray;
+            border-radius: 4px;
+            text-align: center;
+            background: #f0f0f0;
+        }
+        QProgressBar::chunk {
+            background: qlineargradient(x1:0, y1:0.5, x2:1, y2:0.5,
+                                        stop:0 #4CAF50, stop:1 #8BC34A);
+            border-radius: 3px;
+        }
+    """)
+    debug_layout.addWidget(window.bench_progress_bar)
+    
     debug_label = QLabel(gettext("lbl_debug_output"))
     debug_label.setStyleSheet("font-weight: bold;")
     
