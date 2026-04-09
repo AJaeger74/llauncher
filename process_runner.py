@@ -222,9 +222,28 @@ def read_running_llama_args() -> tuple[dict, str, str, int]:
                     param_dict['--mmproj'] = args[i + 1]
                     i += 2
                 elif arg.startswith('-') or arg.startswith('--'):
-                    if i + 1 < len(args) and not args[i + 1].startswith('-'):
-                        param_dict[arg] = args[i + 1]
-                        i += 2
+                    if i + 1 < len(args):
+                        next_arg = args[i + 1]
+                        
+                        # Lange Flags (--foo) sind immer Boolean-Flags ohne Wert
+                        if next_arg.startswith('--'):
+                            param_dict[arg] = True
+                            i += 1
+                        
+                        # Negative Zahlen (-1, -2) SIND Werte, keine Flags
+                        elif next_arg.startswith('-') and next_arg.lstrip('-').isdigit():
+                            param_dict[arg] = next_arg
+                            i += 2
+                        
+                        # Andere Parameter mit '-' (z.B. -c) die keine Zahlen sind → Boolean
+                        elif next_arg.startswith('-'):
+                            param_dict[arg] = True
+                            i += 1
+                        
+                        # Normaler Wert (keine Flag, keine negative Zahl)
+                        else:
+                            param_dict[arg] = next_arg
+                            i += 2
                     else:
                         param_dict[arg] = True
                         i += 1
@@ -241,22 +260,58 @@ def read_running_llama_args() -> tuple[dict, str, str, int]:
 def show_external_args_dialog(external_args, model_path, parent_window):
     """Zeigt einen Dialog mit externen Parametern."""
     from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTextEdit
+    from PyQt6.QtGui import QFont
     from PyQt6.QtCore import Qt
     
+    # i18n SchlÃ¼ssel holen
+    def t(key):
+        from storage import load_config
+        config = load_config()
+        locale = config.get('locale', 'de')
+        try:
+            with open(f'locales/{locale}.json', 'r') as f:
+                import json
+                translations = json.load(f)
+                return translations.get(key, key)
+        except:
+            return key
+    
     dialog = QDialog(parent_window)
-    dialog.setWindowTitle("Externe Parameter")
+    dialog.setWindowTitle(t('dialog_external_args_title') or "Externe Parameter")
     layout = QVBoxLayout(dialog)
+    
+    # Title label
+    title_label = QLabel(t('msg_external_args') or "Externe Parameter (nicht in APP verwaltet):")
+    title_label.setStyleSheet("font-weight: bold; font-size: 12pt;")
+    layout.addWidget(title_label)
     
     text = QTextEdit()
     text.setReadOnly(True)
-    text.setPlainText("Externe Parameter (nicht in APP verwaltet):\n\n")
+    
+    # Monospace font fÃ¼r bessere Lesbarkeit
+    mono_font = QFont()
+    mono_font.setFamily("Monospace")
+    mono_font.setPointSize(9)
+    text.setFont(mono_font)
+    
     for key, value in external_args.items():
-        text.append(f"  {key} = {value}")
+        # Boolean Flags ohne "= True" anzeigen, negative Zahlen mit =
+        if value is True:
+            text.append(f"  {key}")
+        elif isinstance(value, str) and value.startswith('-') and value.lstrip('-').isdigit():
+            # Negative Zahl als Wert (z.B. -n = -1)
+            text.append(f"  {key} = {value}")
+        else:
+            text.append(f"  {key} = {value}")
     layout.addWidget(text)
     
-    close_btn = QPushButton("Schließen")
+    close_btn = QPushButton(t('btn_close') or "SchlieÃŸen")
     close_btn.clicked.connect(dialog.accept)
     layout.addWidget(close_btn)
+    
+    # Dialog-grÃ¶ÃŸe verdoppeln (mindestens 500x400)
+    dialog.setMinimumSize(500, 400)
+    dialog.resize(600, 500)
     
     dialog.exec()
 
@@ -283,6 +338,16 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         '--ubatch-size': None,
         '--image-min-tokens': None,
         '--cont-batching': None,
+    }
+    
+    # Reverse map: short aliases → long form (for normalization)
+    ALIAS_TO_LONG_MAP = {
+        '-c': '--ctx-size',
+        '-b': '--batch-size',
+        '-np': '--parallel',
+        '-m': '--model',
+        '-n': '--predict-prev',  # -n for predict-prev context
+        '--mmproj': '--mmproj',  # mmproj stays as-is
     }
     
     external_args, model_path, exe_path, pid_found = read_running_llama_args()
@@ -315,34 +380,44 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         if key == '--cont-batching':
             continue
         
+        # First try standard mapping (--param → -param)
         mapped_key = PARAM_ALIAS_MAP.get(key, key)
         
-        # Handle managed parameters immediately
-        if mapped_key in param_definitions:
+        # If mapped_key still has --, check reverse map (-param → --param)
+        if mapped_key.startswith('--'):
+            mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
+        
+        # Handle special parameters that are managed but NOT in PARAM_DEFINITIONS
+        if key == '-m' or key == '--model' or key == '--mmproj':
             if key in ('-m', '--model'):
+                # model handling (skip setting widgets, already handled earlier)
                 continue
-            
-            if key in ('-m', '--mmproj'):
+            elif key == '--mmproj':
+                # mmproj is managed via mmproj_line but not in PARAM_DEFINITIONS
                 if hasattr(window, 'mmproj_line'):
                     window.mmproj_line.setText(value)
                 managed_args[key] = value
                 continue
-            
-            if key in ('-c', '-n', '-t', '-b', '-ngl'):
-                slider = getattr(window, f'{key}_slider', None)
-                edit = getattr(window, f'{key}_edit', None)
+        
+        # Determine the actual key to use in param_definitions (for slider/combo params)
+        actual_key = key if key in param_definitions else mapped_key if mapped_key in param_definitions else None
+        
+        if actual_key:
+            if actual_key in ('-c', '-n', '-t', '-b', '-ngl', '-np') or key in ('-c', '-n', '-t', '-b', '-ngl', '-np'):
+                slider = getattr(window, f'{actual_key}_slider', None)
+                edit = getattr(window, f'{actual_key}_edit', None)
                 if slider and edit:
                     try:
                         slider.setValue(int(value))
                         edit.setText(value)
                     except ValueError:
                         pass  # Skip invalid int values
-                managed_args[key] = value
+                managed_args[actual_key] = value
                 continue
             
-            elif mapped_key.startswith('--'):
+            elif actual_key and actual_key.startswith('--'):
                 param_sliders = getattr(window, 'param_sliders', {})
-                slider_data = param_sliders.get(mapped_key, {})
+                slider_data = param_sliders.get(actual_key, {})
                 
                 if slider_data:
                     combo = slider_data.get('combo')
@@ -352,13 +427,13 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                             combo.setCurrentIndex(idx)
                         else:
                             combo.setCurrentText(value)
-                        managed_args[mapped_key] = value
+                        managed_args[actual_key] = value
                         continue
                     
                     edit = slider_data.get('edit')
                     if edit and not slider_data.get('slider'):
                         edit.setText(value)
-                        managed_args[mapped_key] = value
+                        managed_args[actual_key] = value
                         continue
                     else:
                         slider = slider_data.get('slider')
@@ -370,7 +445,7 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                                 edit.setText(value)
                             except ValueError:
                                 pass  # Skip invalid float values
-                            managed_args[mapped_key] = value
+                            managed_args[actual_key] = value
                             continue
         
      # If we reach here, parameter is not managed - keep in normalized_args
@@ -379,7 +454,10 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
     
     external_args = normalized_args
     
+    # Filter out managed parameters AND special parameters (mmproj, model)
+    # Note: --mmproj is managed via mmproj_line but not in PARAM_DEFINITIONS
+    excluded_keys = ('-m', '--model', '--mmproj')  # Always exclude these from external display
     external_only = {k: v for k, v in external_args.items() 
-                     if k not in managed_args and k not in ('-m', '--model')}
+                     if k not in managed_args and k not in excluded_keys}
     
     return external_only, model_path, exe_path, pid_found
