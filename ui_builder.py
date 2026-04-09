@@ -404,6 +404,7 @@ def build_llauncher_ui(window):
     window.cancel_bench_btn.clicked.connect(window.cancel_benchmark)
 
     check_proc_btn = QPushButton(gettext("btn_check_process"))
+    check_proc_btn.setToolTip(gettext("tooltip_check_process"))
     check_proc_btn.clicked.connect(window.on_check_process_click)
 
     load_args_btn = QPushButton(gettext("btn_load_process_args"))
