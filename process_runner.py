@@ -308,61 +308,58 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                 window.model_combo.setCurrentText(model_name)
     
     managed_args = {}
-    
     normalized_args = {}
+    
+    # First, apply ALL parameters to their respective widgets (managed + unmanaged)
     for key, value in external_args.items():
         if key == '--cont-batching':
             continue
         
         mapped_key = PARAM_ALIAS_MAP.get(key, key)
         
-        if mapped_key is None:
-            normalized_args[key] = value
-        else:
-            normalized_args[mapped_key] = value
-    
-    external_args = normalized_args
-    
-    # Filter out managed parameters from external_args
-    managed_keys = set(param_definitions.keys())
-    external_args = {k: v for k, v in external_args.items() if k not in managed_keys}
-    
-    for key, value in external_args.items():
-        if key in ('-m', '--model'):
-            continue
-        
-        if key in ('-m', '--mmproj'):
-            if hasattr(window, 'mmproj_line'):
-                window.mmproj_line.setText(value)
-            managed_args[key] = value
-            continue
-        
-        if key in ('-c', '-n', '-t', '-b', '-ngl'):
-            slider = getattr(window, f'{key}_slider', None)
-            edit = getattr(window, f'{key}_edit', None)
-            if slider and edit:
-                slider.setValue(int(value))
-                edit.setText(value)
-            managed_args[key] = value
-        
-        elif key.startswith('--'):
-            param_sliders = getattr(window, 'param_sliders', {})
-            slider_data = param_sliders.get(key, {})
+        # Handle managed parameters immediately
+        if mapped_key in param_definitions:
+            if key in ('-m', '--model'):
+                continue
             
-            if slider_data:
-                combo = slider_data.get('combo')
-                if combo:
-                    idx = combo.findText(value)
-                    if idx >= 0:
-                        combo.setCurrentIndex(idx)
-                    else:
-                        combo.setCurrentText(value)
-                    managed_args[key] = value
-                else:
+            if key in ('-m', '--mmproj'):
+                if hasattr(window, 'mmproj_line'):
+                    window.mmproj_line.setText(value)
+                managed_args[key] = value
+                continue
+            
+            if key in ('-c', '-n', '-t', '-b', '-ngl'):
+                slider = getattr(window, f'{key}_slider', None)
+                edit = getattr(window, f'{key}_edit', None)
+                if slider and edit:
+                    try:
+                        slider.setValue(int(value))
+                        edit.setText(value)
+                    except ValueError:
+                        pass  # Skip invalid int values
+                managed_args[key] = value
+                continue
+            
+            elif mapped_key.startswith('--'):
+                param_sliders = getattr(window, 'param_sliders', {})
+                slider_data = param_sliders.get(mapped_key, {})
+                
+                if slider_data:
+                    combo = slider_data.get('combo')
+                    if combo:
+                        idx = combo.findText(value)
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+                        else:
+                            combo.setCurrentText(value)
+                        managed_args[mapped_key] = value
+                        continue
+                    
                     edit = slider_data.get('edit')
                     if edit and not slider_data.get('slider'):
                         edit.setText(value)
-                        managed_args[key] = value
+                        managed_args[mapped_key] = value
+                        continue
                     else:
                         slider = slider_data.get('slider')
                         
@@ -372,8 +369,15 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                                 slider.setValue(int(float_val * 100))
                                 edit.setText(value)
                             except ValueError:
-                                pass
-                            managed_args[key] = value
+                                pass  # Skip invalid float values
+                            managed_args[mapped_key] = value
+                            continue
+        
+     # If we reach here, parameter is not managed - keep in normalized_args
+        if mapped_key:  # Only add if mapped_key is not None
+            normalized_args[mapped_key] = value
+    
+    external_args = normalized_args
     
     external_only = {k: v for k, v in external_args.items() 
                      if k not in managed_args and k not in ('-m', '--model')}
