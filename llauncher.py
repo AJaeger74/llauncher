@@ -975,10 +975,7 @@ class llauncher(QMainWindow):
             token_count,
             self._last_benchmark_command
         )
-        
-        # Hide progress bar after completion
-        if hasattr(self, 'bench_progress_bar'):
-            self.bench_progress_bar.setVisible(False)
+        # Progress bar stays visible - will be reset by check_existing_process()
     
     def on_benchmark_token_update(self, token_count: int):
         """Update progress bar with current token count."""
@@ -1157,6 +1154,10 @@ class llauncher(QMainWindow):
                 self.status_label.setStyleSheet("")
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("StartButton")
+                # Reset progress bar to 100% when idle
+                if hasattr(self, 'bench_progress_bar'):
+                    self.bench_progress_bar.setValue(100)
+                    self.bench_progress_bar.setToolTip("")
                 return
             
             pids = [int(pid) for pid in result.stdout.strip().split() if pid.isdigit()]
@@ -1297,10 +1298,6 @@ class llauncher(QMainWindow):
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
-        # Show progress bar
-        if hasattr(self, 'bench_progress_bar'):
-            self.bench_progress_bar.setVisible(True)
-            self.bench_progress_bar.setValue(0)  # Marquee mode (infinite)
         self.bench_thread.start()
 
     def cancel_benchmark(self):
@@ -1412,10 +1409,7 @@ class llauncher(QMainWindow):
         self.bench_thread.status_signal.connect(self.status_label.setText)
         self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
         self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
-        # Show progress bar
-        if hasattr(self, 'bench_progress_bar'):
-            self.bench_progress_bar.setVisible(True)
-            self.bench_progress_bar.setValue(0)  # Marquee mode (infinite)
+        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
         self.bench_thread.start()
 
     def _get_model_info(self) -> str:

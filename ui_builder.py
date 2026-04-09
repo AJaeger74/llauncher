@@ -324,8 +324,9 @@ def build_llauncher_ui(window):
     
     # Progress Bar for token count
     window.bench_progress_bar = QProgressBar()
-    window.bench_progress_bar.setRange(0, 0)  # 0 = infinite (marquee mode)
-    window.bench_progress_bar.setVisible(False)
+    window.bench_progress_bar.setRange(0, 100)
+    window.bench_progress_bar.setValue(100)  # Start at 100% when idle
+    window.bench_progress_bar.setVisible(True)
     window.bench_progress_bar.setStyleSheet("""
         QProgressBar {
             border: 1px solid gray;
