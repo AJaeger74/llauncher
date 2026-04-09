@@ -1064,7 +1064,7 @@ class llauncher(QMainWindow):
             def on_output(line):
                 if "all slots are idle" in line and not getattr(self, 'benchmark_running', False):
                     self.status_label.setText(gettext("status_idle"))
-                    self.status_label.setStyleSheet("color: orange; font-weight: bold;")
+                    self.status_label.setStyleSheet("color: green; font-weight: bold;")
                     self._was_idle = True  # Mark that we're in idle state
                 
                 # Any output after idle means we're active again
