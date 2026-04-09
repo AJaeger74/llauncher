@@ -335,12 +335,10 @@ class llauncher(QMainWindow):
             # Integer-Slider (param_sliders[key] = {"slider": DirectClickSlider, "edit": QLineEdit})
             'ctx_slider': self.param_sliders.get('-c', {}).get('slider'),
             'ctx_edit': self.param_sliders.get('-c', {}).get('edit'),
-            'n_slider': self.param_sliders.get('-n', {}).get('slider'),
-            'n_edit': self.param_sliders.get('-n', {}).get('edit'),
-            'threads_slider': self.param_sliders.get('-t', {}).get('slider'),
-            'threads_edit': self.param_sliders.get('-t', {}).get('edit'),
             'batch_slider': self.param_sliders.get('-b', {}).get('slider'),
             'batch_edit': self.param_sliders.get('-b', {}).get('edit'),
+            'threads_slider': self.param_sliders.get('-t', {}).get('slider'),
+            'threads_edit': self.param_sliders.get('-t', {}).get('edit'),
             'gpu_layers_slider': self.param_sliders.get('-ngl', {}).get('slider'),
             'gpu_layers_edit': self.param_sliders.get('-ngl', {}).get('edit'),
             # -ngl "all" Checkbox (wenn vorhanden)

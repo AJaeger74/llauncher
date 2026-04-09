@@ -335,9 +335,7 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         '--ctx-size': '-c',
         '--batch-size': '-b',
         '--parallel': '-np',
-        '--ubatch-size': None,
-        '--image-min-tokens': None,
-        '--cont-batching': None,
+        '--ubatch-size': None,  # External, unmanaged parameter
     }
     
     # Reverse map: short aliases → long form (for normalization)
@@ -377,8 +375,13 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
     
     # First, apply ALL parameters to their respective widgets (managed + unmanaged)
     for key, value in external_args.items():
+        # Skip cont-batching - this is an internal llama.cpp flag
         if key == '--cont-batching':
             continue
+        
+        # Debug logging for batch-size handling
+        if key == '--batch-size' or key == '-b':
+            print(f"[DEBUG] Processing batch-size: key={key}, value={value}")
         
         # First try standard mapping (--param → -param)
         mapped_key = PARAM_ALIAS_MAP.get(key, key)
@@ -413,6 +416,9 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                     except ValueError:
                         pass  # Skip invalid int values
                 managed_args[actual_key] = value
+                # Also add to normalized_args with long form for external display
+                if key.startswith('--'):
+                    normalized_args[key] = value
                 continue
             
             elif actual_key and actual_key.startswith('--'):
