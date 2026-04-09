@@ -37,6 +37,8 @@
   "msg_benchmark_running": "A benchmark is already running.",
   "msg_no_model_selected": "Please select a model!",
   "msg_no_process_found": "No running process found.",
+  "msg_no_running_process_title": "No Running Process",
+  "msg_no_llama_server_found": "No llama-server processes found.\nStart a server first or use 'Check Process'.",
   "bench_table_date": "Date/Time",
   "bench_table_tps": "TPS",
   "bench_table_quality": "Quality",
