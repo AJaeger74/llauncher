@@ -332,7 +332,7 @@ def build_llauncher_ui(window):
             border: 1px solid gray;
             border-radius: 4px;
             text-align: center;
-            background: #f0f0f0;
+            background: #1a1a1a;
         }
         QProgressBar::chunk {
             background: qlineargradient(x1:0, y1:0.5, x2:1, y2:0.5,
