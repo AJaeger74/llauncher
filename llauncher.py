@@ -989,12 +989,15 @@ class llauncher(QMainWindow):
             self.bench_progress_bar.setToolTip(f"Tokens: {token_count}")
     
     def toggle_process(self):
+        print(f"[DEBUG toggle_process] CALLED - external_runner_pid={getattr(self, 'external_runner_pid', 'NOT_SET')}")
         if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
             # Externer Prozess stoppen über terminate_by_pid (SIGINT×2 → SIGTERM → SIGKILL)
             self.start_stop_btn.setText(gettext("btn_stop"))
             self.status_label.setText(gettext("status_stopping"))
             
+            print(f"[DEBUG toggle_process] Calling terminate_by_pid({self.external_runner_pid})")
             stopped = ProcessRunner.terminate_by_pid(self.external_runner_pid)
+            print(f"[DEBUG toggle_process] terminate_by_pid returned: {stopped}")
 
             if not stopped:
 
