@@ -1070,13 +1070,24 @@ class llauncher(QMainWindow):
                         self.runner = None
             
             # Output überwachen für "all slots are idle" Signal
-            from PyQt6.QtCore import QTimer
+           # Output überwachen für "all slots are idle" Signal
             
             # Initialize idle state flag
             if not hasattr(self, '_was_idle'):
                 self._was_idle = False
             
             def on_output(line):
+                # Parse progress from llama.cpp output: "prompt processing progress, n_tokens = 52544, batch.n_tokens = 32, progress = 0.999125"
+                progress_match = re.search(r'progress\s*=\s*([0-9.]+)', line)
+                if progress_match and hasattr(window, 'bench_progress_bar'):
+                    try:
+                        progress = float(progress_match.group(1))
+                        # Update progress bar (0-1 scale)
+                        window.bench_progress_bar.setValue(int(progress * 100))
+                        window.bench_progress_bar.setToolTip(f"Progress: {progress:.2%}")
+                    except (ValueError, TypeError):
+                        pass
+                
                 if "all slots are idle" in line and not getattr(self, 'benchmark_running', False):
                     self.status_label.setText(gettext("status_idle"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")
