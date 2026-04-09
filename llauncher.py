@@ -373,9 +373,8 @@ class llauncher(QMainWindow):
         if not pid_found:
             self.loading_running_args = False  # Reset auch im Fehlerfall
             if show_dialogs:
-                QMessageBox.warning(self, "Kein laufender Prozess",
-                                  "Keine llama-server Prozesse gefunden.\n"
-                                  "Starte zuerst einen Server oder nutze 'Prozess prüfen'.")
+                QMessageBox.warning(self, translatable("msg_no_running_process_title"),
+                                  translatable("msg_no_llama_server_found"))
             return False
         
          # Modell-Pfad aufteilen in Verzeichnis + Dateiname
@@ -1063,8 +1062,6 @@ class llauncher(QMainWindow):
                 self._was_idle = False
             
             def on_output(line):
-                print(f"[DEBUG on_output] {line[:100]}")
-                
                 if "all slots are idle" in line and not getattr(self, 'benchmark_running', False):
                     self.status_label.setText(gettext("status_idle"))
                     self.status_label.setStyleSheet("color: orange; font-weight: bold;")
@@ -1079,14 +1076,11 @@ class llauncher(QMainWindow):
                 self.debug_text.append(line)
             
             # Prozess starten
-            print(f"[DEBUG toggle_process] Creating ProcessRunner with args: {args}")
             workdir = str(Path(self.llama_cpp_path))
             self.runner = ProcessRunner(args, workdir)
             self.runner.output_signal.connect(on_output)
             self.runner.finished_signal.connect(on_process_finished)
-            print(f"[DEBUG toggle_process] Starting runner...")
             self.runner.start()
-            print(f"[DEBUG toggle_process] Runner started!")
 
     def on_benchmark_output(self, text: str):
         """Handles benchmark output to prevent line-break issues in streaming mode."""
@@ -1155,11 +1149,11 @@ class llauncher(QMainWindow):
                     # Kommandozeile zusammenbauen
                     full_cmd = " ".join(shlex.quote(arg) for arg in args)
                     
-                    # UI anpassen: Status auf "Läuft", Button auf "Stop" setzen
+                    # UI anpassen: Button auf "Stop" setzen
                     # Aber nicht wenn gerade ein Benchmark läuft!
                     if not getattr(self, 'benchmark_running', False):
-                        self.status_label.setText(gettext("status_running"))
-                        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+                        # Nur Button-Status aktualisieren, nicht den Label-Text
+                        # (on_output() verwaltet Idle/Running Status korrekt)
                         self.start_stop_btn.setText(gettext("btn_stop"))
                         self.start_stop_btn.setObjectName("StopButton")
                     
