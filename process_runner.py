@@ -419,13 +419,20 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                 print(f"[DEBUG] Found slider={slider is not None}, edit={edit is not None}")
                 
                 if slider and edit:
-                    try:
-                        slider.setValue(int(value))
-                        edit.setText(value)
-                        print(f"[DEBUG] Successfully set {actual_key} to {value}")
-                    except ValueError as e:
-                        print(f"[DEBUG] ValueError setting {actual_key}: {e}")
-                        pass  # Skip invalid int values
+                    # Special handling for -ngl "all"
+                    if actual_key == '-ngl' and value == 'all':
+                        window.ngl_all_checkbox.setChecked(True)
+                        slider.setValue(0)
+                        edit.setText('all')
+                        print(f"[DEBUG] Set -ngl to 'all', checkbox checked")
+                    else:
+                        try:
+                            slider.setValue(int(value))
+                            edit.setText(value)
+                            print(f"[DEBUG] Successfully set {actual_key} to {value}")
+                        except ValueError as e:
+                            print(f"[DEBUG] ValueError setting {actual_key}: {e}")
+                            pass  # Skip invalid int values
                 else:
                     print(f"[DEBUG] WARNING: Could not find slider/edit for {actual_key}, param_sliders={list(getattr(window, 'param_sliders', {}).keys())}")
                 managed_args[actual_key] = value
