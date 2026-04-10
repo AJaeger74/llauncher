@@ -101,6 +101,7 @@
   "msg_preset_saved_title": "Preset saved!",
   "lbl_models_label": "Models:",
   "lbl_exe_label": "llama.cpp:",
+  "lbl_light_theme": "Light Theme",
   "lbl_benchmark_file_loaded": "Benchmark file loaded",
   "lbl_error_loading_config": "Error loading configuration",
   "lbl_mmproj_vision": "mmproj (Vision):",

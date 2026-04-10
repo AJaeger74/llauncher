@@ -100,6 +100,7 @@
   "msg_preset_saved_title": "Preset gespeichert",
   "lbl_models_label": "Modelle:",
   "lbl_exe_label": "llama.cpp:",
+  "lbl_light_theme": "Helles Design",
   "lbl_benchmark_file_loaded": "Benchmark-Datei geladen",
   "lbl_error_loading_config": "Fehler beim Laden der Konfiguration",
   "lbl_mmproj_vision": "mmproj (Vision):",

@@ -283,8 +283,12 @@ class llauncher(QMainWindow):
         self.external_runner_args: Optional[list] = None  # Echte Prozess-Args (für build_full_command)
         self.external_runner_pid: Optional[int] = None
         
+        # Theme
+        self.light_theme = False
+        
         # Dynamische Parameter definieren
         self.PARAM_DEFINITIONS = self.get_param_definitions()
+
         
  
         build_llauncher_ui(self)
@@ -296,9 +300,57 @@ class llauncher(QMainWindow):
         self.process_check_timer.timeout.connect(self.check_existing_process)
         self.process_check_timer.start()
         
-        # Prüfen ob bereits ein llama-server läuft (vom User gestartet)
+       # Prüfen ob bereits ein llama-server läuft (vom User gestartet)
         self.check_existing_process()
-
+    
+    def apply_theme(self, use_light: bool):
+        """Apply theme stylesheet based on use_light flag."""
+        from ui_builder import DARK_THEME, LIGHT_THEME
+        self.light_theme = use_light
+        stylesheet = LIGHT_THEME if use_light else DARK_THEME
+        self.setStyleSheet(stylesheet)
+        
+        # Update params_widget background to match theme
+        bg_color = "#ffffff" if use_light else "#1e1e1e"
+        color = "#333333" if use_light else "#cccccc"
+        border = "border: 1px solid #cccccc;" if use_light else "border: none;"
+        
+        # Update params_widget (the inner widget with all parameters)
+        if hasattr(self, 'params_widget'):
+            self.params_widget.setStyleSheet(f"QWidget {{ background-color: {bg_color}; }}")
+        
+        # Apply to all slider edit fields
+        for key, slider_dict in getattr(self, 'param_sliders', {}).items():
+            if isinstance(slider_dict, dict) and "edit" in slider_dict:
+                edit_widget = slider_dict["edit"]
+                edit_widget.setStyleSheet(f"QLineEdit {{ padding: 5px; border-radius: 3px; background-color: {bg_color}; color: {color}; {border} }}")
+            elif isinstance(slider_dict, dict) and "combo" in slider_dict:
+                combo_widget = slider_dict["combo"]
+                combo_widget.setStyleSheet(f"QComboBox {{ padding: 5px; border-radius: 3px; background-color: {bg_color}; color: {color}; {border} }}")
+        
+        # Update stats label colors to match theme
+        if hasattr(self, 'stats_label'):
+            if use_light:
+                self.stats_label.setStyleSheet("color: #333333; padding: 10px;")
+            else:
+                self.stats_label.setStyleSheet("color: #cccccc; padding: 10px;")
+    
+    def on_theme_toggled(self, state):
+        """Handle theme checkbox toggle."""
+        use_light = state == 2  # Qt.CheckState.Checked.value
+        self.apply_theme(use_light)
+        
+        # Save theme preference to config
+        try:
+            with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                import json
+                config = json.load(f)
+            config["theme"] = "light" if use_light else "dark"
+            with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass  # Non-fatal
+    
     def on_check_process_click(self):
         """Ruft check_running_processes() auf und zeigt Output im Debug-Fenster."""
         from process_runner import check_running_processes
@@ -1602,7 +1654,12 @@ class llauncher(QMainWindow):
             selected_model = config.get("selected_model")
             # Backward Compatibility: sowohl alte als auch neue Key unterstützen
             selected_exec = config.get("selected_executable") or config.get("selected_exe")
-
+            
+            # Theme loading
+            self.light_theme = config.get("theme") == "light"
+            if hasattr(self, 'light_theme_checkbox'):
+                self.light_theme_checkbox.setChecked(self.light_theme)
+            
             if exe_path and Path(exe_path).exists():
                 self.llama_cpp_path = exe_path
                 self.exe_line.setText(exe_path)

@@ -10,6 +10,36 @@ import json
 from pathlib import Path
 from typing import Optional
 
+# ========== THEME STYLES ==========\
+DARK_THEME = """
+QMainWindow { background-color: #2d2d2d; }
+QFrame#PathsFrame { background-color: #3a3a3a; padding: 10px; border-radius: 5px; }
+QLabel#StatusLabel { color: #0078d7; font-weight: bold; padding: 10px; min-width: 200px; }
+QLabel#StatsLabel { color: #cccccc; padding: 10px; }
+QPushButton { background-color: #0078d7; color: white; padding: 10px; border-radius: 3px; }
+QPushButton:hover { background-color: #006cc1; }
+QPushButton#StopButton { background-color: #ff6600; }
+QPushButton#StopButton:hover { background-color: #e65c00; }
+QComboBox, QLineEdit { padding: 5px; border-radius: 3px; background-color: #444; color: white; }
+QTextEdit { background-color: #1a1a1a; color: #cccccc; }
+QScrollArea { background-color: #1e1e1e; border: none; }
+"""
+
+LIGHT_THEME = """
+QMainWindow { background-color: #f5f5f5; }
+QFrame#PathsFrame { background-color: #ffffff; padding: 10px; border-radius: 5px; }
+QLabel#StatusLabel { color: #0078d7; font-weight: bold; padding: 10px; min-width: 200px; }
+QLabel#StatsLabel { color: #333333; padding: 10px; }
+QLabel { color: #333333; }
+QPushButton { background-color: #0078d7; color: white; padding: 10px; border-radius: 3px; }
+QPushButton:hover { background-color: #006cc1; }
+QPushButton#StopButton { background-color: #cc5200; }
+QPushButton#StopButton:hover { background-color: #b34700; }
+QComboBox, QLineEdit { padding: 5px; border-radius: 3px; background-color: #ffffff; color: #333333; border: 1px solid #cccccc; }
+QTextEdit { background-color: #ffffff; color: #333333; }
+QScrollArea { background-color: #ffffff; border: none; }
+"""
+
 # Import i18n gettext function
 try:
     from i18n import I18nManager
@@ -62,57 +92,74 @@ def build_llauncher_ui(window):
     left_layout = QVBoxLayout(left_col)
     left_layout.setSpacing(10)
 
-    # Pfade Section
+  # Pfade Section
     paths_frame = QFrame()
     paths_frame.setObjectName("PathsFrame")
     paths_layout = QFormLayout(paths_frame)
-
+    
     window.exe_line = QLineEdit(window.llama_cpp_path)
     window.exe_line.setReadOnly(True)
     browse_exe_btn = QPushButton(gettext("btn_browse_exe"))
     browse_exe_btn.clicked.connect(window.browse_llama_dir)
-
+    
     exe_row = QWidget()
     exe_row_layout = QHBoxLayout(exe_row)
     exe_row_layout.addWidget(window.exe_line)
     exe_row_layout.addWidget(browse_exe_btn)
-
+    
     window.model_line = QLineEdit(window.model_directory)
     window.model_line.setReadOnly(True)
     browse_model_btn = QPushButton(gettext("btn_browse_model"))
     browse_model_btn.clicked.connect(window.browse_model_dir)
-
+    
     model_row = QWidget()
     model_row_layout = QHBoxLayout(model_row)
     model_row_layout.addWidget(window.model_line)
     model_row_layout.addWidget(browse_model_btn)
-
+    
     paths_layout.addRow(gettext("lbl_exe_label"), exe_row)
     paths_layout.addRow(gettext("lbl_models_label"), model_row)
-
+    
     window.exe_combo = QComboBox()
     # find_executables() wird später bei apply_presets() aufgerufen
     window.exe_combo.currentTextChanged.connect(window.on_exe_changed)
-
+    
     window.model_combo = QComboBox()
     window.update_model_dropdown()
     window.model_combo.currentTextChanged.connect(window.on_model_selected)
-
+    
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
-
+    
     paths_layout.addRow(gettext("lbl_exe_label"), window.exe_combo)
     paths_layout.addRow(gettext("lbl_model_select"), window.model_combo)
     paths_layout.addRow(gettext("lbl_mmproj_vision"), window.mmproj_line)
-
+    
     left_layout.addWidget(paths_frame)
+    
+    # ========== THEME TOGGLE ==========\
+    theme_frame = QFrame()
+    theme_frame.setFixedHeight(40)
+    theme_layout = QHBoxLayout(theme_frame)
+    theme_layout.setContentsMargins(0, 0, 0, 0)
+    theme_layout.setSpacing(10)
+    
+    window.light_theme_checkbox = QCheckBox(gettext("lbl_light_theme"))
+    window.light_theme_checkbox.setChecked(False)  # Default: dark theme
+    window.light_theme_checkbox.stateChanged.connect(lambda state: window.on_theme_toggled(state))
+    
+    theme_layout.addStretch()
+    theme_layout.addWidget(window.light_theme_checkbox)
+    
+    left_layout.addWidget(theme_frame)
 
-    # Parameter Sliders Section
+  # Parameter Sliders Section
     params_scroll = QScrollArea()
     params_scroll.setWidgetResizable(True)
-    params_scroll.setStyleSheet("QScrollArea { background-color: #1e1e1e; border: none; }")
-
+    # Background set dynamically in apply_theme() - hardcoded here removed
+    
     params_widget = QWidget()
+    window.params_widget = params_widget  # Save reference for theme updates
     params_layout = QFormLayout(params_widget)
     params_layout.setSpacing(8)
     params_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -517,19 +564,8 @@ def build_llauncher_ui(window):
     bench_layout.addWidget(window.bench_table, stretch=1)
     main_layout.addWidget(bench_frame)
 
-    # ========== STYLING (KDE Plasma Dark Theme) ==========
-    window.setStyleSheet("""
-        QMainWindow { background-color: #2d2d2d; }
-        QFrame#PathsFrame { background-color: #3a3a3a; padding: 10px; border-radius: 5px; }
-        QLabel#StatusLabel { color: #0078d7; font-weight: bold; padding: 10px; min-width: 200px; }
-        QLabel#StatsLabel { color: #cccccc; padding: 10px; }
-        QPushButton { background-color: #0078d7; color: white; padding: 10px; border-radius: 3px; }
-        QPushButton:hover { background-color: #006cc1; }
-        QPushButton#StopButton { background-color: #ff6600; }
-        QPushButton#StopButton:hover { background-color: #e65c00; }
-        QComboBox, QLineEdit { padding: 5px; border-radius: 3px; background-color: #444; color: white; }
-        QTextEdit { background-color: #1a1a1a; color: #cccccc; }
-    """)
+    # ========== INITIAL THEME APPLICATION ==========
+    window.apply_theme(window.light_theme)
 
     # ========== GPU-MONITOR SOFORT STARTEN ==========
     window.gpu_monitor = GPUMonitor()
