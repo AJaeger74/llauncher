@@ -1,7 +1,7 @@
 # llauncher – GUI for llama.cpp
 
 A mixer-style launcher for controlling llama.cpp with presets, benchmarking, and GPU monitoring.
-
+![Llaunchy](llauncher.png)
 ## Features
 
 ◆ **Parameter Control** like on a mixing console  
