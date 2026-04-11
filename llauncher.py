@@ -121,22 +121,22 @@ class llauncher(QMainWindow):
         "tooltip_key": "tooltip_context_size",
         "tooltip_key": "tooltip_context_size",
     },
-        "--cache-type-k": {
+   "--cache-type-k": {
             "label_key": "help_parser_k_type",  # Wird später mit gettext aufgelöst
             "type": "combo",
             "default": "f16",
             "options": ["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
             "tooltip_key": "tooltip_cache_type_k",
             "tooltip_key": "tooltip_cache_type_k",
-        },
-        "--cache-type-v": {
+    },
+   "--cache-type-v": {
             "label_key": "help_parser_v_type",  # Wird später mit gettext aufgelöst
             "type": "combo",
             "default": "f16",
             "options": ["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
             "tooltip_key": "tooltip_cache_type_v",
         },
-        "-n": {
+   "-n": {
             "label_key": "param_max_tokens",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": -1,
@@ -144,7 +144,7 @@ class llauncher(QMainWindow):
            "default": 4096,
             "tooltip_key": "tooltip_max_tokens",
         },
-        "-np": {
+   "-np": {
             "label_key": "param_parallel_slots",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": -1,
@@ -152,7 +152,7 @@ class llauncher(QMainWindow):
             "default": -1,
             "tooltip_key": "tooltip_np",
         },
-"-t": {
+   "-t": {
             "label_key": "param_cpu_threads",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": 1,
@@ -160,7 +160,7 @@ class llauncher(QMainWindow):
             "default": 8,
             "tooltip_key": "tooltip_threads",
         },
-"-b": {
+   "-b": {
             "label_key": "param_batch_size",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": 1,
@@ -168,7 +168,7 @@ class llauncher(QMainWindow):
            "default": 2048,
             "tooltip_key": "tooltip_batch_size",
         },
-        "-ngl": {
+   "-ngl": {
             "label_key": "param_gpu_layers",  # Wird später mit gettext aufgelöst
             "type": "slider",
             "min": 0,
@@ -176,7 +176,7 @@ class llauncher(QMainWindow):
             "default": 35,
             "tooltip_key": "tooltip_gpu_layers",
         },
-        "--temp": {
+   "--temp": {
             "label_key": "param_temperature",  # Muss noch in JSONs hinzugefügt werden
             "type": "float_slider",
             "min": 0.1,
@@ -185,7 +185,7 @@ class llauncher(QMainWindow):
             "step": 0.1,
             "tooltip_key": "tooltip_temperature",
         },
-       "--top-p": {
+   "--top-p": {
             "label_key": "param_top_p",  # Muss noch in JSONs hinzugefügt werden
             "type": "float_slider",
             "min": 0.1,
@@ -194,7 +194,7 @@ class llauncher(QMainWindow):
             "step": 0.05,
             "tooltip_key": "tooltip_top_p",
         },
-        "--top-k": {
+   "--top-k": {
             "label_key": "param_top_k",
             "type": "slider",
             "min": 0,
@@ -202,7 +202,7 @@ class llauncher(QMainWindow):
             "default": 40,
             "tooltip_key": "tooltip_top_k",
         },
-        "--min-p": {
+   "--min-p": {
             "label_key": "param_min_p",
             "type": "float_slider",
             "min": 0.0,
@@ -211,7 +211,7 @@ class llauncher(QMainWindow):
             "step": 0.01,
             "tooltip_key": "tooltip_min_p",
         },
-        "--repeat-penalty": {
+   "--repeat-penalty": {
             "label_key": "param_repeat_penalty",  # Muss noch in JSONs hinzugefügt werden
             "type": "float_slider",
             "min": 0.5,
@@ -220,27 +220,26 @@ class llauncher(QMainWindow):
             "step": 0.05,
             "tooltip_key": "tooltip_repeat_penalty",
         },
-        "--flash-attn": {
+   "--flash-attn": {
             "label_key": "param_flash_attn",  # Muss noch in JSONs hinzugefügt werden
             "type": "combo",
             "default": "off",
             "options": ["off", "on"],
             "tooltip_key": "tooltip_flash_attn",
         },
-
-        "--host": {
+   "--host": {
             "label_key": "param_host",  # Muss noch in JSONs hinzugefügt werden
             "type": "text_input",
             "default": "localhost",
             "tooltip_key": "tooltip_host",
         },
-       "--slot-save-path": {
+   "--slot-save-path": {
             "label_key": "param_slot_save_path",
             "type": "path_input",
             "default": "/dev/shm/llama-slots",
             "tooltip_key": "tooltip_slot_save_path",
         },
-        "benchmark_file_path": {
+   "benchmark_file_path": {
             "label_key": "param_benchmark_file",
             "type": "file_input",
             "default": "",

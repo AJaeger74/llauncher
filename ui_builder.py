@@ -199,7 +199,7 @@ def build_llauncher_ui(window):
                 combo.setCurrentIndex(default_idx)
             combo.setFixedHeight(30)
             
-            # Debug-Output live aktualisieren wenn Auswahl geändert wird
+           # Debug-Output live aktualisieren wenn Auswahl geändert wird
             combo.currentTextChanged.connect(window.on_param_changed)
             
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
@@ -220,7 +220,7 @@ def build_llauncher_ui(window):
             text_edit.setText(config["default"])
             text_edit.setFixedHeight(30)
             
-            # Debug-Output live aktualisieren wenn Text geändert wird
+           # Debug-Output live aktualisieren wenn Text geändert wird
             text_edit.textChanged.connect(window.on_param_changed)
             
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
@@ -255,10 +255,11 @@ def build_llauncher_ui(window):
             # Debug-Output live aktualisieren wenn Text geändert wird
             path_edit.textChanged.connect(window.on_param_changed)
             
-            # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
+             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            label.setStyleSheet("margin-top: -2px;")
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -293,9 +294,11 @@ def build_llauncher_ui(window):
             # Debug-Output live aktualisieren wenn Text geändert wird
             file_edit.textChanged.connect(window.on_param_changed)
             
-            # Übersetztes Label verwenden
+             # Übersetztes Label verwenden
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            label.setStyleSheet("margin-top: -2px;")
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
                 label.setToolTip(gettext(tooltip_key))
