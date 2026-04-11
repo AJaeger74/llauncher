@@ -178,6 +178,8 @@ def build_llauncher_ui(window):
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            label.setStyleSheet("margin-top: 4px;")
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -203,6 +205,7 @@ def build_llauncher_ui(window):
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -223,6 +226,7 @@ def build_llauncher_ui(window):
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -254,6 +258,7 @@ def build_llauncher_ui(window):
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -309,6 +314,8 @@ def build_llauncher_ui(window):
             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
+            label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            label.setStyleSheet("margin-top: 4px;")
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
