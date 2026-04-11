@@ -45,6 +45,7 @@
   "bench_table_preset": "Preset",
   "stats_label": "Statistics: --",
   "lbl_command_line": "Command Line",
+  "btn_browse_model": "Browse...",
   "dialog_overwrite_confirm_title": "Confirm overwrite",
   "msg_preset_exists_title": "Preset already exists",
   "msg_preset_exists": "The preset '{name}' already exists. Overwrite?",
