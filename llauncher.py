@@ -31,6 +31,8 @@ from preset_manager import (
     show_preset_args as preset_show_args,
     ask_quality_and_save_benchmark,
 )
+from i18n_helper import t, translatable
+from float_slider_sync import DirectClickSlider
 from ui_builder import build_llauncher_ui, setup_timers_and_load
 
 # Import i18n for lazy gettext() loading
@@ -1431,7 +1433,7 @@ class llauncher(QMainWindow):
         
         layout = QVBoxLayout(dialog)
         
-        info_label = QLabel("Edit the prompt for benchmarks. This will be saved to config.json:")
+        info_label = QLabel(t("benchmark_prompt_info"))
         layout.addWidget(info_label)
         
         config_path = Path.home() / ".llauncher" / "config.json"
@@ -1450,8 +1452,8 @@ class llauncher(QMainWindow):
         layout.addWidget(prompt_edit)
         
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        cancel_btn = QPushButton("Cancel")
+        save_btn = QPushButton(t("save"))
+        cancel_btn = QPushButton(t("cancel"))
         
         def on_save():
             new_prompt = prompt_edit.toPlainText()
