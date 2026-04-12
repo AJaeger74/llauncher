@@ -80,6 +80,7 @@
   "tooltip_cache_type_k": "Quantisierungstyp für Key-Cache im KV-Cache (f16 = Standardpräzision, q4_0 spart VRAM auf Kosten der Qualität)",
   "tooltip_cache_type_v": "Quantisierungstyp für Value-Cache im KV-Cache (f16 = Standardpräzision, q4_0 spart VRAM auf Kosten der Qualität)",
   "tooltip_max_tokens": "Anzahl der zu generierenden Tokens in der Antwort (-1 für unbegrenzte Generierung bis zum Abschluss)",
+  "tooltip_edit_prompt": "Prompt editieren",
   "tooltip_np": "Anzahl paralleler Server-Slots zur Verarbeitung mehrerer Anfragen (-1 für automatische Berechnung basierend auf Ressourcen)",
   "tooltip_threads": "Anzahl der CPU-Threads für Textgenerierung (mehr Threads = schnellere Verarbeitung)",
   "tooltip_batch_size": "Maximale Batch-Größe zur Verarbeitung von Eingabe-Prompts (llama.cpp Standard: 2048)",
