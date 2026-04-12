@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 # Importiere GGUF-Utilities aus separater Datei
-from gguf_utils import get_cpu_count, read_gguf_context_length
+from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size
 from help_parser import parse_cache_type_options
 from storage import (
     load_config, save_config, load_presets, save_presets,
@@ -701,6 +701,46 @@ class llauncher(QMainWindow):
     def on_model_selected(self, name: str):
         model_path = (Path(self.model_directory) / name).resolve()
         self.selected_model = str(model_path)
+        
+         # Debug Output: Modell-Informationen anzeigen
+        if model_path.exists() and model_path.is_file():
+            try:
+                info = get_model_info(str(model_path))
+                
+                # Strip leading/trailing whitespace/NULs from strings
+                name = (info.get('name') or '').strip('\x00 \n\r\t')
+                arch = (info.get('arch') or 'unknown').strip('\x00 ')
+                
+                # Debug-Separator
+                self.debug_text.append("─" * 60)
+                self.debug_text.append(f"📦 Modell ausgewählt: {info['filename']}")
+                self.debug_text.append("─" * 60)
+                self.debug_text.append(f"  Name:             {name or 'unbekannt'}")
+                self.debug_text.append(f"  Architektur:      {arch}")
+                
+                if info.get('tags'):
+                    tags_str = ", ".join(str(t) for t in info['tags'][:5])
+                    if len(info['tags']) > 5:
+                        tags_str += f" (+{len(info['tags']) - 5} more)"
+                    self.debug_text.append(f"  Tags:             {tags_str}")
+                
+                if info.get('url'):
+                    short_url = info['url'][:50] + "..." if len(info['url']) > 50 else info['url']
+                    self.debug_text.append(f"  URL:              {short_url}")
+                
+                self.debug_text.append(f"  Dateigröße:       {format_size(info['file_size'])}")
+                self.debug_text.append(f"  GGUF-Version:     v{info['version']}")
+                self.debug_text.append(f"  Tensor-Count:     {info['tensor_count']:,}")
+                self.debug_text.append(f"  Kontext-Length:   {info['context_length'] or 'nicht gefunden'}")
+                
+                if info.get('embedding_length'):
+                    self.debug_text.append(f"  Embedding-Länge:  {info['embedding_length']}")
+                if info.get('block_count'):
+                    self.debug_text.append(f"  Block-Count:      {info['block_count']}")
+                
+                self.debug_text.append("─" * 60)
+            except Exception as e:
+                self.debug_text.append(f"⚠️ Konnte Modell-Info nicht lesen: {e}")
         
         # ctx_size Slider Maximum aus GGUF-Datei lesen
         if model_path.exists() and model_path.is_file():
