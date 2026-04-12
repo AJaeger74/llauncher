@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 # Importiere GGUF-Utilities aus separater Datei
-from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size
+from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size, read_gguf_tensor_count
 from help_parser import parse_cache_type_options
 from storage import (
     load_config, save_config, load_presets, save_presets,

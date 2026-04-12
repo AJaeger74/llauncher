@@ -172,6 +172,29 @@ def format_size(bytes_size: int) -> str:
     return f"{bytes_size:.2f} PB"
 
 
+def read_gguf_tensor_count(path: str) -> int:
+    """Read tensor count from GGUF header."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(16)
+        
+        if len(data) < 16 or data[0:4] != b"GGUF":
+            return 0
+        
+        version = struct.unpack('<I', data[4:8])[0]
+        
+        if version == 3:
+            # GGUF v3: tensor_count is uint64 at offset 8
+            return struct.unpack('<Q', data[8:16])[0]
+        elif version == 2:
+            # GGUF v2: tensor_count is uint64 at offset 8
+            return struct.unpack('<Q', data[8:16])[0]
+        
+        return 0
+    except Exception:
+        return 0
+
+
 def get_model_info(path: str) -> Dict[str, Any]:
     """Extract model info from GGUF file."""
     try:
@@ -179,10 +202,19 @@ def get_model_info(path: str) -> Dict[str, Any]:
     except Exception:
         return {"filename": Path(path).name}
     
+    # Read header info
+    with open(path, "rb") as f:
+        data = f.read(16)
+    
+    version = 3
+    if len(data) >= 8:
+        version = struct.unpack('<I', data[4:8])[0]
+    
     # Read values using direct search (most reliable)
     name = read_gguf_string_value(path, "general.name")
     arch = read_gguf_string_value(path, "general.architecture") or "unknown"
     ctx_len = read_gguf_context_length(path)
+    tensor_count = read_gguf_tensor_count(path)
     
     return {
         "filename": Path(path).name,
@@ -190,6 +222,6 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "name": name,
         "context_length": ctx_len,
         "file_size": stat.st_size,
-        "version": 3,
-        "tensor_count": 0,
+        "version": version,
+        "tensor_count": tensor_count,
     }
