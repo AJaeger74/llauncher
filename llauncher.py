@@ -31,7 +31,6 @@ from preset_manager import (
     show_preset_args as preset_show_args,
     ask_quality_and_save_benchmark,
 )
-from i18n_helper import t, translatable
 from float_slider_sync import DirectClickSlider
 from ui_builder import build_llauncher_ui, setup_timers_and_load
 
@@ -1433,7 +1432,7 @@ class llauncher(QMainWindow):
         
         layout = QVBoxLayout(dialog)
         
-        info_label = QLabel(t("benchmark_prompt_info"))
+        info_label = QLabel(gettext("benchmark_prompt_info"))
         layout.addWidget(info_label)
         
         config_path = Path.home() / ".llauncher" / "config.json"
@@ -1452,8 +1451,8 @@ class llauncher(QMainWindow):
         layout.addWidget(prompt_edit)
         
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton(t("save"))
-        cancel_btn = QPushButton(t("cancel"))
+        save_btn = QPushButton(gettext("save"))
+        cancel_btn = QPushButton(gettext("cancel"))
         
         def on_save():
             new_prompt = prompt_edit.toPlainText()
