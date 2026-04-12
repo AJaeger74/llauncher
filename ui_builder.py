@@ -256,6 +256,7 @@ def build_llauncher_ui(window):
             # Default-Pfad als Startverzeichnis für Dialog setzen
             default_dir = str(Path(config["default"]).parent)
             browse_btn.clicked.connect(lambda p=path_edit, d=default_dir: window.browse_path(p, d))
+            browse_btn.setStyleSheet("background-color: #0078d7; color: white; padding: 5px; border-radius: 3px;")
             
             row_layout.addWidget(path_edit, stretch=1)
             row_layout.addWidget(browse_btn)
@@ -291,10 +292,12 @@ def build_llauncher_ui(window):
             select_btn = QPushButton(gettext("btn_select_file"))
             select_btn.setFixedWidth(80)
             select_btn.clicked.connect(lambda: window.on_select_benchmark_file(file_edit))
+            select_btn.setStyleSheet("background-color: #0078d7; color: white; padding: 5px; border-radius: 3px;")
             
             clear_btn = QPushButton(gettext("btn_clear_file"))
             clear_btn.setFixedWidth(30)
             clear_btn.clicked.connect(lambda: window.on_clear_benchmark_file(file_edit))
+            clear_btn.setStyleSheet("background-color: #0078d7; color: white; padding: 5px; border-radius: 3px;")
             
             row_layout.addWidget(file_edit, stretch=1)
             row_layout.addWidget(select_btn)
