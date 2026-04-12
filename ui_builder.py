@@ -255,11 +255,12 @@ def build_llauncher_ui(window):
             # Debug-Output live aktualisieren wenn Text geändert wird
             path_edit.textChanged.connect(window.on_param_changed)
             
-             # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
+           # Übersetztes Label verwenden (label_key aus JSON resolve via gettext)
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            label.setStyleSheet("margin-top: -2px;")
+            label.setStyleSheet("margin-top: 9px;")
+            
             # Tooltip via tooltip_key übersetzen
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
@@ -298,7 +299,7 @@ def build_llauncher_ui(window):
             label_text = gettext(config.get("label_key", config.get("label", param_key)))
             label = QLabel(f"{label_text} ({param_key})")
             label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            label.setStyleSheet("margin-top: -2px;")
+            label.setStyleSheet("margin-top: 9px;")
             tooltip_key = config.get("tooltip_key")
             if tooltip_key:
                 label.setToolTip(gettext(tooltip_key))
