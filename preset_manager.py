@@ -88,6 +88,10 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     
     dialog.setLayout(layout)
     
+    # Make dialog larger (approx 700x560 vs 350x280)
+    dialog.resize(700, 560)
+
+    
     # Speichern-Button Aktion
     def handle_save():
         name = name_edit.text()
@@ -209,6 +213,10 @@ def show_preset_load_dialog(window, param_sliders, PARAM_DEFINITIONS,
     layout.addLayout(btn_layout)
     
     dialog.setLayout(layout)
+    
+    # Make dialog larger (approx 700x560 vs 350x280)
+    dialog.resize(700, 560)
+
     
     # Ergebnis-Container
     result = [None, None]  # (preset_name, preset_dict)
