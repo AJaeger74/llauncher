@@ -1198,30 +1198,47 @@ class llauncher(QMainWindow):
         elif json_metrics.get('total_tokens'):
             display_metrics['total_tokens'] = json_metrics['total_tokens']
         
-        # Prompt eval (prefill)
+           # Prompt eval (prefill)
         if display_metrics.get('prompt_eval_time'):
             pe_t = display_metrics['prompt_eval_time'] * 1000  # Convert to ms
             pe_tokens = display_metrics.get('prefill_tokens', 0)
-            pe_per_token = (pe_t / pe_tokens if pe_tokens > 0 else 0) * 1000  # ms/token
-            pe_tps = (pe_tokens / pe_t if pe_t > 0 else 0)
-            details_lines.append(f"✓ Prompt eval time:   {pe_t/1000:.3f}s / {pe_tokens} tokens ({pe_per_token:.2f} ms/token, {pe_tps:.2f} TPS)")
+            # Calculate ms/token and TPS from server log data when available
+            if server_log_metrics.get('prompt_eval_time_ms') and server_log_metrics.get('prefill_tokens'):
+                # Use server's own calculation: X ms / Y tokens → (X/Y) ms/token, (Y/(X/1000)) TPS
+                pe_per_token_ms = (server_log_metrics['prompt_eval_time_ms'] / server_log_metrics['prefill_tokens'])
+                pe_tps = (server_log_metrics['prefill_tokens'] / (server_log_metrics['prompt_eval_time_ms'] / 1000))
+            else:
+                pe_per_token_ms = (pe_t / pe_tokens if pe_tokens > 0 else 0) * 1000
+                pe_tps = (pe_tokens / pe_t if pe_t > 0 else 0)
+            details_lines.append(f"✓ Prompt eval time:   {pe_t/1000:.3f}s / {pe_tokens} tokens ({pe_per_token_ms:.2f} ms/token, {pe_tps:.2f} TPS)")
         
         # Generation time
         if display_metrics.get('eval_time'):
             gen_t = display_metrics['eval_time'] * 1000  # Convert to ms
-            gen_tokens = token_count
-            gen_per_token = (gen_t / gen_tokens if gen_tokens > 0 else 0) * 1000  # ms/token
-            gen_tps = (gen_tokens / gen_t if gen_t > 0 else 0)
-            details_lines.append(f"✓ Generation time:    {gen_t/1000:.3f}s / {gen_tokens} tokens ({gen_per_token:.2f} ms/token, {gen_tps:.2f} TPS)")
+            # Use server log's gen_tokens or fallback to token_count
+            gen_tokens = server_log_metrics.get('gen_tokens') or token_count
+            # Calculate from server data if available
+            if server_log_metrics.get('eval_time_ms') and server_log_metrics.get('gen_tokens'):
+                gen_per_token_ms = (server_log_metrics['eval_time_ms'] / server_log_metrics['gen_tokens'])
+                gen_tps = (server_log_metrics['gen_tokens'] / (server_log_metrics['eval_time_ms'] / 1000))
+            else:
+                gen_per_token_ms = (gen_t / gen_tokens if gen_tokens > 0 else 0) * 1000
+                gen_tps = (gen_tokens / gen_t if gen_t > 0 else 0)
+            details_lines.append(f"✓ Generation time:    {gen_t/1000:.3f}s / {gen_tokens} tokens ({gen_per_token_ms:.2f} ms/token, {gen_tps:.2f} TPS)")
         
         # Total - prefer server log total_time, fallback to JSON measured HTTP timing
-        display_total_tokens = display_metrics.get('total_tokens', token_count)
+        display_total_tokens = display_metrics.get('total_tokens') or (server_log_metrics.get('total_tokens') or token_count)
         if display_metrics.get('total_time'):
             total_t = display_metrics['total_time']
-            avg_ms = (total_t * 1000) / display_total_tokens if display_total_tokens > 0 else 0
-            avg_tps = display_total_tokens / total_t if total_t > 0 else 0
+            # Calculate from server data if available
+            if server_log_metrics.get('total_time_ms') and server_log_metrics.get('total_tokens'):
+                total_per_token_ms = (server_log_metrics['total_time_ms'] / server_log_metrics['total_tokens'])
+                total_tps = (server_log_metrics['total_tokens'] / (server_log_metrics['total_time_ms'] / 1000))
+            else:
+                total_per_token_ms = (total_t * 1000) / display_total_tokens if display_total_tokens > 0 else 0
+                total_tps = display_total_tokens / total_t if total_t > 0 else 0
             source = "server log" if server_log_metrics.get('total_time_ms') else "measured"
-            details_lines.append(f"✓ Total time:         {total_t:.3f}s / {display_total_tokens} tokens ({avg_ms:.2f} ms/token, {avg_tps:.2f} TPS) [{source}]\n")
+            details_lines.append(f"✓ Total time:         {total_t:.3f}s / {display_total_tokens} tokens ({total_per_token_ms:.2f} ms/token, {total_tps:.2f} TPS) [{source}]\n")
         
         # Join lines before using in debug output
         details = "\n".join(details_lines) if details_lines else "No metrics available"
