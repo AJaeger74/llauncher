@@ -14,6 +14,7 @@ class HTTPBenchmarkRunner(QThread):
     status_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(float, int)
     token_update_signal = pyqtSignal(int)  # Emit current token count
+    server_log_signal = pyqtSignal(str)  # Server console log lines for parsing timing metrics
     
     SERVER_HOST = "127.0.0.1"
     SERVER_PORT = 8080
@@ -46,15 +47,18 @@ class HTTPBenchmarkRunner(QThread):
         
         # Timing metrics for detailed reporting
         self._metrics = {
-            "preload_time": None,      # Time until first token (prefill)
-            "inference_time": None,    # Total inference time
-            "generation_time": None,   # Time from first to last token
-            "prefill_tokens": None,    # Input/context tokens (if available)
-            "completion_tokens": None, # Generated tokens
-            "total_tokens": None,      # Prefill + completion
-            "prompt_eval_time": None,  # Server-reported prompt eval time
-            "eval_time": None,         # Server-reported evaluation time
+            "preload_time": None,
+            "inference_time": None,
+            "generation_time": None,
+            "prefill_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "prompt_eval_time": None,
+            "eval_time": None,
         }
+        
+        # Server log metrics (from llama.cpp console output)
+        self._server_log_metrics = {}
     
     def cancel(self):
         if self._cancelled:
@@ -81,6 +85,47 @@ class HTTPBenchmarkRunner(QThread):
         except Exception as e:
             self.output_signal.emit(f"Chat template warning: {e}\n")
             return prompt
+    
+    def _parse_server_log_for_metrics(self, log_line: str):
+        """Parse llama.cpp server console log for timing metrics.
+        
+        Format from llama.cpp:
+        eval time =   14916.36 ms /  2115 tokens (    7.05 ms per token,   141.79 tokens per second)
+        prompt eval time =    1834.08 ms /  9945 tokens (    0.18 ms per token,  5422.33 tokens per second)
+        total time =   16750.44 ms / 12060 tokens
+        """
+        import re
+        
+        # Parse eval time (generation)
+        match = re.search(r'eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', log_line, re.IGNORECASE)
+        if match:
+            self._server_log_metrics['eval_time_ms'] = float(match.group(1))
+            self._server_log_metrics['gen_tokens'] = int(match.group(2))
+        
+        # Parse prompt eval time (prefill)
+        match = re.search(r'prompt\s+eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', log_line, re.IGNORECASE)
+        if match:
+            self._server_log_metrics['prompt_eval_time_ms'] = float(match.group(1))
+            self._server_log_metrics['prefill_tokens'] = int(match.group(2))
+        
+        # Parse total time
+        match = re.search(r'total\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', log_line, re.IGNORECASE)
+        if match:
+            self._server_log_metrics['total_time_ms'] = float(match.group(1))
+            self._server_log_metrics['total_tokens'] = int(match.group(2))
+        
+        # Update _metrics from server logs if available
+        if self._server_log_metrics.get('eval_time_ms'):
+            self._metrics['eval_time'] = self._server_log_metrics['eval_time_ms'] / 1000
+        
+        if self._server_log_metrics.get('prompt_eval_time_ms'):
+            self._metrics['prompt_eval_time'] = self._server_log_metrics['prompt_eval_time_ms'] / 1000
+        
+        if self._server_log_metrics.get('prefill_tokens'):
+            self._metrics['prefill_tokens'] = self._server_log_metrics['prefill_tokens']
+        
+        if self._server_log_metrics.get('total_time_ms'):
+            self._metrics['total_time'] = self._server_log_metrics['total_time_ms'] / 1000
     
     def _extract_pdf_text(self, pdf_path: str) -> str:
         try:
@@ -212,9 +257,10 @@ class HTTPBenchmarkRunner(QThread):
                 
                 # Server-reported timing from llama.cpp's usage field
                 usage = result.get('usage', {})
-                prompt_eval_ms = usage.get('prompt_eval_time', 0)  # Prefill time in ms
-                eval_ms = usage.get('eval_time', 0)  # Generation time in ms
-                total_tokens = usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0)
+                
+                # Try to get timing from JSON response first (llama.cpp may or may not send it)
+                prompt_eval_ms = usage.get('prompt_eval_time', 0)
+                eval_ms = usage.get('eval_time', 0)
                 
                 self._metrics.update({
                     "prompt_eval_time": prompt_eval_ms / 1000 if prompt_eval_ms else None,
