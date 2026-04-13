@@ -1162,6 +1162,10 @@ class llauncher(QMainWindow):
         except Exception as e:
             self.debug_text.append(f"Warning: Failed to parse server logs: {e}\n")
         
+        # Debug: show what was parsed
+        if server_log_metrics:
+            self.debug_text.append(f"[SERVER LOG METRICS PARSED] {server_log_metrics}")
+        
         # Use JSON metrics from benchmark thread (includes HTTP timing measurement)
         json_metrics = {}
         if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
