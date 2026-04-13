@@ -10,9 +10,10 @@ import json
 from pathlib import Path
 from typing import Optional
 
-# ========== THEME STYLES ==========\
+# ========== THEME STYLES ==========
 DARK_THEME = """
 QMainWindow { background-color: #2d2d2d; }
+QDialog { background-color: #2d2d2d; }
 QFrame#PathsFrame { background-color: #3a3a3a; padding: 10px; border-radius: 5px; }
 QLabel#StatusLabel { color: #0078d7; font-weight: bold; padding: 10px; min-width: 200px; }
 QLabel#StatsLabel { color: #cccccc; padding: 10px; }
@@ -27,6 +28,7 @@ QScrollArea { background-color: #1e1e1e; border: none; }
 
 LIGHT_THEME = """
 QMainWindow { background-color: #f5f5f5; }
+QDialog { background-color: #ffffff; }
 QFrame#PathsFrame { background-color: #ffffff; padding: 10px; border-radius: 5px; }
 QLabel#StatusLabel { color: #0078d7; font-weight: bold; padding: 10px; min-width: 200px; }
 QLabel#StatsLabel { color: #333333; padding: 10px; }

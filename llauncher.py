@@ -334,6 +334,25 @@ class llauncher(QMainWindow):
                 self.stats_label.setStyleSheet("color: #333333; padding: 10px;")
             else:
                 self.stats_label.setStyleSheet("color: #cccccc; padding: 10px;")
+        
+        # Update progress bar colors to match theme
+        if hasattr(self, 'bench_progress_bar'):
+            bar_bg = "#e0e0e0" if use_light else "#2d2d2d"
+            chunk_start = "#4CAF50" if use_light else "#66bb6a"
+            chunk_end = "#8BC34A" if use_light else "#81c784"
+            self.bench_progress_bar.setStyleSheet(f"""
+                QProgressBar {{
+                    border: 1px solid #999999;
+                    border-radius: 4px;
+                    text-align: center;
+                    background: {bar_bg};
+                }}
+                QProgressBar::chunk {{
+                    background: qlineargradient(x1:0, y1:0.5, x2:1, y2:0.5,
+                                                stop:0 {chunk_start}, stop:1 {chunk_end});
+                    border-radius: 3px;
+                }}
+            """)
     
     def on_theme_toggled(self, state):
         """Handle theme checkbox toggle."""
