@@ -158,12 +158,8 @@ def build_llauncher_ui(window):
     window.light_theme_checkbox.setChecked(False)  # Default: dark theme
     window.light_theme_checkbox.stateChanged.connect(lambda state: window.on_theme_toggled(state))
     
-    settings_btn = QPushButton(gettext("btn_settings"))
-    settings_btn.clicked.connect(window.show_settings_dialog)
-    
     theme_layout.addStretch()
     theme_layout.addWidget(window.light_theme_checkbox)
-    theme_layout.addWidget(settings_btn)
     
     left_layout.addWidget(theme_frame)
 
@@ -519,6 +515,12 @@ def build_llauncher_ui(window):
     presets_layout.addWidget(window.cancel_bench_btn)
     presets_layout.addWidget(check_proc_btn)
     presets_layout.addWidget(load_args_btn)
+    
+    settings_btn = QPushButton(gettext("btn_settings"))
+    settings_btn.setToolTip(gettext("tooltip_settings"))
+    settings_btn.clicked.connect(window.show_settings_dialog)
+    presets_layout.addWidget(settings_btn)
+    
     presets_layout.addStretch()
 
     stats_presets_row.addWidget(window.stats_label)
