@@ -1130,24 +1130,60 @@ class llauncher(QMainWindow):
 
     def on_benchmark_finished(self, tps, token_count):
         """Handle benchmark completion."""
-        self.debug_text.append(f"\n[BENCHMARK FINISHED] TPS: {tps:.2f}, Tokens: {token_count}")
+        # Collect metrics from bench_thread if available
+        metrics = {}
+        if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
+            metrics = self.bench_thread._metrics
         
-        # Disable cancel button
-        if hasattr(self, 'cancel_bench_btn'):
-            self.cancel_bench_btn.setEnabled(False)
+        # Format all detailed information for the quality dialog
+        details_lines = [
+            f"✓ Preload time (time to first token): {metrics.get('preload_time', 0):.3f}s",
+            f"  → Server prompt eval: {metrics.get('prompt_eval_time', 'N/A')}",
+        ]
         
-        # Reset status
-        self.status_label.setText(gettext("status_ready"))
+        if metrics.get('inference_time'):
+            details_lines.append(f"✓ Total inference time: {metrics['inference_time']:.3f}s")
+            if metrics.get('eval_time'):
+                details_lines.append(f"  → Server generation: {metrics['eval_time']:.3f}s ({token_count} tokens)")
+            else:
+                details_lines.append(f"  → Server generation: not reported")
         
-         # Save benchmark result using preset_manager helper
+        details_lines.extend([
+            "",
+            "✓ Token counts:",
+            f"  → Generated: {token_count}",
+            f"  → Context/prefill: {metrics.get('prefill_tokens', 'N/A')}",
+            f"  → Total: {metrics.get('total_tokens', token_count)}",
+            "",
+            f"✓ Throughput: {tps:.2f} tokens/s",
+        ])
+        
+        if metrics.get('eval_time') and metrics.get('eval_time', 0) > 0:
+            server_tps = token_count / metrics['eval_time']
+            details_lines.append(f"  → Server TPS: {server_tps:.2f}")
+        
+        if hasattr(self, '_last_benchmark_command'):
+            details_lines.extend(["", f"Command: {self._last_benchmark_command}"])
+        
+        # Join all lines into a single formatted string
+        details = "\n".join(details_lines)
+        
+        # Pass detailed metrics to the dialog
         ask_quality_and_save_benchmark(
             self,
             self.debug_text,
             self.status_label,
             tps,
             token_count,
-            self._last_benchmark_command
+            self._last_benchmark_command,
+            details=details
         )
+        
+        # Disable cancel button and reset status after dialog closes
+        if hasattr(self, 'cancel_bench_btn'):
+            self.cancel_bench_btn.setEnabled(False)
+        self.status_label.setText(gettext("status_ready"))
+        
         # Progress bar stays visible - will be reset by check_existing_process()
     
     def on_benchmark_token_update(self, token_count: int):

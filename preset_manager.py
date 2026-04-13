@@ -347,15 +347,18 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
 
 
 def ask_quality_and_save_benchmark(window, debug_text, status_label, 
-                                   tps, token_count, full_command):
+                                    tps, token_count, full_command, **kwargs):
     """Fragt Qualitätsbewertung ab und speichert Benchmark.
     
     full_command: Vollständige Kommandozeile (z.B. "/home/user/llama.cpp/llama-server -m /home/user/models/model.gguf -c 2048 ...")
+    kwargs['details']: Formatted benchmark metrics string to display in dialog
     """
+    # Extract details from kwargs, default to None if not provided
+    details = kwargs.get('details', '')
     
     quality, ok = QInputDialog.getText(
         window, gettext("dialog_quality_title"),
-        gettext("msg_benchmark_complete").format(tps=tps, token_count=token_count) + "\n\n" + gettext("lbl_quality_input")
+        gettext("msg_benchmark_complete").format(details=details) + "\n\n" + gettext("lbl_quality_input")
     )
     if not ok or not quality:
         return None

@@ -43,6 +43,18 @@ class HTTPBenchmarkRunner(QThread):
         self._cancel_read, self._cancel_write = os.pipe()
         self._stream_buffer = ""
         self._context_content = ""  # Will be loaded in run()
+        
+        # Timing metrics for detailed reporting
+        self._metrics = {
+            "preload_time": None,      # Time until first token (prefill)
+            "inference_time": None,    # Total inference time
+            "generation_time": None,   # Time from first to last token
+            "prefill_tokens": None,    # Input/context tokens (if available)
+            "completion_tokens": None, # Generated tokens
+            "total_tokens": None,      # Prefill + completion
+            "prompt_eval_time": None,  # Server-reported prompt eval time
+            "eval_time": None,         # Server-reported evaluation time
+        }
     
     def cancel(self):
         if self._cancelled:
@@ -184,24 +196,69 @@ class HTTPBenchmarkRunner(QThread):
         import urllib.request, urllib.error, json
         
         try:
+            start_time = time.time()
+            request_start = start_time
+            
             data_json = json.dumps(data).encode('utf-8')
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
             
-            start_time = time.time()
             with urllib.request.urlopen(req, timeout=300) as response:
+                # First token arrival (preload/prefill time)
+                preload_start = time.time() - request_start
+                
                 result = json.loads(response.read().decode('utf-8'))
-            latency = time.time() - start_time
+            
+            inference_end = time.time()
+            total_inference_time = inference_end - request_start
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
                 cleaned_text = self._clean_text_for_display(text)
-                # Use usage from server if available, else fallback to char-based heuristic
+                
+                # Use server-provided token counts when available (from llama.cpp server)
                 usage = result.get('usage', {})
-                token_count = usage.get('completion_tokens', len(text) // 4 if text else 0)
-                tps = token_count / latency if latency > 0 else 0
+                prompt_eval_tokens = usage.get('prompt_tokens', 0)  # Input/context tokens
+                completion_tokens = usage.get('completion_tokens', len(text) // 4 if text else 0)  # Generated tokens
+                total_tokens = prompt_eval_tokens + completion_tokens
+                
+                # Capture server-reported timing (llama.cpp provides this in usage)
+                prompt_eval_time = usage.get('prompt_eval_time')  # Already in ms from llama.cpp
+                eval_time = usage.get('eval_time')  # Already in ms from llama.cpp
+                
+                self._metrics.update({
+                    "preload_time": preload_start,
+                    "inference_time": total_inference_time,
+                    "generation_time": None,  # Not applicable for non-streaming (all tokens at once)
+                    "prefill_tokens": prompt_eval_tokens if prompt_eval_tokens else completion_tokens // 4,  # Fallback heuristic
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "prompt_eval_time": prompt_eval_time / 1000 if prompt_eval_time else None,  # Convert to seconds
+                    "eval_time": eval_time / 1000 if eval_time else None,  # Convert to seconds
+                })
+                
+                # Calculate TPS based on generated tokens only
+                generation_time = total_inference_time if not self._metrics["generation_time"] else self._metrics["generation_time"]
+                tps = completion_tokens / generation_time if generation_time > 0 and completion_tokens > 0 else 0
+                
+                # Emit detailed metrics to UI
+                self.output_signal.emit(f"\n[DETAILED BENCHMARK METRICS]\n")
+                self.output_signal.emit(f"✓ Preload time (time to first token): {self._metrics['preload_time']:.3f}s\n")
+                if self._metrics["prompt_eval_time"]:
+                    self.output_signal.emit(f"  → Server prompt eval: {self._metrics['prompt_eval_time']:.3f}s ({prompt_eval_tokens} tokens)\n")
+                else:
+                    self.output_signal.emit(f"  → Server prompt eval: not reported, using heuristic ({prompt_eval_tokens if prompt_eval_tokens else 'N/A'} tokens)\n")
+                self.output_signal.emit(f"✓ Inference time (total): {self._metrics['inference_time']:.3f}s\n")
+                if self._metrics["eval_time"]:
+                    self.output_signal.emit(f"  → Server generation: {self._metrics['eval_time']:.3f}s ({completion_tokens} tokens)\n")
+                else:
+                    self.output_signal.emit(f"  → Server generation: not reported\n")
+                self.output_signal.emit(f"✓ Generated tokens: {completion_tokens}\n")
+                self.output_signal.emit(f"  → Context/prefill: {self._metrics['prefill_tokens']}\n")
+                self.output_signal.emit(f"  → Total tokens: {total_tokens}\n")
+                self.output_signal.emit(f"✓ TPS (generated): {tps:.2f}\n")
                 
                 self.output_signal.emit(cleaned_text)
-                self.finished_signal.emit(tps, token_count)
+                self.finished_signal.emit(tps, completion_tokens)
             else:
                 self.output_signal.emit("No choices in response\n")
                 self.finished_signal.emit(0, 0)
@@ -217,12 +274,14 @@ class HTTPBenchmarkRunner(QThread):
         import urllib.request, json
         
         try:
+            request_start = time.time()
+            start_time = request_start
+            token_count = 0
+            last_token_time = request_start
+            first_token_time = None
+            
             data_json = json.dumps(data).encode('utf-8')
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
-            
-            start_time = time.time()
-            token_count = 0
-            last_token_time = time.time()
             
             with urllib.request.urlopen(req, timeout=300) as response:
                 for line in response:
@@ -242,11 +301,20 @@ class HTTPBenchmarkRunner(QThread):
                         text = json_data.get('choices', [{}])[0].get('text', '')
                         
                         if text:
+                            # First token arrival (preload/prefill time)
+                            if first_token_time is None:
+                                first_token_time = time.time() - request_start
+                            
                             # Accumulate full response text to count tokens correctly at the end
                             self._stream_buffer += text
                             cleaned = self._clean_text_for_display(text)
                             
-                            # Estimate token count for progress bar (4 chars ≈ 1 token)
+                            # Track generation time
+                            current_time = time.time() - request_start
+                            if self._metrics["generation_time"] is None or current_time < self._metrics["generation_time"]:
+                                self._metrics["generation_time"] = current_time - first_token_time if first_token_time else current_time
+                            
+                            # Update token count for progress bar (4 chars ≈ 1 token)
                             estimated_tokens = len(self._stream_buffer) // 4
                             self.token_update_signal.emit(estimated_tokens)
                             
@@ -255,7 +323,7 @@ class HTTPBenchmarkRunner(QThread):
                                 elapsed = now - start_time
                                 if elapsed > 0:
                                     # We don't calculate TPS here yet; we do it at the end with total count
-                                    self.status_signal.emit(f"[Streaming...]\n")
+                                    self.status_signal.emit(f"[Streaming...]")
                                 last_token_time = now
                             
                             # Emit cleaned chunks for live viewing
@@ -264,22 +332,66 @@ class HTTPBenchmarkRunner(QThread):
                     except json.JSONDecodeError:
                         continue
             
-           # After streaming loop
+            # After streaming loop
+            inference_end = time.time() - request_start
+            if not self._metrics["inference_time"]:
+                self._metrics["inference_time"] = inference_end
+            else:
+                self._metrics["inference_time"] = min(self._metrics["inference_time"], inference_end)  # Keep faster measurement
+            
             if self._stream_buffer:
                 # Accumulate final full text for counting
                 full_text = self._stream_buffer
                 self._stream_buffer = ""
             else:
                 full_text = ""
-
-            latency = time.time() - start_time
             
             # Count tokens from the complete accumulated response
             # Use a heuristic (len // 4) as a fallback if no server-side usage provided
             token_count = len(full_text) // 4 if full_text else 0
-            tps = token_count / latency if latency > 0 else 0
             
-            self.status_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}\n")
+            # Calculate TPS based on generated tokens and generation time
+            generation_time = self._metrics["generation_time"] or inference_end
+            tps = token_count / generation_time if generation_time > 0 else 0
+            
+            # Also check for server-side usage info in SSE stream (llama.cpp may send it)
+            # Look for "usage" fields in the last JSON data chunk
+            try:
+                json_data = json.loads(data_line if 'data_line' in locals() else '{}')
+                if 'choices' in json_data and len(json_data['choices']) > 0:
+                    choice = json_data['choices'][0]
+                    usage = choice.get('usage', {})
+                    
+                    # Update metrics with server-provided data
+                    if usage.get('completion_tokens'):
+                        token_count = usage['completion_tokens']
+                    
+                    if usage.get('prompt_tokens'):
+                        self._metrics["prefill_tokens"] = usage['prompt_tokens']
+                    
+                    if usage.get('prompt_eval_time'):
+                        self._metrics["prompt_eval_time"] = usage['prompt_eval_time'] / 1000  # Convert ms to s
+                    
+                    if usage.get('eval_time'):
+                        self._metrics["eval_time"] = usage['eval_time'] / 1000  # Convert ms to s
+                    
+                    # Recalculate TPS with server-provided tokens
+                    generation_time = self._metrics["generation_time"] or inference_end
+                    tps = token_count / generation_time if generation_time > 0 else 0
+                    
+            except (json.JSONDecodeError, KeyError):
+                pass  # Continue with local estimation
+            
+            # Update metrics
+            self._metrics.update({
+                "preload_time": first_token_time,
+                "inference_time": inference_end,
+                "generation_time": self._metrics["generation_time"] or inference_end,
+                "completion_tokens": token_count,
+                "total_tokens": self._metrics["prefill_tokens"] + token_count if self._metrics["prefill_tokens"] else token_count,
+            })
+            
+            self.status_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}")
             self.finished_signal.emit(tps, token_count)
             
         except urllib.error.URLError as e:
