@@ -384,9 +384,33 @@ class llauncher(QMainWindow):
             use_light = False
             lang = "en"
         
+        def reload_language(new_lang):
+                """Callback to reload language immediately."""
+                from i18n import I18nManager, gettext
+                I18nManager.get_instance().reload(new_lang)
+                self.status_label.setText(gettext("status_ready"))
+        
         dialog = SettingsDialog(self, use_light, lang)
         if dialog.exec() == 1:  # QDialog.DialogCode.Accepted
             new_light, new_lang = dialog.get_settings()
+            
+            # Save settings to config
+            try:
+                with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                    config = json.load(f)
+                config["theme"] = "light" if new_light else "dark"
+                config["language"] = new_lang
+                with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception:
+                pass  # Config-Saving-Fehler ignoriert
+            
+            # Restart app if language changed (to load new language from config)
+            if dialog.restart_on_language_change:
+                self.close()
+                import os
+                import sys
+                os.execlp(sys.executable, sys.executable, *sys.argv[1:])
             
             # Apply theme
             self.apply_theme(new_light)
