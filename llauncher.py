@@ -1202,10 +1202,11 @@ class llauncher(QMainWindow):
             avg_tps = total_tokens / total_t if total_t > 0 else 0
             details_lines.append(f"✓ Total time:         {total_t:.3f}s / {total_tokens} tokens ({avg_ms:.2f} ms/token, {avg_tps:.2f} TPS)\n")
         
+        # Join lines before using in debug output
+        details = "\n".join(details_lines) if details_lines else "No metrics available"
+        
         # Debug output for troubleshooting
         self.debug_text.append(f"\n[DEBUG DIALOG DETAILS]\n{details}\n\n[DEBUG JSON METRICS]\n{json_metrics}")
-        
-        details = "\n".join(details_lines) if details_lines else "No metrics available"
         
         # Pass detailed metrics to the dialog
         ask_quality_and_save_benchmark(
