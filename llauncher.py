@@ -697,12 +697,31 @@ class llauncher(QMainWindow):
         self.model_combo.clear()
         models = self.find_models()
         for model in models:
+            # Get file size via stat (cheaper than full GGUF parse)
             try:
-                size = model.stat().st_size
-                size_str = self._format_file_size(size)
-                self.model_combo.addItem(f"{model.name} ({size_str})")
-            except OSError:
-                self.model_combo.addItem(model.name)
+                file_size = model.stat().st_size
+                size_str = f" ({format_size(file_size)})"
+            except Exception:
+                size_str = ""
+            # Display name + size, but only store the base name for presets
+            display_text = f"{model.name}{size_str}"
+            self.model_combo.addItem(display_text)
+            # Store clean filename as user data (for preset saving/loading)
+            self.model_combo.setItemData(self.model_combo.count() - 1, model.name, role=Qt.ItemDataRole.UserRole)
+
+    def on_model_selected_from_index(self, idx: int):
+        """Handle model selection by index to get clean filename from UserRole."""
+        if idx < 0:
+            return
+        # Get clean filename from UserRole (not display text with size)
+        model_name = self.model_combo.itemData(idx, role=Qt.ItemDataRole.UserRole)
+        if not model_name:
+            model_name = self.model_combo.currentText()
+            # Fallback: strip size suffix if present
+            if '(' in model_name:
+                model_name = model_name.split('(')[0].strip()
+        
+        self.on_model_selected(model_name)
 
     def on_model_selected(self, name: str):
         model_path = (Path(self.model_directory) / name).resolve()

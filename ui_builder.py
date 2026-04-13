@@ -134,7 +134,7 @@ def build_llauncher_ui(window):
     
     window.model_combo = QComboBox()
     window.update_model_dropdown()
-    window.model_combo.currentTextChanged.connect(window.on_model_selected)
+    window.model_combo.currentIndexChanged.connect(lambda idx: window.on_model_selected_from_index(idx))
     
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
