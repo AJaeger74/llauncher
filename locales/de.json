@@ -126,5 +126,18 @@
   "btn_save_settings": "Einstellungen speichern",
   "btn_settings": "Einstellungen",
   "tooltip_settings": "Einstellungen für Design und Sprache öffnen",
-  "msg_model_selected": "Modell ausgewählt"
+  "msg_model_selected": "Modell ausgewählt",
+  "debug_model_name": "Name:",
+  "debug_model_architecture": "Architektur:",
+  "debug_model_tags": "Tags:",
+  "debug_model_url": "URL:",
+  "debug_model_size": "Dateigröße:",
+  "debug_gguf_version": "GGUF-Version:",
+  "debug_tensor_count": "Tensor-Anzahl:",
+  "debug_context_length": "Kontext-Länge:",
+  "debug_embedding_length": "Embedding-Länge:",
+  "debug_block_count": "Block-Anzahl:",
+  "msg_model_info_read_error": "Konnte Modell-Info nicht lesen: {error}",
+  "msg_unavailable": "nicht verfügbar",
+  "msg_not_found": "nicht gefunden"
 }

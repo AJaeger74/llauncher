@@ -815,32 +815,32 @@ class llauncher(QMainWindow):
                 self.debug_text.append("─" * 60)
                 self.debug_text.append(f"📦 {t('msg_model_selected')}: {info['filename']}")
                 self.debug_text.append("─" * 60)
-                self.debug_text.append(f"  Name:             {name or 'unbekannt'}")
-                self.debug_text.append(f"  Architektur:      {arch}")
+                self.debug_text.append(f"  {t('debug_model_name')}             {name or t('msg_unavailable')}")
+                self.debug_text.append(f"  {t('debug_model_architecture')}      {arch}")
                 
                 if info.get('tags'):
                     tags_str = ", ".join(str(t) for t in info['tags'][:5])
                     if len(info['tags']) > 5:
                         tags_str += f" (+{len(info['tags']) - 5} more)"
-                    self.debug_text.append(f"  Tags:             {tags_str}")
+                    self.debug_text.append(f"  {t('debug_model_tags')}             {tags_str}")
                 
                 if info.get('url'):
                     short_url = info['url'][:50] + "..." if len(info['url']) > 50 else info['url']
-                    self.debug_text.append(f"  URL:              {short_url}")
+                    self.debug_text.append(f"  {t('debug_model_url')}              {short_url}")
                 
-                self.debug_text.append(f"  Dateigröße:       {format_size(info['file_size'])}")
-                self.debug_text.append(f"  GGUF-Version:     v{info['version']}")
-                self.debug_text.append(f"  Tensor-Count:     {info['tensor_count']:,}")
-                self.debug_text.append(f"  Kontext-Length:   {info['context_length'] or 'nicht gefunden'}")
+                self.debug_text.append(f"  {t('debug_model_size')}       {format_size(info['file_size'])}")
+                self.debug_text.append(f"  {t('debug_gguf_version')}     v{info['version']}")
+                self.debug_text.append(f"  {t('debug_tensor_count')}     {info['tensor_count']:,}")
+                self.debug_text.append(f"  {t('debug_context_length')}   {info['context_length'] or t('msg_not_found')}")
                 
                 if info.get('embedding_length'):
-                    self.debug_text.append(f"  Embedding-Länge:  {info['embedding_length']}")
+                    self.debug_text.append(f"  {t('debug_embedding_length')}  {info['embedding_length']}")
                 if info.get('block_count'):
-                    self.debug_text.append(f"  Block-Count:      {info['block_count']}")
+                    self.debug_text.append(f"  {t('debug_block_count')}      {info['block_count']}")
                 
                 self.debug_text.append("─" * 60)
             except Exception as e:
-                self.debug_text.append(f"⚠️ Konnte Modell-Info nicht lesen: {e}")
+                self.debug_text.append(f"⚠️ {t('msg_model_info_read_error', error=e)}")
         
         # ctx_size Slider Maximum aus GGUF-Datei lesen
         if model_path.exists() and model_path.is_file():

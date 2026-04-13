@@ -127,5 +127,18 @@
   "btn_save_settings": "Save Settings",
   "btn_settings": "Settings",
   "tooltip_settings": "Open settings for theme and language",
-  "msg_model_selected": "Model selected"
+  "msg_model_selected": "Model selected",
+  "debug_model_name": "Name:",
+  "debug_model_architecture": "Architecture:",
+  "debug_model_tags": "Tags:",
+  "debug_model_url": "URL:",
+  "debug_model_size": "File size:",
+  "debug_gguf_version": "GGUF version:",
+  "debug_tensor_count": "Tensor count:",
+  "debug_context_length": "Context length:",
+  "debug_embedding_length": "Embedding length:",
+  "debug_block_count": "Block count:",
+  "msg_model_info_read_error": "Could not read model info: {error}",
+  "msg_unavailable": "unavailable",
+  "msg_not_found": "not found"
 }
