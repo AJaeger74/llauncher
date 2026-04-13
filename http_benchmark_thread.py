@@ -221,19 +221,26 @@ class HTTPBenchmarkRunner(QThread):
                 completion_tokens = usage.get('completion_tokens', len(text) // 4 if text else 0)  # Generated tokens
                 total_tokens = prompt_eval_tokens + completion_tokens
                 
-                # Capture server-reported timing (llama.cpp provides this in usage)
-                prompt_eval_time = usage.get('prompt_eval_time')  # Already in ms from llama.cpp
-                eval_time = usage.get('eval_time')  # Already in ms from llama.cpp
+                # Server-reported timing (llama.cpp provides this in usage, already in ms)
+                prompt_eval_time_ms = usage.get('prompt_eval_time')  # Prefill time
+                eval_time_ms = usage.get('eval_time')  # Generation time
+                
+                # Calculate server-side times (convert ms to seconds)
+                server_prefill_time = prompt_eval_time_ms / 1000 if prompt_eval_time_ms else None
+                server_gen_time = eval_time_ms / 1000 if eval_time_ms else None
                 
                 self._metrics.update({
-                    "preload_time": preload_start,
-                    "inference_time": total_inference_time,
-                    "generation_time": None,  # Not applicable for non-streaming (all tokens at once)
-                    "prefill_tokens": prompt_eval_tokens if prompt_eval_tokens else completion_tokens // 4,  # Fallback heuristic
+                    # Use server-reported prefill time (time to process prompt before first token)
+                    "preload_time": server_prefill_time,
+                    # Total generation time from server
+                    "generation_time": server_gen_time,
+                    # HTTP request latency as fallback for total time
+                    "inference_time": total_inference_time if not server_gen_time else (server_prefill_time + server_gen_time),
+                    "prefill_tokens": prompt_eval_tokens if prompt_eval_tokens else completion_tokens // 4,
                     "completion_tokens": completion_tokens,
                     "total_tokens": total_tokens,
-                    "prompt_eval_time": prompt_eval_time / 1000 if prompt_eval_time else None,  # Convert to seconds
-                    "eval_time": eval_time / 1000 if eval_time else None,  # Convert to seconds
+                    "prompt_eval_time": server_prefill_time,
+                    "eval_time": server_gen_time,
                 })
                 
                 # Calculate TPS based on generated tokens only

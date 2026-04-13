@@ -1137,16 +1137,19 @@ class llauncher(QMainWindow):
         
         # Format all detailed information for the quality dialog
         details_lines = [
-            f"✓ Preload time (time to first token): {metrics.get('preload_time', 0):.3f}s",
-            f"  → Server prompt eval: {metrics.get('prompt_eval_time', 'N/A')}",
+            f"✓ Server prefill time: {metrics.get('prompt_eval_time', 0):.3f}s ({metrics.get('prefill_tokens', 'N/A')} tokens)",
+            f"  → Server generation: {metrics.get('eval_time', 'N/A')}",
         ]
         
+        if metrics.get('generation_time'):
+            details_lines.append(f"  → Server gen time: {metrics['generation_time']:.3f}s ({token_count} tokens)")
+        elif metrics.get('eval_time'):
+            details_lines.append(f"  → Server gen time: {metrics['eval_time']:.3f}s ({token_count} tokens)")
+        else:
+            details_lines.append(f"  → Server gen time: not reported")
+        
         if metrics.get('inference_time'):
-            details_lines.append(f"✓ Total inference time: {metrics['inference_time']:.3f}s")
-            if metrics.get('eval_time'):
-                details_lines.append(f"  → Server generation: {metrics['eval_time']:.3f}s ({token_count} tokens)")
-            else:
-                details_lines.append(f"  → Server generation: not reported")
+            details_lines.insert(-2, f"✓ Total HTTP request time: {metrics['inference_time']:.3f}s")
         
         details_lines.extend([
             "",
