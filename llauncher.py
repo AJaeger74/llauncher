@@ -1137,7 +1137,7 @@ class llauncher(QMainWindow):
         if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
             json_metrics = self.bench_thread._metrics
         
-        # Also parse server logs from debug text for accurate timing
+   # Parse server logs from debug text for accurate timing
         server_log_metrics = {}
         try:
             debug_text = self.debug_text.toPlainText()
@@ -1162,48 +1162,66 @@ class llauncher(QMainWindow):
         except Exception as e:
             self.debug_text.append(f"Warning: Failed to parse server logs: {e}\n")
         
-        # Prefer server log metrics over JSON metrics (more accurate)
-        if server_log_metrics.get('eval_time_ms'):
-            json_metrics['eval_time'] = server_log_metrics['eval_time_ms'] / 1000
-        
-        if server_log_metrics.get('prompt_eval_time_ms'):
-            json_metrics['prompt_eval_time'] = server_log_metrics['prompt_eval_time_ms'] / 1000
-        
-        if server_log_metrics.get('prefill_tokens'):
-            json_metrics['prefill_tokens'] = server_log_metrics['prefill_tokens']
-        
-        if server_log_metrics.get('total_time_ms'):
-            json_metrics['total_time'] = server_log_metrics['total_time_ms'] / 1000
-        
-        if server_log_metrics.get('total_tokens'):
-            json_metrics['total_tokens'] = server_log_metrics['total_tokens']
+        # Use JSON metrics from benchmark thread (includes HTTP timing measurement)
+        json_metrics = {}
+        if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
+            json_metrics = self.bench_thread._metrics.copy()
         
         # Initialize details list
         details_lines = []
         
-         # Prompt eval (prefill)
-        if json_metrics.get('prompt_eval_time'):
-            pe_t = json_metrics['prompt_eval_time'] * 1000  # Convert to ms
-            pe_tokens = json_metrics.get('prefill_tokens', 0)
+         # Prefer server log metrics when available, otherwise use measured JSON metrics
+        # Server logs give actual llama.cpp timings; JSON gives HTTP request times
+        display_metrics = {}
+        
+        if server_log_metrics.get('eval_time_ms'):
+            display_metrics['eval_time'] = server_log_metrics['eval_time_ms'] / 1000
+        
+        if server_log_metrics.get('prompt_eval_time_ms'):
+            display_metrics['prompt_eval_time'] = server_log_metrics['prompt_eval_time_ms'] / 1000
+        elif json_metrics.get('prompt_eval_time'):
+            display_metrics['prompt_eval_time'] = json_metrics['prompt_eval_time']
+        
+        if server_log_metrics.get('prefill_tokens'):
+            display_metrics['prefill_tokens'] = server_log_metrics['prefill_tokens']
+        elif json_metrics.get('prefill_tokens'):
+            display_metrics['prefill_tokens'] = json_metrics['prefill_tokens']
+        
+        if server_log_metrics.get('total_time_ms'):
+            display_metrics['total_time'] = server_log_metrics['total_time_ms'] / 1000
+        else:
+            # Fall back to measured HTTP timing
+            display_metrics['total_time'] = json_metrics.get('total_time')
+        
+        if server_log_metrics.get('total_tokens'):
+            display_metrics['total_tokens'] = server_log_metrics['total_tokens']
+        elif json_metrics.get('total_tokens'):
+            display_metrics['total_tokens'] = json_metrics['total_tokens']
+        
+        # Prompt eval (prefill)
+        if display_metrics.get('prompt_eval_time'):
+            pe_t = display_metrics['prompt_eval_time'] * 1000  # Convert to ms
+            pe_tokens = display_metrics.get('prefill_tokens', 0)
             pe_per_token = (pe_t / pe_tokens if pe_tokens > 0 else 0) * 1000  # ms/token
             pe_tps = (pe_tokens / pe_t if pe_t > 0 else 0)
             details_lines.append(f"✓ Prompt eval time:   {pe_t/1000:.3f}s / {pe_tokens} tokens ({pe_per_token:.2f} ms/token, {pe_tps:.2f} TPS)")
         
         # Generation time
-        if json_metrics.get('eval_time'):
-            gen_t = json_metrics['eval_time'] * 1000  # Convert to ms
+        if display_metrics.get('eval_time'):
+            gen_t = display_metrics['eval_time'] * 1000  # Convert to ms
             gen_tokens = token_count
             gen_per_token = (gen_t / gen_tokens if gen_tokens > 0 else 0) * 1000  # ms/token
             gen_tps = (gen_tokens / gen_t if gen_t > 0 else 0)
             details_lines.append(f"✓ Generation time:    {gen_t/1000:.3f}s / {gen_tokens} tokens ({gen_per_token:.2f} ms/token, {gen_tps:.2f} TPS)")
         
-        # Total
-        if json_metrics.get('total_time') and json_metrics.get('total_tokens'):
-            total_t = json_metrics['total_time']
-            total_tokens = json_metrics['total_tokens']
-            avg_ms = (total_t * 1000) / total_tokens if total_tokens > 0 else 0
-            avg_tps = total_tokens / total_t if total_t > 0 else 0
-            details_lines.append(f"✓ Total time:         {total_t:.3f}s / {total_tokens} tokens ({avg_ms:.2f} ms/token, {avg_tps:.2f} TPS)\n")
+        # Total - prefer server log total_time, fallback to JSON measured HTTP timing
+        display_total_tokens = display_metrics.get('total_tokens', token_count)
+        if display_metrics.get('total_time'):
+            total_t = display_metrics['total_time']
+            avg_ms = (total_t * 1000) / display_total_tokens if display_total_tokens > 0 else 0
+            avg_tps = display_total_tokens / total_t if total_t > 0 else 0
+            source = "server log" if server_log_metrics.get('total_time_ms') else "measured"
+            details_lines.append(f"✓ Total time:         {total_t:.3f}s / {display_total_tokens} tokens ({avg_ms:.2f} ms/token, {avg_tps:.2f} TPS) [{source}]\n")
         
         # Join lines before using in debug output
         details = "\n".join(details_lines) if details_lines else "No metrics available"
