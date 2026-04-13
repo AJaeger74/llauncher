@@ -355,22 +355,6 @@ class llauncher(QMainWindow):
                 }}
             """)
     
-    def on_theme_toggled(self, state):
-        """Handle theme checkbox toggle."""
-        use_light = state == 2  # Qt.CheckState.Checked.value
-        self.apply_theme(use_light)
-        
-        # Save theme preference to config
-        try:
-            with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
-                import json
-                config = json.load(f)
-            config["theme"] = "light" if use_light else "dark"
-            with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
-                json.dump(config, f, indent=2)
-        except Exception:
-            pass  # Non-fatal
-    
     def show_settings_dialog(self):
         """Show settings dialog for theme and language."""
         # Get current config
@@ -1796,8 +1780,6 @@ class llauncher(QMainWindow):
             
             # Theme loading
             self.light_theme = config.get("theme") == "light"
-            if hasattr(self, 'light_theme_checkbox'):
-                self.light_theme_checkbox.setChecked(self.light_theme)
             
             if exe_path and Path(exe_path).exists():
                 self.llama_cpp_path = exe_path

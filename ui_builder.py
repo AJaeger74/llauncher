@@ -145,23 +145,7 @@ def build_llauncher_ui(window):
     paths_layout.addRow(gettext("lbl_mmproj_vision"), window.mmproj_line)
     
     left_layout.addWidget(paths_frame)
-    
-    # ========== THEME TOGGLE ==========\
-    theme_frame = QFrame()
-    theme_frame.setFixedHeight(40)
-    theme_layout = QHBoxLayout(theme_frame)
-    theme_layout.setContentsMargins(0, 0, 0, 0)
-    theme_layout.setSpacing(10)
-    
-    window.light_theme_checkbox = QCheckBox(gettext("lbl_light_theme"))
-    window.light_theme_checkbox.setChecked(False)  # Default: dark theme
-    window.light_theme_checkbox.stateChanged.connect(lambda state: window.on_theme_toggled(state))
-    
-    theme_layout.addStretch()
-    theme_layout.addWidget(window.light_theme_checkbox)
-    
-    left_layout.addWidget(theme_frame)
-
+ 
   # Parameter Sliders Section
     params_scroll = QScrollArea()
     params_scroll.setWidgetResizable(True)
@@ -452,6 +436,7 @@ def build_llauncher_ui(window):
     window.status_label.setMinimumWidth(200)
 
     window.start_stop_btn = QPushButton(gettext("btn_start"))
+    window.start_stop_btn.setObjectName("start_stop_btn")
     window.start_stop_btn.clicked.connect(window.toggle_process)
     window.start_stop_btn.setMinimumHeight(40)
     window.start_stop_btn.setStyleSheet("font-size: 16px; padding: 10px;")

@@ -104,7 +104,6 @@
   "msg_preset_saved_title": "Preset saved!",
   "lbl_models_label": "Models:",
   "lbl_exe_label": "llama.cpp:",
-  "lbl_light_theme": "Light Theme",
   "msg_select_preset": "Select a preset:",
   "btn_load": "Load",
   "btn_cancel": "Cancel",
