@@ -31,6 +31,7 @@ from preset_manager import (
     show_preset_args as preset_show_args,
     ask_quality_and_save_benchmark,
 )
+from settings_dialog import SettingsDialog
 from float_slider_sync import DirectClickSlider
 from ui_builder import build_llauncher_ui, setup_timers_and_load
 
@@ -369,6 +370,37 @@ class llauncher(QMainWindow):
                 json.dump(config, f, indent=2)
         except Exception:
             pass  # Non-fatal
+    
+    def show_settings_dialog(self):
+        """Show settings dialog for theme and language."""
+        # Get current config
+        try:
+            with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                import json
+                config = json.load(f)
+            use_light = config.get("theme") == "light"
+            lang = config.get("language", "en")
+        except Exception:
+            use_light = False
+            lang = "en"
+        
+        dialog = SettingsDialog(self, use_light, lang)
+        if dialog.exec() == 1:  # QDialog.DialogCode.Accepted
+            new_light, new_lang = dialog.get_settings()
+            
+            # Apply theme
+            self.apply_theme(new_light)
+            
+            # Save settings
+            try:
+                with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                    config = json.load(f)
+                config["theme"] = "light" if new_light else "dark"
+                config["language"] = new_lang
+                with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception:
+                pass
     
     def on_check_process_click(self):
         """Ruft check_running_processes() auf und zeigt Output im Debug-Fenster."""

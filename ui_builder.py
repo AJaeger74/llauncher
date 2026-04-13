@@ -158,8 +158,12 @@ def build_llauncher_ui(window):
     window.light_theme_checkbox.setChecked(False)  # Default: dark theme
     window.light_theme_checkbox.stateChanged.connect(lambda state: window.on_theme_toggled(state))
     
+    settings_btn = QPushButton(gettext("btn_settings"))
+    settings_btn.clicked.connect(window.show_settings_dialog)
+    
     theme_layout.addStretch()
     theme_layout.addWidget(window.light_theme_checkbox)
+    theme_layout.addWidget(settings_btn)
     
     left_layout.addWidget(theme_frame)
 

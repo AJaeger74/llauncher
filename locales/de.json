@@ -117,5 +117,11 @@
   "tooltip_all_layers": "Alle GPU-Layer laden (so viele wie möglich)",
   "tooltip_load_process_args": "Parameter des laufenden llama-server in die App laden\nUnverwaltete Parameter werden separat angezeigt",
   "msg_export_success_title": "Export erfolgreich",
-  "msg_benchmark_exported_body": "Benchmark-Ergebnisse exportiert nach:\n{path}"
+  "msg_benchmark_exported_body": "Benchmark-Ergebnisse exportiert nach:\n{path}",
+  "settings_title": "Einstellungen",
+  "lbl_theme_setting": "Design:",
+  "theme_dark": "Dunkel",
+  "theme_light": "Hell",
+  "lbl_language_setting": "Sprache:",
+  "btn_save_settings": "Einstellungen speichern"
 }
