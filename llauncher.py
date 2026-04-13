@@ -697,7 +697,12 @@ class llauncher(QMainWindow):
         self.model_combo.clear()
         models = self.find_models()
         for model in models:
-            self.model_combo.addItem(model.name)
+            try:
+                size = model.stat().st_size
+                size_str = self._format_file_size(size)
+                self.model_combo.addItem(f"{model.name} ({size_str})")
+            except OSError:
+                self.model_combo.addItem(model.name)
 
     def on_model_selected(self, name: str):
         model_path = (Path(self.model_directory) / name).resolve()
