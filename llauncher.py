@@ -1135,43 +1135,34 @@ class llauncher(QMainWindow):
         if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
             metrics = self.bench_thread._metrics
         
-        # Format all detailed information for the quality dialog
+        # Format output like llama.cpp: "eval time = X ms / Y tokens (Z ms/token, W TPS)"
         details_lines = []
         
-        pref_time = metrics.get('prompt_eval_time')
-        if pref_time is not None:
-            details_lines.append(f"✓ Server prefill time: {pref_time:.3f}s ({metrics.get('prefill_tokens', 'N/A')} tokens)")
-        else:
-            details_lines.append("✓ Server prefill time: not reported")
+        # Prompt eval (prefill)
+        if metrics.get('prompt_eval_time'):
+            pe_t = metrics['prompt_eval_time'] * 1000  # Convert to ms
+            pe_tokens = metrics.get('prefill_tokens', 0)
+            pe_per_token = (pe_t / pe_tokens if pe_tokens > 0 else 0) * 1000  # ms/token
+            pe_tps = (pe_tokens / pe_t if pe_t > 0 else 0)
+            details_lines.append(f"✓ Prompt eval time:   {pe_t/1000:.3f}s / {pe_tokens} tokens ({pe_per_token:.2f} ms/token, {pe_tps:.2f} TPS)")
         
-        gen_time = metrics.get('eval_time')
-        if gen_time is not None:
-            details_lines.append(f"  → Server gen time: {gen_time:.3f}s ({token_count} tokens)")
-        else:
-            details_lines.append("  → Server gen time: not reported")
+        # Generation time
+        if metrics.get('eval_time'):
+            gen_t = metrics['eval_time'] * 1000  # Convert to ms
+            gen_tokens = token_count
+            gen_per_token = (gen_t / gen_tokens if gen_tokens > 0 else 0) * 1000  # ms/token
+            gen_tps = (gen_tokens / gen_t if gen_t > 0 else 0)
+            details_lines.append(f"✓ Generation time:    {gen_t/1000:.3f}s / {gen_tokens} tokens ({gen_per_token:.2f} ms/token, {gen_tps:.2f} TPS)")
         
-        if metrics.get('inference_time'):
-            details_lines.insert(-2, f"✓ Total HTTP request time: {metrics['inference_time']:.3f}s")
+        # Total
+        if metrics.get('total_time') and metrics.get('total_tokens'):
+            total_t = metrics['total_time']
+            total_tokens = metrics['total_tokens']
+            avg_ms = (total_t * 1000) / total_tokens if total_tokens > 0 else 0
+            avg_tps = total_tokens / total_t if total_t > 0 else 0
+            details_lines.append(f"✓ Total time:         {total_t:.3f}s / {total_tokens} tokens ({avg_ms:.2f} ms/token, {avg_tps:.2f} TPS)\n")
         
-        details_lines.extend([
-            "",
-            "✓ Token counts:",
-            f"  → Generated: {token_count}",
-            f"  → Context/prefill: {metrics.get('prefill_tokens', 'N/A')}",
-            f"  → Total: {metrics.get('total_tokens', token_count)}",
-            "",
-            f"✓ Throughput: {tps:.2f} tokens/s",
-        ])
-        
-        if metrics.get('eval_time') and metrics.get('eval_time', 0) > 0:
-            server_tps = token_count / metrics['eval_time']
-            details_lines.append(f"  → Server TPS: {server_tps:.2f}")
-        
-        if hasattr(self, '_last_benchmark_command'):
-            details_lines.extend(["", f"Command: {self._last_benchmark_command}"])
-        
-        # Join all lines into a single formatted string
-        details = "\n".join(details_lines)
+        details = "\n".join(details_lines) if details_lines else "No metrics available"
         
         # Pass detailed metrics to the dialog
         ask_quality_and_save_benchmark(

@@ -197,72 +197,51 @@ class HTTPBenchmarkRunner(QThread):
         
         try:
             start_time = time.time()
-            request_start = start_time
             
             data_json = json.dumps(data).encode('utf-8')
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
             
             with urllib.request.urlopen(req, timeout=300) as response:
-                # First token arrival (preload/prefill time)
-                preload_start = time.time() - request_start
-                
                 result = json.loads(response.read().decode('utf-8'))
             
-            inference_end = time.time()
-            total_inference_time = inference_end - request_start
+            total_time = time.time() - start_time
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
                 cleaned_text = self._clean_text_for_display(text)
                 
-                # Use server-provided token counts when available (from llama.cpp server)
+                # Server-reported timing from llama.cpp's usage field
                 usage = result.get('usage', {})
-                prompt_eval_tokens = usage.get('prompt_tokens', 0)  # Input/context tokens
-                completion_tokens = usage.get('completion_tokens', len(text) // 4 if text else 0)  # Generated tokens
-                total_tokens = prompt_eval_tokens + completion_tokens
-                
-                # Server-reported timing (llama.cpp provides this in usage, already in ms)
-                prompt_eval_time_ms = usage.get('prompt_eval_time')  # Prefill time
-                eval_time_ms = usage.get('eval_time')  # Generation time
-                
-                # Calculate server-side times (convert ms to seconds)
-                server_prefill_time = prompt_eval_time_ms / 1000 if prompt_eval_time_ms else None
-                server_gen_time = eval_time_ms / 1000 if eval_time_ms else None
+                prompt_eval_ms = usage.get('prompt_eval_time', 0)  # Prefill time in ms
+                eval_ms = usage.get('eval_time', 0)  # Generation time in ms
+                total_tokens = usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0)
                 
                 self._metrics.update({
-                    # Use server-reported prefill time (time to process prompt before first token)
-                    "preload_time": server_prefill_time,
-                    # Total generation time from server
-                    "generation_time": server_gen_time,
-                    # HTTP request latency as fallback for total time
-                    "inference_time": total_inference_time if not server_gen_time else (server_prefill_time + server_gen_time),
-                    "prefill_tokens": prompt_eval_tokens if prompt_eval_tokens else completion_tokens // 4,
-                    "completion_tokens": completion_tokens,
+                    "prompt_eval_time": prompt_eval_ms / 1000 if prompt_eval_ms else None,
+                    "eval_time": eval_ms / 1000 if eval_ms else None,
+                    "prefill_tokens": usage.get('prompt_tokens', 0),
+                    "completion_tokens": usage.get('completion_tokens', len(text) // 4 if text else 0),
                     "total_tokens": total_tokens,
-                    "prompt_eval_time": server_prefill_time,
-                    "eval_time": server_gen_time,
+                    "total_time": total_time,
                 })
                 
-                # Calculate TPS based on generated tokens only
-                generation_time = total_inference_time if not self._metrics["generation_time"] else self._metrics["generation_time"]
-                tps = completion_tokens / generation_time if generation_time > 0 and completion_tokens > 0 else 0
+                completion_tokens = self._metrics["completion_tokens"]
+                tps = completion_tokens / (eval_ms / 1000) if eval_ms > 0 else 0
                 
-                # Emit detailed metrics to UI
+                # Emit detailed metrics to UI - format like llama.cpp output
                 self.output_signal.emit(f"\n[DETAILED BENCHMARK METRICS]\n")
-                self.output_signal.emit(f"✓ Preload time (time to first token): {self._metrics['preload_time']:.3f}s\n")
-                if self._metrics["prompt_eval_time"]:
-                    self.output_signal.emit(f"  → Server prompt eval: {self._metrics['prompt_eval_time']:.3f}s ({prompt_eval_tokens} tokens)\n")
-                else:
-                    self.output_signal.emit(f"  → Server prompt eval: not reported, using heuristic ({prompt_eval_tokens if prompt_eval_tokens else 'N/A'} tokens)\n")
-                self.output_signal.emit(f"✓ Inference time (total): {self._metrics['inference_time']:.3f}s\n")
-                if self._metrics["eval_time"]:
-                    self.output_signal.emit(f"  → Server generation: {self._metrics['eval_time']:.3f}s ({completion_tokens} tokens)\n")
-                else:
-                    self.output_signal.emit(f"  → Server generation: not reported\n")
-                self.output_signal.emit(f"✓ Generated tokens: {completion_tokens}\n")
-                self.output_signal.emit(f"  → Context/prefill: {self._metrics['prefill_tokens']}\n")
-                self.output_signal.emit(f"  → Total tokens: {total_tokens}\n")
-                self.output_signal.emit(f"✓ TPS (generated): {tps:.2f}\n")
+                
+                if prompt_eval_ms:
+                    pe_tokens = usage.get('prompt_tokens', 0)
+                    pe_tps = pe_tokens / (prompt_eval_ms / 1000) if prompt_eval_ms > 0 else 0
+                    self.output_signal.emit(f"✓ Prompt eval time:   {prompt_eval_ms/1000:.3f}s / {pe_tokens} tokens ({prompt_eval_ms/pe_tokens if pe_tokens > 0 else 0:.2f} ms/token, {pe_tps:.2f} TPS)")
+                
+                if eval_ms:
+                    self.output_signal.emit(f"✓ Generation time:    {eval_ms/1000:.3f}s / {completion_tokens} tokens ({eval_ms/completion_tokens if completion_tokens > 0 else 0:.2f} ms/token, {tps:.2f} TPS)")
+                
+                if total_tokens:
+                    avg_time = (total_time * 1000) / total_tokens if total_tokens > 0 else 0
+                    self.output_signal.emit(f"✓ Total time:         {total_time:.3f}s / {total_tokens} tokens ({avg_time:.2f} ms/token, {total_tokens/total_time:.2f} TPS)\n")
                 
                 self.output_signal.emit(cleaned_text)
                 self.finished_signal.emit(tps, completion_tokens)
