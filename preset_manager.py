@@ -392,8 +392,12 @@ def ask_quality_and_save_benchmark(window, debug_text, status_label,
     date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     window.bench_table.setItem(row, 0, date_item)
     
-    # TPS: read-only
-    tps_item = QTableWidgetItem(f"{tps:.2f}")
+    # TPS: read-only - convert to float to ensure proper formatting
+    try:
+        tps_float = float(tps)
+        tps_item = QTableWidgetItem(f"{tps_float:.2f}")
+    except (ValueError, TypeError):
+        tps_item = QTableWidgetItem("0.00")
     tps_item.setFlags(tps_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     window.bench_table.setItem(row, 1, tps_item)
     

@@ -1254,12 +1254,16 @@ class llauncher(QMainWindow):
         # Debug output for troubleshooting
         self.debug_text.append(f"\n[DEBUG DIALOG DETAILS]\n{details}\n\n[DEBUG JSON METRICS]\n{json_metrics}")
         
+        # Use generation TPS from server logs (more accurate than HTTP timing)
+        # Server log gives: gen_tokens=822, eval_time_ms=4897.53 → 167.84 TPS
+        display_tps = gen_tps if 'gen_tps' in locals() and gen_tps > 0 else tps
+        
         # Pass detailed metrics to the dialog
         ask_quality_and_save_benchmark(
             self,
             self.debug_text,
             self.status_label,
-            tps,
+            display_tps,
             token_count,
             self._last_benchmark_command,
             details=details

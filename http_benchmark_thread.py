@@ -4,6 +4,14 @@
 import json, os, select, socket, threading, time, re, traceback
 from pathlib import Path
 
+
+def safe_add_int(a, b):
+    """Safely add two values, treating None as 0 and converting strings to int."""
+    a = int(a) if a is not None else 0
+    b = int(b) if b is not None else 0
+    return a + b
+
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
 
@@ -126,6 +134,13 @@ class HTTPBenchmarkRunner(QThread):
         
         if self._server_log_metrics.get('total_time_ms'):
             self._metrics['total_time'] = self._server_log_metrics['total_time_ms'] / 1000
+
+        # Update completion_tokens and total_tokens from server logs
+        if self._server_log_metrics.get('gen_tokens'):
+            self._metrics["completion_tokens"] = self._server_log_metrics['gen_tokens']
+
+        if self._server_log_metrics.get('total_tokens'):
+            self._metrics["total_tokens"] = self._server_log_metrics['total_tokens']
     
     def _extract_pdf_text(self, pdf_path: str) -> str:
         try:
@@ -262,35 +277,55 @@ class HTTPBenchmarkRunner(QThread):
                 prompt_eval_ms = usage.get('prompt_eval_time', 0)
                 eval_ms = usage.get('eval_time', 0)
                 
-                self._metrics.update({
-                    "prompt_eval_time": prompt_eval_ms / 1000 if prompt_eval_ms else None,
-                    "eval_time": eval_ms / 1000 if eval_ms else None,
-                    "prefill_tokens": usage.get('prompt_tokens', 0),
-                    "completion_tokens": usage.get('completion_tokens', len(text) // 4 if text else 0),
-                    "total_tokens": total_tokens,
-                    "total_time": total_time,
-                })
+                # Determine token count source for logging and metrics
+                # First calculate completion_tokens from usage data
+                if usage.get('completion_tokens'):
+                    completion_tokens = int(usage['completion_tokens'])  # Ensure numeric type
+                else:
+                    completion_tokens = len(text) // 4 if text else 0
+
+                # Extract total tokens from usage or calculate it
+                total_tokens = safe_add_int(usage.get('completion_tokens'), usage.get('prompt_tokens')) if usage else len(text) // 4 if text else 0
                 
-                completion_tokens = self._metrics["completion_tokens"]
-                tps = completion_tokens / (eval_ms / 1000) if eval_ms > 0 else 0
+                # Ensure all timing values are numeric
+                prompt_eval_ms = float(prompt_eval_ms or 0)
+                eval_ms = float(eval_ms or 0)
+                prefill_tokens = int(usage.get('prompt_tokens', 0))
+                
+                # Calculate generation TPS (completion tokens / eval time)
+                # If eval_time not in JSON, server logs will be parsed later and tps updated there
+                if eval_ms > 0:
+                    tps = completion_tokens / (eval_ms / 1000)
+                else:
+                    # eval_time missing from JSON - can't calculate accurate generation TPS
+                    # The server log parser in on_benchmark_finished will have the real value
+                    # For now, emit what we can calculate from available data
+                    tps = 0
+                
+                # Log values for debugging TPS calculation
+                self.output_signal.emit(f"DEBUG: Standard benchmark - completion_tokens={completion_tokens}, eval_ms={eval_ms}, tps={tps:.2f}\n")
+
+                # Save to _metrics so UI can access it (FIX: was missing!)
+                self._metrics["completion_tokens"] = completion_tokens
+                self._metrics["total_tokens"] = total_tokens
+                
+                # Ensure total_tokens is properly converted to int for display
+                total_tokens_int = int(total_tokens) if total_tokens else 0
                 
                 # Emit detailed metrics to UI - format like llama.cpp output
                 self.output_signal.emit(f"\n[DETAILED BENCHMARK METRICS]\n")
-                
-                if prompt_eval_ms:
-                    pe_tokens = usage.get('prompt_tokens', 0)
-                    pe_tps = pe_tokens / (prompt_eval_ms / 1000) if prompt_eval_ms > 0 else 0
-                    self.output_signal.emit(f"✓ Prompt eval time:   {prompt_eval_ms/1000:.3f}s / {pe_tokens} tokens ({prompt_eval_ms/pe_tokens if pe_tokens > 0 else 0:.2f} ms/token, {pe_tps:.2f} TPS)")
-                
+
                 if eval_ms:
                     self.output_signal.emit(f"✓ Generation time:    {eval_ms/1000:.3f}s / {completion_tokens} tokens ({eval_ms/completion_tokens if completion_tokens > 0 else 0:.2f} ms/token, {tps:.2f} TPS)")
                 
-                if total_tokens:
-                    avg_time = (total_time * 1000) / total_tokens if total_tokens > 0 else 0
-                    self.output_signal.emit(f"✓ Total time:         {total_time:.3f}s / {total_tokens} tokens ({avg_time:.2f} ms/token, {total_tokens/total_time:.2f} TPS)\n")
+                if total_tokens_int:
+                    avg_time = (total_time * 1000) / total_tokens_int if total_tokens_int > 0 else 0
+                    tps_total = total_tokens_int / total_time if total_time > 0 else 0
+                    self.output_signal.emit(f"✓ Total time:         {total_time:.3f}s / {total_tokens_int} tokens ({avg_time:.2f} ms/token, {tps_total:.2f} TPS)\n")
                 
                 self.output_signal.emit(cleaned_text)
-                self.finished_signal.emit(tps, completion_tokens)
+                # Ensure numeric types before emitting signal
+                self.finished_signal.emit(float(tps), int(completion_tokens))
             else:
                 self.output_signal.emit("No choices in response\n")
                 self.finished_signal.emit(0, 0)
@@ -387,29 +422,29 @@ class HTTPBenchmarkRunner(QThread):
             tps = token_count / generation_time if generation_time > 0 else 0
             
             # Also check for server-side usage info in SSE stream (llama.cpp may send it)
-            # Look for "usage" fields in the last JSON data chunk
+           # Also check for server-side usage info in SSE stream (llama.cpp may send it)
             try:
                 json_data = json.loads(data_line if 'data_line' in locals() else '{}')
                 if 'choices' in json_data and len(json_data['choices']) > 0:
                     choice = json_data['choices'][0]
                     usage = choice.get('usage', {})
                     
-                    # Update metrics with server-provided data
+                    # Update metrics with server-provided data (ensure numeric types)
                     if usage.get('completion_tokens'):
-                        token_count = usage['completion_tokens']
+                        token_count = int(usage['completion_tokens'])
                     
                     if usage.get('prompt_tokens'):
-                        self._metrics["prefill_tokens"] = usage['prompt_tokens']
+                        self._metrics["prefill_tokens"] = int(usage['prompt_tokens'])
                     
                     if usage.get('prompt_eval_time'):
-                        self._metrics["prompt_eval_time"] = usage['prompt_eval_time'] / 1000  # Convert ms to s
+                        self._metrics["prompt_eval_time"] = float(usage['prompt_eval_time']) / 1000
                     
                     if usage.get('eval_time'):
-                        self._metrics["eval_time"] = usage['eval_time'] / 1000  # Convert ms to s
+                        self._metrics["eval_time"] = float(usage['eval_time']) / 1000
                     
-                    # Recalculate TPS with server-provided tokens
+                    # Recalculate TPS with server-provided tokens (ensure numeric types)
                     generation_time = self._metrics["generation_time"] or inference_end
-                    tps = token_count / generation_time if generation_time > 0 else 0
+                    tps = float(token_count) / float(generation_time) if generation_time > 0 else 0
                     
             except (json.JSONDecodeError, KeyError):
                 pass  # Continue with local estimation
@@ -424,7 +459,8 @@ class HTTPBenchmarkRunner(QThread):
             })
             
             self.status_signal.emit(f"Completed: {token_count} tokens, TPS: {tps:.2f}")
-            self.finished_signal.emit(tps, token_count)
+            # Ensure numeric types before emitting signal
+            self.finished_signal.emit(float(tps), int(token_count))
             
         except urllib.error.URLError as e:
             self.output_signal.emit(f"Network error: {e}\n")
@@ -432,4 +468,11 @@ class HTTPBenchmarkRunner(QThread):
         except Exception as e:
             if not self._cancelled:
                 self.output_signal.emit(f"Error: {e}\n")
-            self.finished_signal.emit(0, 0)
+            self._metrics["total_time"] = self._server_log_metrics['total_time_ms'] / 1000
+
+        # Update completion_tokens and total_tokens from server logs
+        if self._server_log_metrics.get('gen_tokens'):
+            self._metrics["completion_tokens"] = self._server_log_metrics['gen_tokens']
+        
+        if self._server_log_metrics.get('total_tokens'):
+            self._metrics["total_tokens"] = self._server_log_metrics['total_tokens']
