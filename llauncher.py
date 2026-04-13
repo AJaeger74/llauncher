@@ -1136,17 +1136,19 @@ class llauncher(QMainWindow):
             metrics = self.bench_thread._metrics
         
         # Format all detailed information for the quality dialog
-        details_lines = [
-            f"✓ Server prefill time: {metrics.get('prompt_eval_time', 0):.3f}s ({metrics.get('prefill_tokens', 'N/A')} tokens)",
-            f"  → Server generation: {metrics.get('eval_time', 'N/A')}",
-        ]
+        details_lines = []
         
-        if metrics.get('generation_time'):
-            details_lines.append(f"  → Server gen time: {metrics['generation_time']:.3f}s ({token_count} tokens)")
-        elif metrics.get('eval_time'):
-            details_lines.append(f"  → Server gen time: {metrics['eval_time']:.3f}s ({token_count} tokens)")
+        pref_time = metrics.get('prompt_eval_time')
+        if pref_time is not None:
+            details_lines.append(f"✓ Server prefill time: {pref_time:.3f}s ({metrics.get('prefill_tokens', 'N/A')} tokens)")
         else:
-            details_lines.append(f"  → Server gen time: not reported")
+            details_lines.append("✓ Server prefill time: not reported")
+        
+        gen_time = metrics.get('eval_time')
+        if gen_time is not None:
+            details_lines.append(f"  → Server gen time: {gen_time:.3f}s ({token_count} tokens)")
+        else:
+            details_lines.append("  → Server gen time: not reported")
         
         if metrics.get('inference_time'):
             details_lines.insert(-2, f"✓ Total HTTP request time: {metrics['inference_time']:.3f}s")
