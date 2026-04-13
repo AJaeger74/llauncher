@@ -124,5 +124,7 @@
   "theme_light": "Hell",
   "lbl_language_setting": "Sprache:",
   "btn_save_settings": "Einstellungen speichern",
-  "tooltip_settings": "Einstellungen für Design und Sprache öffnen"
+  "btn_settings": "Einstellungen",
+  "tooltip_settings": "Einstellungen für Design und Sprache öffnen",
+  "msg_model_selected": "Modell ausgewählt"
 }

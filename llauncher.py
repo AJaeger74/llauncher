@@ -811,9 +811,9 @@ class llauncher(QMainWindow):
                 name = (info.get('name') or '').strip('\x00 \n\r\t')
                 arch = (info.get('arch') or 'unknown').strip('\x00 ')
                 
-                # Debug-Separator
+                 # Debug-Separator
                 self.debug_text.append("─" * 60)
-                self.debug_text.append(f"📦 Modell ausgewählt: {info['filename']}")
+                self.debug_text.append(f"📦 {t('msg_model_selected')}: {info['filename']}")
                 self.debug_text.append("─" * 60)
                 self.debug_text.append(f"  Name:             {name or 'unbekannt'}")
                 self.debug_text.append(f"  Architektur:      {arch}")

@@ -125,5 +125,7 @@
   "theme_light": "Light",
   "lbl_language_setting": "Language:",
   "btn_save_settings": "Save Settings",
-  "tooltip_settings": "Open settings for theme and language"
+  "btn_settings": "Settings",
+  "tooltip_settings": "Open settings for theme and language",
+  "msg_model_selected": "Model selected"
 }
