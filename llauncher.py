@@ -1178,6 +1178,9 @@ class llauncher(QMainWindow):
         if server_log_metrics.get('total_tokens'):
             json_metrics['total_tokens'] = server_log_metrics['total_tokens']
         
+        # Initialize details list
+        details_lines = []
+        
          # Prompt eval (prefill)
         if json_metrics.get('prompt_eval_time'):
             pe_t = json_metrics['prompt_eval_time'] * 1000  # Convert to ms
