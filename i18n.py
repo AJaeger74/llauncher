@@ -68,6 +68,17 @@ class I18nManager:
         """Return list of available language codes."""
         return [f.stem for f in self.locales_dir.glob("*.json")]
     
+    def reload(self, lang_code: str = None):
+        """Reload translations, optionally switching to new language.
+        
+        Args:
+            lang_code: Language code to switch to (optional)
+        """
+        if lang_code:
+            self.current_lang = lang_code
+        # Re-load current language file
+        self.load_language(self.current_lang)
+    
     @classmethod
     def get_instance(cls):
         """Get singleton instance, creating if necessary."""

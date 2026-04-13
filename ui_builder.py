@@ -44,8 +44,7 @@ QScrollArea { background-color: #ffffff; border: none; }
 
 # Import i18n gettext function
 try:
-    from i18n import I18nManager
-    gettext = I18nManager.get_instance().gettext
+    from i18n import I18nManager, gettext
 except ImportError:
     def gettext(key):
         return key
