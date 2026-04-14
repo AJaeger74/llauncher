@@ -52,7 +52,7 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     apply_dialog_theme(dialog, window.light_theme if hasattr(window, 'light_theme') else False)
     
     # Label für bestehende Presets
-    info_label = QLabel("Vorhandene Presets:")
+    info_label = QLabel(gettext("dialog_existing_presets"))
     layout.addWidget(info_label)
     
     # Liste der existierenden Presets
@@ -74,14 +74,14 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     
     # Eingabefeld für neuen Namen
     name_edit = QLineEdit()
-    name_label = QLabel("Name des Presets:")
+    name_label = QLabel(gettext("lbl_preset_name"))
     layout.addWidget(name_label)
     layout.addWidget(name_edit)
     
     # Buttons
     btn_layout = QVBoxLayout()
-    save_btn = QPushButton("Speichern")
-    cancel_btn = QPushButton("Abbrechen")
+    save_btn = QPushButton(gettext("btn_save_preset"))
+    cancel_btn = QPushButton(gettext("btn_cancel"))
     btn_layout.addWidget(save_btn)
     btn_layout.addWidget(cancel_btn)
     layout.addLayout(btn_layout)
@@ -96,14 +96,15 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     def handle_save():
         name = name_edit.text()
         if not name:
-            QMessageBox.warning(dialog, "Kein Name", "Bitte geben Sie einen Namen ein.")
+            QMessageBox.warning(dialog, gettext("dialog_no_preset_name"), 
+                              gettext("dialog_no_preset_name"))
             return None
         
         # Prüfen ob Preset existiert
         if name in presets:
             reply = QMessageBox.question(
-                dialog, "Preset existiert bereits",
-                f"Das Preset '{name}' existiert bereits. Überschreiben?",
+                dialog, gettext("msg_preset_exists_title"),
+                gettext("msg_preset_exists").format(name=name),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:

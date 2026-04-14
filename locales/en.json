@@ -14,6 +14,7 @@
   "btn_save_preset": "Save",
   "btn_load_preset": "Load",
   "btn_run_benchmark": "Run Benchmark",
+  "dialog_existing_presets": "Existing Presets:",
   "btn_run_benchmark_live": "Benchmark (Live)",
   "btn_cancel": "Cancel",
   "btn_export": "Export",
