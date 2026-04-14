@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 import shlex
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
 
 class ProcessRunner(QThread):
     output_signal = pyqtSignal(str)
@@ -364,9 +364,16 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         
         if hasattr(window, 'model_combo'):
             model_name = os.path.basename(model_path)
-            idx = window.model_combo.findText(model_name)
-            if idx >= 0:
-                window.model_combo.setCurrentIndex(idx)
+            # Suche nach model_name im UserRole (nicht im Display-Text mit Größenangabe!)
+            found_index = -1
+            for i in range(window.model_combo.count()):
+                user_data = window.model_combo.itemData(i, role=Qt.ItemDataRole.UserRole)
+                if user_data and user_data == model_name:
+                    found_index = i
+                    break
+            
+            if found_index >= 0:
+                window.model_combo.setCurrentIndex(found_index)
             else:
                 window.model_combo.setCurrentText(model_name)
     

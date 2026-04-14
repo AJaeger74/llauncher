@@ -498,11 +498,18 @@ class llauncher(QMainWindow):
             
             # Setze "Modell (.gguf)"-ComboBox auf den Dateinamen
             if hasattr(self, 'model_combo'):
-                idx = self.model_combo.findText(model_name)
-                if idx >= 0:
-                    self.model_combo.setCurrentIndex(idx)
+                # Suche nach model_name im UserRole (nicht im Display-Text mit Größenangabe!)
+                found_index = -1
+                for i in range(self.model_combo.count()):
+                    user_data = self.model_combo.itemData(i, role=Qt.ItemDataRole.UserRole)
+                    if user_data and user_data == model_name:
+                        found_index = i
+                        break
+                
+                if found_index >= 0:
+                    self.model_combo.setCurrentIndex(found_index)
                 else:
-                    # Falls Datei nicht in ComboBox ist, direkt setzen
+                    # Falls Datei nicht in ComboBox ist, direkt den Dateinamen setzen (ohne Größe)
                     self.model_combo.setCurrentText(model_name)
         
          # Exe-Pfad setzen (falls vorhanden) - nur Verzeichnis ohne Filename
