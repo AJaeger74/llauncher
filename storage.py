@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from PyQt6.QtCore import Qt
+
 
 # Konstanten für Dateipfade (müssen mit llauncher.py übereinstimmen)
 CONFIG_DIR = Path.home() / ".llauncher"
@@ -151,7 +153,14 @@ def apply_preset(window, preset: dict):
     selected_model = preset.get("selected_model")
     if selected_model and Path(selected_model).exists():
         model_name = Path(selected_model).name
-        idx = window.model_combo.findText(model_name)
+        
+        # Find by UserRole (clean filename), not display text (which includes size)
+        idx = -1
+        for i in range(window.model_combo.count()):
+            if window.model_combo.itemData(i, role=Qt.ItemDataRole.UserRole) == model_name:
+                idx = i
+                break
+        
         if idx >= 0:
             window.model_combo.setCurrentIndex(idx)
             window.selected_model = selected_model
