@@ -5,6 +5,15 @@ import subprocess
 import shlex
 
 
+def _gettext(key: str) -> str:
+    """Lazy-loaded gettext function - waits for i18n initialization."""
+    try:
+        from i18n import I18nManager
+        return I18nManager.get_instance().gettext(key)
+    except Exception:
+        return key
+
+
 def check_existing_process(window):
     """Prüft ob bereits ein llama-server läuft und passt UI entsprechend an.
     
@@ -12,7 +21,7 @@ def check_existing_process(window):
         window: Main llauncher window instance (provides UI access)
     """
     import sys
-    print(f"[DEBUG check_existing_process] Starting... PID={sys.pid}", flush=True)
+    print(f"[DEBUG check_existing_process] Starting...", flush=True)
     print(f"[DEBUG check_existing_process] Has start_stop_btn: {hasattr(window, 'start_stop_btn')}", flush=True)
     try:
         result = subprocess.run(
@@ -24,9 +33,9 @@ def check_existing_process(window):
         
         if result.returncode != 0 or not result.stdout.strip():
             # Kein Prozess läuft - UI zurücksetzen, aber Progress Bar auf 0% lassen
-            window.status_label.setText(window.t("status_ready"))
+            window.status_label.setText(_gettext("status_ready"))
             window.status_label.setStyleSheet("")
-            window.start_stop_btn.setText(window.t("btn_start"))
+            window.start_stop_btn.setText(_gettext("btn_start"))
             window.start_stop_btn.setObjectName("StartButton")
             # Progress bar bleibt bei 0% - wird durch toggle_process() nach Stop gesetzt
             print(f"[DEBUG check_existing_process] No process found, reset UI", flush=True)
@@ -54,7 +63,7 @@ def check_existing_process(window):
                 if not getattr(window, 'benchmark_running', False):
                     # Nur Button-Status aktualisieren, nicht den Label-Text
                     # (on_output() verwaltet Idle/Running Status korrekt)
-                    window.start_stop_btn.setText(window.t("btn_stop"))
+                    window.start_stop_btn.setText(_gettext("btn_stop"))
                     window.start_stop_btn.setObjectName("StopButton")
                     print(f"[DEBUG check_existing_process] Found llama-server PID {pid}, set button to STOP", flush=True)
                 
