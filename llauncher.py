@@ -1060,60 +1060,10 @@ class llauncher(QMainWindow):
 
     def check_existing_process(self):
         """Prüft ob bereits ein llama-server läuft und passt UI entsprechend an."""
-        import shlex
-        
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "llama-server"],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0 or not result.stdout.strip():
-                # Kein Prozess läuft - UI zurücksetzen, aber Progress Bar auf 0% lassen
-                self.status_label.setText(gettext("status_ready"))
-                self.status_label.setStyleSheet("")
-                self.start_stop_btn.setText(gettext("btn_start"))
-                self.start_stop_btn.setObjectName("StartButton")
-                # Progress bar bleibt bei 0% - wird durch toggle_process() nach Stop gesetzt
-                return
-            
-            pids = [int(pid) for pid in result.stdout.strip().split() if pid.isdigit()]
-            
-            # Prüfen ob einer der Prozesse vom User gestartet wurde (eigener Prozess)
-            for pid in pids:
-                cmdline_path = f'/proc/{pid}/cmdline'
-                try:
-                    with open(cmdline_path, 'r') as f:
-                        content = f.read()
-                    
-                    args = [arg for arg in content.split('\x00') if arg]
-                    if not args or 'llama-server' not in args[0]:
-                        continue
-                    
-                    # Kommandozeile zusammenbauen
-                    full_cmd = " ".join(shlex.quote(arg) for arg in args)
-                    
-                    # UI anpassen: Button auf "Stop" setzen
-                    # Aber nicht wenn gerade ein Benchmark läuft!
-                    if not getattr(self, 'benchmark_running', False):
-                        # Nur Button-Status aktualisieren, nicht den Label-Text
-                        # (on_output() verwaltet Idle/Running Status korrekt)
-                        self.start_stop_btn.setText(gettext("btn_stop"))
-                        self.start_stop_btn.setObjectName("StopButton")
-                    
-                    # Runner als "externer" Prozess markieren
-                    # Wir speichern PID und args, können aber nicht über QThread steuern
-                    self.external_runner_pid = pid
-                    self.external_runner_args = args
-                    
-                    return  # Nur erster laufender Prozess relevant
-                
-                except (FileNotFoundError, PermissionError, IOError):
-                    continue
-        
-        except Exception as e:
-            pass
+        if not hasattr(self, 'process_inspector'):
+            from process_inspector import check_existing_process as pi_check
+            self.process_inspector = True  # Marker
+            pi_check(self)
     
     def show_bench_context_menu(self, pos):
         """Zeigt Kontextmenü für Benchmark-Tabelle mit 'Kopieren' Option."""
@@ -1308,41 +1258,10 @@ class llauncher(QMainWindow):
 
     def _get_running_server_command(self) -> Optional[str]:
         """Liest Kommandozeile von laufendem llama-server Prozess aus /proc."""
-        import shlex
-        
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "llama-server"],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0 or not result.stdout.strip():
-                return None
-            
-            pids = [int(pid) for pid in result.stdout.strip().split() if pid.isdigit()]
-            
-            for pid in pids:
-                cmdline_path = f'/proc/{pid}/cmdline'
-                try:
-                    with open(cmdline_path, 'r') as f:
-                        content = f.read()
-                    
-                    args = [arg for arg in content.split('\x00') if arg]
-                    if not args or 'llama-server' not in args[0]:
-                        continue
-                    
-                    # Vollständige Kommandozeile zusammenbauen
-                    full_cmd = " ".join(shlex.quote(arg) for arg in args)
-                    return full_cmd
-                
-                except (FileNotFoundError, PermissionError, IOError):
-                    continue
-            
-            return None
-        
-        except Exception:
-            return None
+        if not hasattr(self, 'process_inspector'):
+            from process_inspector import get_running_server_command as pi_get_cmd
+            self.process_inspector = True  # Marker
+        return pi_get_cmd(self)
     
     def _finalize_benchmark(self, tps: float = 0.0, tokens: int = 0):
         self.status_label.setText(gettext("status_ready"))
@@ -1474,93 +1393,24 @@ class llauncher(QMainWindow):
 
     def restore_geometry(self):
         """Fenster-Position, Größe und Splitter-State laden"""
-        config = load_config()
-        
-        # Fenster-Position & Größe laden (explizit als Integer)
-        x = config.get('window_x')
-        y = config.get('window_y')
-        width = config.get('window_width')
-        height = config.get('window_height')
-        
-        if all(v is not None for v in [x, y, width, height]):
-            try:
-       
-                self.move(x, y)
-                self.resize(width, height)
-          
-            except Exception as e:
-                pass
-        else:
-          
-            # Fallback auf alte Methode wenn keine expliziten Werte da sind
-            geom_data = config.get('window_geometry')
-            if geom_data:
-                try:
-                    self.restoreGeometry(bytes(geom_data, 'ascii'))
-                
-                except Exception as e:
-                    pass
-        
-# Splitter-Position laden (als Integer-Liste, nicht Binary-State)
-        if hasattr(self, 'splitter'):
-            sizes_data = config.get('splitter_sizes')
-            if sizes_data and isinstance(sizes_data, list):
-                try:
-                    self.splitter.setSizes(sizes_data)
-                except Exception as e:
-                
-                  
-                    self.splitter.setSizes([self.width() * 0.6, self.width() * 0.4])
-
-               
+        if not hasattr(self, 'ui_persistence'):
+            from ui_persistence import restore_geometry as up_restore
+            self.ui_persistence = True  # Marker
+            up_restore(self)
 
     def resizeEvent(self, event):
         """Speichert Fenster-Geometrie bei jeder Größenänderung"""
-        super().resizeEvent(event)
-        
-        # Nur Geometrie speichern (Splitter-State zu aggressiv für resizeEvent)
-        config = load_config()
-        config['window_x'] = self.x()
-        config['window_y'] = self.y()
-        config['window_width'] = self.width()
-        config['window_height'] = self.height()
-        
-        save_config(config)
+        if not hasattr(self, 'ui_persistence'):
+            from ui_persistence import save_window_geometry as up_save_geom
+            self.ui_persistence = True  # Marker
+        up_save_geom(self)
 
     def closeEvent(self, event):
         """Fenster-Geometrie und Splitter-State speichern + Timer stoppen"""
-        config = load_config()
-        
-        # Explizit Breite, Höhe, x, y speichern (robuster als saveGeometry)
-        config['window_x'] = self.x()
-        config['window_y'] = self.y()
-        config['window_width'] = self.width()
-        config['window_height'] = self.height()
-        
-        # Splitter-Position speichern (als Liste von Ints, nicht Binary-State)
-        if hasattr(self, 'splitter'):
-            try:
-                sizes_before = self.splitter.sizes()
-                config['splitter_sizes'] = list(sizes_before)
-            except Exception as e:
-                pass
-        else:
-            pass
-        
-        # QThread detachten, damit Prozess weiterlaufen kann
-        if hasattr(self, 'runner') and self.runner:
-            if self.runner.isRunning():
-                # Force thread to exit by clearing process reference
-                self.runner.force_exit()
-                # Clear reference so Qt can destroy the QThread object
-                self.runner = None
-        
-        save_config(config)
-        
-        # Nur Timer stoppen
-        if hasattr(self, 'process_check_timer'):
-            self.process_check_timer.stop()
-        
+        if not hasattr(self, 'ui_persistence'):
+            from ui_persistence import save_window_state as up_save_state
+            self.ui_persistence = True  # Marker
+        up_save_state(self)
         event.accept()
 
 
