@@ -243,6 +243,19 @@ class HTTPBenchmarkRunner(QThread):
             "stream": self.streaming,
         }
         
+        # Reset metrics for this benchmark run
+        self._metrics = {
+            "preload_time": None,
+            "inference_time": None,
+            "generation_time": None,
+            "prefill_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "prompt_eval_time": None,
+            "eval_time": None,
+        }
+        self._server_log_metrics = {}
+        
         try:
             if self.streaming:
                 self._run_streaming(url, data)
