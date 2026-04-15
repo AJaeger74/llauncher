@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QTextEdit,
@@ -27,12 +26,38 @@ gettext = I18nManager.get_instance().gettext
 from storage import load_presets, save_benchmarks, load_benchmarks
 
 
-def apply_dialog_theme(dialog, use_light: bool):
-    """Apply light or dark theme to a dialog."""
-    from ui_builder import DARK_THEME, LIGHT_THEME
+def save_active_preset(window):
+    """Save current config as preset to ~/.llauncher/presets.json"""
+    from storage import CONFIG_DIR
     
-    stylesheet = LIGHT_THEME if use_light else DARK_THEME
-    dialog.setStyleSheet(stylesheet)
+    config_path = CONFIG_DIR / "config.json"
+    with open(config_path, "r") as f:
+        import json
+        config = json.load(f)
+    
+    # Extract relevant preset fields (exclude internal/private fields)
+    preset_data = {k: v for k, v in config.items() if not k.startswith("_")}
+    
+    presets_path = CONFIG_DIR / "presets.json"
+    try:
+        with open(presets_path, "r") as f:
+            import json
+            data = json.load(f)
+        
+        # Handle both formats
+        if "presets" in data and isinstance(data["presets"], list):
+            presets = data["presets"]
+        elif isinstance(data, list):
+            presets = data
+        else:
+            presets = []
+    except FileNotFoundError:
+        presets = []
+    
+    # Append new preset and save
+    presets.append({"name": config.get("preset_name", "Unnamed"), **preset_data})
+    with open(presets_path, "w") as f:
+        json.dump({"presets": presets}, f, indent=2)
 
 
 def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS, 
@@ -48,11 +73,8 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     dialog.setWindowTitle(gettext("dialog_save_preset_title"))
     layout = QVBoxLayout(dialog)
     
-    # Apply main window theme to dialog
-    apply_dialog_theme(dialog, window.light_theme if hasattr(window, 'light_theme') else False)
-    
     # Label für bestehende Presets
-    info_label = QLabel(gettext("dialog_existing_presets"))
+    info_label = QLabel("Vorhandene Presets:")
     layout.addWidget(info_label)
     
     # Liste der existierenden Presets
@@ -74,37 +96,32 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     
     # Eingabefeld für neuen Namen
     name_edit = QLineEdit()
-    name_label = QLabel(gettext("lbl_preset_name"))
+    name_label = QLabel("Name des Presets:")
     layout.addWidget(name_label)
     layout.addWidget(name_edit)
     
     # Buttons
     btn_layout = QVBoxLayout()
-    save_btn = QPushButton(gettext("btn_save_preset"))
-    cancel_btn = QPushButton(gettext("btn_cancel"))
+    save_btn = QPushButton("Speichern")
+    cancel_btn = QPushButton("Abbrechen")
     btn_layout.addWidget(save_btn)
     btn_layout.addWidget(cancel_btn)
     layout.addLayout(btn_layout)
     
     dialog.setLayout(layout)
     
-    # Make dialog larger (approx 700x560 vs 350x280)
-    dialog.resize(700, 560)
-
-    
     # Speichern-Button Aktion
     def handle_save():
         name = name_edit.text()
         if not name:
-            QMessageBox.warning(dialog, gettext("dialog_no_preset_name"), 
-                              gettext("dialog_no_preset_name"))
+            QMessageBox.warning(dialog, "Kein Name", "Bitte geben Sie einen Namen ein.")
             return None
         
         # Prüfen ob Preset existiert
         if name in presets:
             reply = QMessageBox.question(
-                dialog, gettext("msg_preset_exists_title"),
-                gettext("msg_preset_exists").format(name=name),
+                dialog, "Preset existiert bereits",
+                f"Das Preset '{name}' existiert bereits. Überschreiben?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -187,57 +204,15 @@ def show_preset_load_dialog(window, param_sliders, PARAM_DEFINITIONS,
                                 "Keine gespeicherten Presets gefunden.")
         return None, None
     
-    # Dialog-Fenster erstellen
-    dialog = QDialog(window)
-    dialog.setWindowTitle(gettext("dialog_load_preset_title"))
-    layout = QVBoxLayout(dialog)
+    name_list = list(presets.keys())
+    preset_name, ok = QInputDialog.getItem(
+        window, "Preset laden", "Wähle ein Preset:", 
+        name_list, editable=False
+    )
+    if not ok or not preset_name:
+        return None, None
     
-    # Apply main window theme to dialog
-    apply_dialog_theme(dialog, window.light_theme if hasattr(window, 'light_theme') else False)
-    
-    # Label
-    info_label = QLabel(gettext("msg_select_preset"))
-    layout.addWidget(info_label)
-    
-    # Liste der existierenden Presets
-    preset_list = QListWidget()
-    for name in sorted(presets.keys()):
-        preset_list.addItem(name)
-    layout.addWidget(preset_list)
-    
-    # Buttons
-    btn_layout = QHBoxLayout()
-    load_btn = QPushButton(gettext("btn_load"))
-    cancel_btn = QPushButton(gettext("btn_cancel"))
-    btn_layout.addWidget(load_btn)
-    btn_layout.addWidget(cancel_btn)
-    layout.addLayout(btn_layout)
-    
-    dialog.setLayout(layout)
-    
-    # Make dialog larger (approx 700x560 vs 350x280)
-    dialog.resize(700, 560)
-
-    
-    # Ergebnis-Container
-    result = [None, None]  # (preset_name, preset_dict)
-    
-    def on_load_click():
-        selected_items = preset_list.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(dialog, gettext("msg_no_selection"), 
-                              gettext("msg_please_select"))
-            return
-        preset_name = selected_items[0].text()
-        result[0] = preset_name
-        result[1] = presets[preset_name]
-        dialog.accept()
-    
-    load_btn.clicked.connect(on_load_click)
-    cancel_btn.clicked.connect(dialog.reject)
-    
-    dialog.exec()
-    return result[0], result[1]
+    return preset_name, presets[preset_name]
 
 
 def show_preset_args(window, debug_text, preset_name: str, preset: dict,
@@ -356,18 +331,15 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
 
 
 def ask_quality_and_save_benchmark(window, debug_text, status_label, 
-                                    tps, token_count, full_command, **kwargs):
+                                   tps, token_count, full_command):
     """Fragt Qualitätsbewertung ab und speichert Benchmark.
     
     full_command: Vollständige Kommandozeile (z.B. "/home/user/llama.cpp/llama-server -m /home/user/models/model.gguf -c 2048 ...")
-    kwargs['details']: Formatted benchmark metrics string to display in dialog
     """
-    # Extract details from kwargs, default to None if not provided
-    details = kwargs.get('details', '')
     
     quality, ok = QInputDialog.getText(
         window, gettext("dialog_quality_title"),
-        gettext("msg_benchmark_complete").format(details=details) + "\n\n" + gettext("lbl_quality_input")
+        gettext("msg_benchmark_complete").format(tps=tps, token_count=token_count) + "\n\n" + gettext("lbl_quality_input")
     )
     if not ok or not quality:
         return None
@@ -393,12 +365,8 @@ def ask_quality_and_save_benchmark(window, debug_text, status_label,
     date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     window.bench_table.setItem(row, 0, date_item)
     
-    # TPS: read-only - convert to float to ensure proper formatting
-    try:
-        tps_float = float(tps)
-        tps_item = QTableWidgetItem(f"{tps_float:.2f}")
-    except (ValueError, TypeError):
-        tps_item = QTableWidgetItem("0.00")
+    # TPS: read-only
+    tps_item = QTableWidgetItem(f"{tps:.2f}")
     tps_item.setFlags(tps_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     window.bench_table.setItem(row, 1, tps_item)
     

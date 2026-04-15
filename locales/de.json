@@ -60,7 +60,7 @@
   "msg_no_presets_title": "Keine Presets",
   "msg_no_presets_found": "Keine gespeicherten Presets gefunden.",
   "dialog_quality_title": "Qualität bewerten",
-  "msg_benchmark_complete": "Benchmark abgeschlossen:\n{details}",
+  "msg_benchmark_complete": "Benchmark abgeschlossen:\nTPS: {tps:.2f}\nTokens: {token_count}",
   "lbl_quality_input": "Qualitätsbewertung (1-5 oder Text):",
   "param_context_size": "Kontextgröße",
   "param_max_tokens": "Max Tokens",

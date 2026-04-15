@@ -38,6 +38,11 @@ from i18n import I18nManager
 
 from command_builder import get_current_args, build_full_command, on_param_changed
 from ui_builder import build_llauncher_ui, setup_timers_and_load
+from model_inspector import on_model_selected
+from process_signals import start_gpu_monitor, get_free_gpu_memory
+from status_manager import update_status, handle_process_error, reset_progress_bar
+from ui_helpers import append_text_to_widget, _append_text_inline, _format_file_size
+
 
 
 def gettext(key: str) -> str:
@@ -543,7 +548,7 @@ class llauncher(QMainWindow):
                     import os
                     
                     file_size = os.path.getsize(filepath)
-                    size_str = self._format_file_size(file_size)
+                    size_str = _format_file_size(file_size)
                     
                     # file command ausführen
                     try:
@@ -628,7 +633,7 @@ class llauncher(QMainWindow):
             if '(' in model_name:
                 model_name = model_name.split('(')[0].strip()
         
-        self.on_model_selected(model_name)
+        on_model_selected(self, model_name)
 
     def on_model_selected(self, name: str):
         model_path = (Path(self.model_directory) / name).resolve()
@@ -891,15 +896,14 @@ class llauncher(QMainWindow):
         else:
             display_tps = tps
         
-        # Pass detailed metrics to the dialog
+        # Pass benchmark data to the dialog
         ask_quality_and_save_benchmark(
             self,
             self.debug_text,
             self.status_label,
             display_tps,
             token_count,
-            full_command,
-            details=details
+            full_command
         )
         
         # Disable cancel button and reset status after dialog closes
