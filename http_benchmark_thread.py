@@ -304,13 +304,31 @@ class HTTPBenchmarkRunner(QThread):
                 
                 # Log values for debugging TPS calculation
                 self.output_signal.emit(f"DEBUG: Standard benchmark - completion_tokens={completion_tokens}, eval_ms={eval_ms}, tps={tps:.2f}\n")
-
+                
                 # Save to _metrics so UI can access it (FIX: was missing!)
                 self._metrics["completion_tokens"] = completion_tokens
                 self._metrics["total_tokens"] = total_tokens
                 
                 # Ensure total_tokens is properly converted to int for display
                 total_tokens_int = int(total_tokens) if total_tokens else 0
+                
+                # Emit server log metrics in llama.cpp format (for parsing in on_benchmark_finished)
+                # This allows the UI parser to extract accurate TPS from server logs
+                self.output_signal.emit("\n[SERVER LOG METRICS]\n")
+                
+                if prompt_eval_ms and prefill_tokens:
+                    pe_tps = (prefill_tokens / (prompt_eval_ms / 1000)) if prompt_eval_ms > 0 else 0
+                    pe_per_token = (prompt_eval_ms / prefill_tokens) if prefill_tokens > 0 else 0
+                    self.output_signal.emit(f"prompt eval time = {prompt_eval_ms:.2f} ms / {prefill_tokens} tokens ({pe_per_token:.2f} ms per token, {pe_tps:.2f} tokens per second)\n")
+                
+                if eval_ms and completion_tokens:
+                    gen_per_token = (eval_ms / completion_tokens) if completion_tokens > 0 else 0
+                    self.output_signal.emit(f"eval time = {eval_ms:.2f} ms / {completion_tokens} tokens ({gen_per_token:.2f} ms per token, {tps:.2f} tokens per second)\n")
+                
+                if total_time and total_tokens_int:
+                    total_ms = total_time * 1000
+                    total_per_token = (total_ms / total_tokens_int) if total_tokens_int > 0 else 0
+                    self.output_signal.emit(f"total time = {total_ms:.2f} ms / {total_tokens_int} tokens\n")
                 
                 # Emit detailed metrics to UI - format like llama.cpp output
                 self.output_signal.emit(f"\n[DETAILED BENCHMARK METRICS]\n")
