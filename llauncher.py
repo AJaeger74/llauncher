@@ -737,12 +737,18 @@ class llauncher(QMainWindow):
         """Handle benchmark completion."""
         import re
         
+        # Get last benchmark command from benchmark manager
+        if hasattr(self, 'benchmark_manager'):
+            full_command = self.benchmark_manager.get_last_benchmark_command()
+        else:
+            full_command = self.build_full_command()
+        
         # Collect metrics from bench_thread if available (from JSON usage field)
         json_metrics = {}
         if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
             json_metrics = self.bench_thread._metrics
         
-   # Parse server logs from debug text for accurate timing
+        # Parse server logs from debug text for accurate timing
         server_log_metrics = {}
         try:
             debug_text = self.debug_text.toPlainText()
@@ -870,7 +876,7 @@ class llauncher(QMainWindow):
             self.status_label,
             display_tps,
             token_count,
-            self._last_benchmark_command,
+            full_command,
             details=details
         )
         
@@ -1167,73 +1173,17 @@ class llauncher(QMainWindow):
 
     def run_benchmark_streaming(self):
         """Run HTTP-based benchmark in streaming mode for live display."""
-        
-        # Build and store command for benchmark completion handler
-        self._last_benchmark_command = self.build_full_command()
-        
-        # Enable cancel button during benchmark
-        if hasattr(self, 'cancel_bench_btn'):
-            self.cancel_bench_btn.setEnabled(True)
-        
-        # Ensure we don't have a stale benchmark thread
-        bench_thread = getattr(self, 'bench_thread', None)
-        if bench_thread and bench_thread.isRunning():
-            QMessageBox.warning(self, "Fehler", "Ein Benchmark läuft bereits.")
-            return
-        
-        self.debug_text.clear()
-        self.status_label.setText("Benchmark (Live) läuft...")
-        
-       # Start GPU monitoring during benchmark (if not already running)
-        if not hasattr(self, 'gpu_monitor') or not self.gpu_monitor.isRunning():
-            self.gpu_monitor = GPUMonitor()
-            self.gpu_monitor.gpu_update.connect(self.update_gpu_display)
-            self.gpu_monitor.start()
-        
-     # Get max_tokens from -n slider (default 64)
-        n_slider_data = self.param_sliders.get("-n")
-        if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
-            max_tokens = n_slider_data["slider"].value()
-        else:
-            max_tokens = 64
-        
-        # Import benchmark runner and create thread
-        from http_benchmark_thread import HTTPBenchmarkRunner
-        
-        self.bench_thread = HTTPBenchmarkRunner(
-            max_tokens=max_tokens,
-            server_pid=self.external_runner_pid,
-            streaming=True,
-            model_path=self.selected_model
-        )
-        self.bench_thread.output_signal.connect(self.on_benchmark_output)
-        self.bench_thread.status_signal.connect(self.status_label.setText)
-        self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
-        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
-        self.bench_thread.start()
+        if not hasattr(self, 'benchmark_manager'):
+            from benchmark_manager import BenchmarkManager
+            self.benchmark_manager = BenchmarkManager(self)
+        self.benchmark_manager.run_benchmark_streaming()
 
     def cancel_benchmark(self):
         """Cancel the currently running benchmark."""
-        print("[DEBUG] cancel_benchmark() called!")  # Terminal output for debugging
-        
-        bench_thread = getattr(self, 'bench_thread', None)
-        if not bench_thread:
-            self.debug_text.append("ERROR: No benchmark thread found to cancel!")
-            return
-        
-        # Signal cancellation to the thread - call cancel() method directly
-        self.debug_text.append(f"Cancelling benchmark... (thread={bench_thread})")
-        
-        if hasattr(bench_thread, '_cancelled') and hasattr(bench_thread, 'cancel'):
-            bench_thread._cancelled = True
-            # Call cancel() which writes to pipe AND closes socket
-            bench_thread.cancel()
-            self.debug_text.append("Cancel signal sent!")
-        else:
-            self.debug_text.append(f"WARNING: Thread missing _cancelled or cancel method (has: {dir(bench_thread)})")
-        
-        if hasattr(self, 'cancel_bench_btn'):
-            self.cancel_bench_btn.setEnabled(False)
+        if not hasattr(self, 'benchmark_manager'):
+            from benchmark_manager import BenchmarkManager
+            self.benchmark_manager = BenchmarkManager(self)
+        self.benchmark_manager.cancel_benchmark()
 
     def edit_prompt_dialog(self):
         """Show dialog to edit benchmark prompt."""
@@ -1293,36 +1243,10 @@ class llauncher(QMainWindow):
 
     def run_benchmark(self):
         """Run HTTP-based benchmark in standard mode."""
-        
-        # Build and store command for benchmark completion handler
-        self._last_benchmark_command = self.build_full_command()
-        
-        # Enable cancel button during benchmark
-        if hasattr(self, 'cancel_bench_btn'):
-            self.cancel_bench_btn.setEnabled(True)
-        
-     # Get max_tokens from -n slider (default 64)
-        n_slider_data = self.param_sliders.get("-n")
-        if n_slider_data and isinstance(n_slider_data, dict) and "slider" in n_slider_data:
-            max_tokens = n_slider_data["slider"].value()
-        else:
-            max_tokens = 64
-        
-        # Import benchmark runner and create thread
-        from http_benchmark_thread import HTTPBenchmarkRunner
-        
-        self.bench_thread = HTTPBenchmarkRunner(
-            max_tokens=max_tokens,
-            server_pid=self.external_runner_pid,
-            streaming=False,
-            model_path=self.selected_model
-         )
-        self.bench_thread.output_signal.connect(self.on_benchmark_output)
-        self.bench_thread.status_signal.connect(self.status_label.setText)
-        self.bench_thread.finished_signal.connect(self.on_benchmark_finished)
-        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
-        self.bench_thread.token_update_signal.connect(self.on_benchmark_token_update)
-        self.bench_thread.start()
+        if not hasattr(self, 'benchmark_manager'):
+            from benchmark_manager import BenchmarkManager
+            self.benchmark_manager = BenchmarkManager(self)
+        self.benchmark_manager.run_benchmark()
 
     def _get_model_info(self) -> str:
         """Ermittelt Modellname + Parameter für Benchmark-Tabelle."""
