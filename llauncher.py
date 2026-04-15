@@ -32,13 +32,12 @@ from preset_manager import (
     ask_quality_and_save_benchmark,
 )
 from settings_dialog import SettingsDialog
-from float_slider_sync import DirectClickSlider
-from ui_builder import build_llauncher_ui, setup_timers_and_load
 
 # Import i18n for lazy gettext() loading
 from i18n import I18nManager
 
-from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTime, QEvent, QTimer
+from command_builder import get_current_args, build_full_command, on_param_changed
+from ui_builder import build_llauncher_ui, setup_timers_and_load
 
 
 def gettext(key: str) -> str:
@@ -718,265 +717,22 @@ class llauncher(QMainWindow):
                 self.param_sliders[param_key]["slider"].setValue(int_value)
             except ValueError:
                 pass
-
-    def get_current_args(self) -> list[str]:
-        exe_name = self.exe_combo.currentText()
-        if exe_name == "llama.cpp nicht gefunden":
-            return []
-
-        args = [str(Path(self.llama_cpp_path) / exe_name)]
-
-        # Modell-Pfad (nur einmal!)
-        if self.selected_model:
-            args.extend(["-m", self.selected_model])
-
-        # mmproj für Vision-Modelle
-        mmproj_text = self.mmproj_line.text().strip()
-        if mmproj_text:
-            mmproj_path = Path(mmproj_text)
-            if not mmproj_path.is_absolute():
-                mmproj_path = Path(self.model_directory) / mmproj_path
-            if mmproj_path.exists():
-                args.extend(["--mmproj", str(mmproj_path)])
-
-        # Parameter aus Slidern (nur wenn vom Default abweichen)
-        for param_key, config in self.PARAM_DEFINITIONS.items():
-            if param_key not in self.param_sliders:
-                continue
-            slider = self.param_sliders[param_key]
-            
-            if config.get("type") == "float_slider":
-                # Float-Slider: Wert aus Edit-Widget lesen
-                value_edit = slider["edit"]
-                try:
-                    value = float(value_edit.text())
-                except ValueError:
-                    continue
-                
-                if abs(value - config["default"]) > 0.01:
-                    args.append(param_key)
-                    args.append(f"{value:.2f}")
-            elif config.get("type") == "combo":
-                # ComboBox – Wert als String lesen
-                combo = slider["combo"]
-                value = combo.currentText()
-                # cache-type-k/v immer explizit setzen (nicht nur bei Abweichung vom Default)
-                if param_key in ("--cache-type-k", "--cache-type-v"):
-                    args.append(param_key)
-                    args.append(value)
-                elif value != config["default"]:
-                    args.append(param_key)
-                    args.append(value)
-            
-            elif config.get("type") in ("text_input", "path_input", "file_input"):
-                # Textfeld, Pfad oder Datei-Eingabe – Wert als String lesen
-                # WICHTIG: benchmark_file_path NICHT in Command Line (nur für Benchmark)
-                if param_key == "benchmark_file_path":
-                    continue
-                
-                text_edit = slider["edit"]
-                value = text_edit.text()
-                if value and value != config["default"]:
-                    args.append(param_key)
-                    args.append(value)
-            
-            else:
-                # Integer-Slider
-                if isinstance(slider, dict):
-                    # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
-                    edit_widget = slider.get("edit")
-                    slider_widget = slider.get("slider")
-                    
-                    if edit_widget:
-                        try:
-                            value = int(edit_widget.text())
-                        except ValueError:
-                            # Fallback auf Slider-Widget, falls Edit leer/ungültig
-                            value = slider_widget.value() if slider_widget else 0
-                    elif slider_widget:
-                        value = slider_widget.value()
-                    else:
-                        value = 0
-                else:
-                    value = slider.value()
-                
-                # Sonderfall: -ngl mit "all" Checkbox
-                if param_key == "-ngl":
-                    if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
-                        args.append(param_key)
-                        args.append("all")
-                    elif value != config["default"]:
-                        args.append(param_key)
-                        args.append(str(value))
-                elif value != config["default"]:
-                    args.append(param_key)
-                    args.append(str(value))
-
-        return args
     
-    def build_full_command(self) -> str:
-        """Vollständige Kommandozeile als String bauen (1:1 wie ausgeführt)
-        
-        Priorität:
-        1. Echte Kommandozeile vom externen Runner (falls vorhanden)
-        2. Echte Kommandozeile vom ProcessRunner (falls vorhanden)
-        3. UI-Werte zusammengesetzt (Fallback)
-        """
-        # 1. Versuche externe Runner args (für externe Prozesse)
-        if hasattr(self, 'external_runner_args') and self.external_runner_args:
-            return " ".join(shlex.quote(arg) for arg in self.external_runner_args)
-        
-        # 2. Versuche ProcessRunner (für interne Prozesse)
-        if hasattr(self, 'process_runner') and self.process_runner:
-            try:
-                real_args = self.process_runner.get_args_from_proc()
-                if real_args:
-                    return " ".join(shlex.quote(arg) for arg in real_args)
-            except Exception:
-                pass
-        
-        # 3. Fallback: UI-Werte zusammengesetzt
-        exe_name = self.exe_combo.currentText()
-        if exe_name == "llama.cpp nicht gefunden":
-            return "# llama.cpp nicht gefunden"
-        
-        args = [str(Path(self.llama_cpp_path) / exe_name)]
-        
-        # Modell-Pfad (nur einmal!)
-        if self.selected_model:
-            args.extend(["-m", self.selected_model])
-        
-        # mmproj für Vision-Modelle
-        mmproj_text = self.mmproj_line.text().strip()
-        if mmproj_text:
-            mmproj_path = Path(mmproj_text)
-            if not mmproj_path.is_absolute():
-                mmproj_path = Path(self.model_directory) / mmproj_path
-            if mmproj_path.exists():
-                args.extend(["--mmproj", str(mmproj_path)])
-        
-        # Parameter aus Slidern (alle Werte, nicht nur abweichende!)
-        for param_key, config in self.PARAM_DEFINITIONS.items():
-            if param_key not in self.param_sliders:
-                continue
-            
-            slider = self.param_sliders[param_key]
-            
-            try:
-                if config.get("type") == "float_slider":
-                    # Float-Slider: Wert aus Edit-Widget lesen
-                    value_edit = slider["edit"]
-                    try:
-                        value = float(value_edit.text())
-                    except ValueError:
-                        continue
-                    
-                    args.append(param_key)
-                    args.append(f"{value:.2f}")
-                
-                elif config.get("type") == "combo":
-                    # ComboBox – Wert als String lesen
-                    combo = slider["combo"]
-                    value = combo.currentText()
-                    # cache-type-k/v immer explizit setzen (nicht nur bei Abweichung vom Default)
-                    if param_key in ("--cache-type-k", "--cache-type-v"):
-                        args.append(param_key)
-                        args.append(value)
-                    elif value != config["default"]:
-                        args.append(param_key)
-                        args.append(value)
-                
-                elif config.get("type") in ("text_input", "path_input", "file_input"):
-                    # Textfeld, Pfad oder Datei-Eingabe – Wert als String lesen
-                    # WICHTIG: benchmark_file_path NICHT in Command Line (nur für Benchmark)
-                    if param_key == "benchmark_file_path":
-                        continue
-                    
-                    text_edit = slider["edit"]
-                    value = text_edit.text()
-                    if value:
-                        args.append(param_key)
-                        args.append(value)
-                
-                else:
-                    # Integer-Slider
-                    if isinstance(slider, dict):
-                        # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
-                        edit_widget = slider.get("edit")
-                        slider_widget = slider.get("slider")
-                        
-                        if edit_widget:
-                            try:
-                                value = int(edit_widget.text())
-                            except ValueError:
-                                # Fallback auf Slider-Widget, falls Edit leer/ungültig
-                                value = slider_widget.value() if slider_widget else 0
-                        elif slider_widget:
-                            value = slider_widget.value()
-                        else:
-                            value = 0
-                    else:
-                        value = slider.value()
-                    
-                    # Sonderfall: -ngl mit "all" Checkbox
-                    if param_key == "-ngl":
-                        if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
-                            args.append(param_key)
-                            args.append("all")
-                        else:
-                            args.append(param_key)
-                            args.append(str(value))
-                    else:
-                        args.append(param_key)
-                        args.append(str(value))
-            except (KeyError, AttributeError, TypeError):
-                # Slider noch nicht initialisiert oder ungültig - überspringen
-                continue
-        
-        # Externe Parameter hinzufügen (nicht in APP verwaltbar)
-        if self.external_args:
-            for key, value in self.external_args.items():
-                args.append(key)
-                if isinstance(value, bool):
-                    if value:  # Boolean flags nur anzeigen wenn True
-                        pass  # Kein Wert nach dem Flag
-                else:
-                    args.append(str(value))
-        
-        return " ".join(shlex.quote(arg) for arg in args)
-
     def on_param_changed(self):
-        """Debug-Output live aktualisieren wenn sich ein Parameter ändert"""
-        try:
-            # Prüfen ob param_sliders initialisiert ist (kann None sein während init_ui)
-            if not hasattr(self, 'param_sliders') or self.param_sliders is None:
-                return
-            
-            # Alle Sliders müssen existieren und initialisiert sein
-            for param_key in self.PARAM_DEFINITIONS.keys():
-                if param_key not in self.param_sliders:
-                    continue
-                slider = self.param_sliders[param_key]
-                config = self.PARAM_DEFINITIONS[param_key]
-                
-                try:
-                    if config.get("type") == "float_slider":
-                        if "edit" not in slider or not slider["edit"]:
-                            return
-                    elif config.get("type") in ("text_input", "path_input"):
-                        if "edit" not in slider or not slider["edit"]:
-                            return
-                    else:
-                        if isinstance(slider, dict) and "slider" not in slider:
-                            return
-                except (KeyError, AttributeError):
-                    return
-            
-            command = self.build_full_command()
-            self.debug_text.setText(command)
-        except Exception as e:
-            self.debug_text.setText(f"Fehler beim Aktualisieren: {e}")
-
+        """Wrapper for command_builder.on_param_changed"""
+        from command_builder import on_param_changed as cb_on_param_changed
+        cb_on_param_changed(self)
+    
+    def get_current_args(self) -> list:
+        """Wrapper for command_builder.get_current_args"""
+        from command_builder import get_current_args as cb_get_current_args
+        return cb_get_current_args(self)
+    
+    def build_full_command(self, external_args: dict = None) -> str:
+        """Wrapper for command_builder.build_full_command"""
+        from command_builder import build_full_command as cb_build_full_command
+        return cb_build_full_command(self, external_args)
+    
     def on_benchmark_finished(self, tps, token_count):
         """Handle benchmark completion."""
         import re
