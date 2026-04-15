@@ -158,7 +158,3 @@ def on_model_selected(window, model_name: str) -> None:
             max_width = len(str(ctx_length)) * 9 + 15
             edit.setMinimumWidth(max_width)
             edit.setMaximumWidth(max_width)
-    
-    # Save config using preset manager
-    from preset_manager import save_active_preset
-    save_active_preset(window)
