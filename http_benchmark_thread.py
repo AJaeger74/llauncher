@@ -262,9 +262,13 @@ class HTTPBenchmarkRunner(QThread):
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
             
             with urllib.request.urlopen(req, timeout=300) as response:
+                start_response = time.time()
                 result = json.loads(response.read().decode('utf-8'))
             
             total_time = time.time() - start_time
+            
+            # Calculate actual HTTP request timing (includes network latency)
+            http_request_time = time.time() - start_response
             
             if 'choices' in result and len(result['choices']) > 0:
                 text = result['choices'][0].get('text', '')
@@ -308,38 +312,49 @@ class HTTPBenchmarkRunner(QThread):
                 # Save to _metrics so UI can access it (FIX: was missing!)
                 self._metrics["completion_tokens"] = completion_tokens
                 self._metrics["total_tokens"] = total_tokens
+                self._metrics["eval_time"] = eval_ms / 1000 if eval_ms > 0 else None  # Store as seconds or None
+                self._metrics["prompt_eval_time"] = prompt_eval_ms / 1000 if prompt_eval_ms > 0 else None
                 
                 # Ensure total_tokens is properly converted to int for display
                 total_tokens_int = int(total_tokens) if total_tokens else 0
                 
-                # Emit server log metrics in llama.cpp format (for parsing in on_benchmark_finished)
-                # This allows the UI parser to extract accurate TPS from server logs
-                self.output_signal.emit("\n[SERVER LOG METRICS]\n")
-                
-                if prompt_eval_ms and prefill_tokens:
-                    pe_tps = (prefill_tokens / (prompt_eval_ms / 1000)) if prompt_eval_ms > 0 else 0
-                    pe_per_token = (prompt_eval_ms / prefill_tokens) if prefill_tokens > 0 else 0
-                    self.output_signal.emit(f"prompt eval time = {prompt_eval_ms:.2f} ms / {prefill_tokens} tokens ({pe_per_token:.2f} ms per token, {pe_tps:.2f} tokens per second)\n")
-                
-                if eval_ms and completion_tokens:
+                # Emit server log metrics in llama.cpp format ONLY if we have real eval_time from server
+                # This allows the UI parser to extract accurate TPS from server logs (when available)
+                # If eval_ms is 0, we skip server log emission and let JSON metrics be used instead
+                if eval_ms > 0:
+                    self.output_signal.emit("\n[SERVER LOG METRICS]\n")
+                    
+                    if prompt_eval_ms and prefill_tokens:
+                        pe_tps = (prefill_tokens / (prompt_eval_ms / 1000)) if prompt_eval_ms > 0 else 0
+                        pe_per_token = (prompt_eval_ms / prefill_tokens) if prefill_tokens > 0 else 0
+                        self.output_signal.emit(f"prompt eval time = {prompt_eval_ms:.2f} ms / {prefill_tokens} tokens ({pe_per_token:.2f} ms per token, {pe_tps:.2f} tokens per second)\n")
+                    
                     gen_per_token = (eval_ms / completion_tokens) if completion_tokens > 0 else 0
                     self.output_signal.emit(f"eval time = {eval_ms:.2f} ms / {completion_tokens} tokens ({gen_per_token:.2f} ms per token, {tps:.2f} tokens per second)\n")
-                
-                if total_time and total_tokens_int:
-                    total_ms = total_time * 1000
-                    total_per_token = (total_ms / total_tokens_int) if total_tokens_int > 0 else 0
-                    self.output_signal.emit(f"total time = {total_ms:.2f} ms / {total_tokens_int} tokens\n")
+                    
+                    if total_time and total_tokens_int:
+                        total_ms = http_request_time * 1000  # Use HTTP timing for total
+                        total_per_token = (total_ms / total_tokens_int) if total_tokens_int > 0 else 0
+                        self.output_signal.emit(f"total time = {total_ms:.2f} ms / {total_tokens_int} tokens\n")
                 
                 # Emit detailed metrics to UI - format like llama.cpp output
                 self.output_signal.emit(f"\n[DETAILED BENCHMARK METRICS]\n")
 
-                if eval_ms:
-                    self.output_signal.emit(f"✓ Generation time:    {eval_ms/1000:.3f}s / {completion_tokens} tokens ({eval_ms/completion_tokens if completion_tokens > 0 else 0:.2f} ms/token, {tps:.2f} TPS)")
+                if eval_ms and completion_tokens:
+                    gen_per_token = (eval_ms / completion_tokens) if completion_tokens > 0 else 0
+                    tps = completion_tokens / (eval_ms / 1000) if eval_ms > 0 else 0
+                    self.output_signal.emit(f"✓ Generation time:    {eval_ms/1000:.3f}s / {completion_tokens} tokens ({gen_per_token:.2f} ms/token, {tps:.2f} TPS)")
+                elif completion_tokens:
+                    # eval_ms missing from JSON - use HTTP timing as fallback
+                    gen_t = http_request_time * 1000
+                    gen_per_token = (gen_t / completion_tokens) if completion_tokens > 0 else 0
+                    tps = completion_tokens / gen_t * 1000 if gen_t > 0 else 0
+                    self.output_signal.emit(f"✓ Generation time:    {gen_t/1000:.3f}s / {completion_tokens} tokens ({gen_per_token:.2f} ms/token, {tps:.2f} TPS) [estimated]")
                 
                 if total_tokens_int:
-                    avg_time = (total_time * 1000) / total_tokens_int if total_tokens_int > 0 else 0
-                    tps_total = total_tokens_int / total_time if total_time > 0 else 0
-                    self.output_signal.emit(f"✓ Total time:         {total_time:.3f}s / {total_tokens_int} tokens ({avg_time:.2f} ms/token, {tps_total:.2f} TPS)\n")
+                    avg_time = (http_request_time * 1000) / total_tokens_int if total_tokens_int > 0 else 0
+                    tps_total = total_tokens_int / http_request_time if http_request_time > 0 else 0
+                    self.output_signal.emit(f"✓ Total time:         {http_request_time:.3f}s / {total_tokens_int} tokens ({avg_time:.2f} ms/token, {tps_total:.2f} TPS)\n")
                 
                 self.output_signal.emit(cleaned_text)
                 # Ensure numeric types before emitting signal
