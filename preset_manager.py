@@ -23,7 +23,7 @@ from PyQt6.QtCore import QDate, QTime, Qt
 from i18n import I18nManager
 gettext = I18nManager.get_instance().gettext
 
-from storage import load_presets, save_benchmarks, load_benchmarks
+from storage import load_presets, save_benchmarks, load_benchmarks, save_presets
 
 
 def save_active_preset(window):
@@ -38,26 +38,13 @@ def save_active_preset(window):
     # Extract relevant preset fields (exclude internal/private fields)
     preset_data = {k: v for k, v in config.items() if not k.startswith("_")}
     
-    presets_path = CONFIG_DIR / "presets.json"
-    try:
-        with open(presets_path, "r") as f:
-            import json
-            data = json.load(f)
-        
-        # Handle both formats
-        if "presets" in data and isinstance(data["presets"], list):
-            presets = data["presets"]
-        elif isinstance(data, list):
-            presets = data
-        else:
-            presets = []
-    except FileNotFoundError:
-        presets = []
+    name = config.get("preset_name", "Unnamed")
+    preset = {"name": name, **preset_data}
     
-    # Append new preset and save
-    presets.append({"name": config.get("preset_name", "Unnamed"), **preset_data})
-    with open(presets_path, "w") as f:
-        json.dump({"presets": presets}, f, indent=2)
+    # Use storage layer for consistent format (dict: {name: {...}, ...})
+    presets = load_presets()
+    presets[name] = preset
+    save_presets(presets)
 
 
 def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS, 
