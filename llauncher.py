@@ -1060,10 +1060,8 @@ class llauncher(QMainWindow):
 
     def check_existing_process(self):
         """Prüft ob bereits ein llama-server läuft und passt UI entsprechend an."""
-        if not hasattr(self, 'process_inspector'):
-            from process_inspector import check_existing_process as pi_check
-            self.process_inspector = True  # Marker
-            pi_check(self)
+        from process_inspector import check_existing_process as pi_check
+        pi_check(self)
     
     def show_bench_context_menu(self, pos):
         """Zeigt Kontextmenü für Benchmark-Tabelle mit 'Kopieren' Option."""
@@ -1258,9 +1256,7 @@ class llauncher(QMainWindow):
 
     def _get_running_server_command(self) -> Optional[str]:
         """Liest Kommandozeile von laufendem llama-server Prozess aus /proc."""
-        if not hasattr(self, 'process_inspector'):
-            from process_inspector import get_running_server_command as pi_get_cmd
-            self.process_inspector = True  # Marker
+        from process_inspector import get_running_server_command as pi_get_cmd
         return pi_get_cmd(self)
     
     def _finalize_benchmark(self, tps: float = 0.0, tokens: int = 0):
@@ -1393,23 +1389,17 @@ class llauncher(QMainWindow):
 
     def restore_geometry(self):
         """Fenster-Position, Größe und Splitter-State laden"""
-        if not hasattr(self, 'ui_persistence'):
-            from ui_persistence import restore_geometry as up_restore
-            self.ui_persistence = True  # Marker
-            up_restore(self)
+        from ui_persistence import restore_geometry as up_restore
+        up_restore(self)
 
     def resizeEvent(self, event):
         """Speichert Fenster-Geometrie bei jeder Größenänderung"""
-        if not hasattr(self, 'ui_persistence'):
-            from ui_persistence import save_window_geometry as up_save_geom
-            self.ui_persistence = True  # Marker
+        from ui_persistence import save_window_geometry as up_save_geom
         up_save_geom(self)
 
     def closeEvent(self, event):
         """Fenster-Geometrie und Splitter-State speichern + Timer stoppen"""
-        if not hasattr(self, 'ui_persistence'):
-            from ui_persistence import save_window_state as up_save_state
-            self.ui_persistence = True  # Marker
+        from ui_persistence import save_window_state as up_save_state
         up_save_state(self)
         event.accept()
 
