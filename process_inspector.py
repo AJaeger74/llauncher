@@ -11,12 +11,16 @@ def check_existing_process(window):
     Args:
         window: Main llauncher window instance (provides UI access)
     """
+    import sys
+    print(f"[DEBUG check_existing_process] Starting... PID={sys.pid}", flush=True)
+    print(f"[DEBUG check_existing_process] Has start_stop_btn: {hasattr(window, 'start_stop_btn')}", flush=True)
     try:
         result = subprocess.run(
             ["pgrep", "-f", "llama-server"],
             capture_output=True,
             text=True
         )
+        print(f"[DEBUG check_existing_process] pgrep result: {result.stdout.strip()!r}", flush=True)
         
         if result.returncode != 0 or not result.stdout.strip():
             # Kein Prozess läuft - UI zurücksetzen, aber Progress Bar auf 0% lassen
@@ -25,9 +29,11 @@ def check_existing_process(window):
             window.start_stop_btn.setText(window.t("btn_start"))
             window.start_stop_btn.setObjectName("StartButton")
             # Progress bar bleibt bei 0% - wird durch toggle_process() nach Stop gesetzt
+            print(f"[DEBUG check_existing_process] No process found, reset UI", flush=True)
             return
         
         pids = [int(pid) for pid in result.stdout.strip().split() if pid.isdigit()]
+        print(f"[DEBUG check_existing_process] Found PIDs: {pids}", flush=True)
         
         # Prüfen ob einer der Prozesse vom User gestartet wurde (eigener Prozess)
         for pid in pids:
@@ -50,6 +56,7 @@ def check_existing_process(window):
                     # (on_output() verwaltet Idle/Running Status korrekt)
                     window.start_stop_btn.setText(window.t("btn_stop"))
                     window.start_stop_btn.setObjectName("StopButton")
+                    print(f"[DEBUG check_existing_process] Found llama-server PID {pid}, set button to STOP", flush=True)
                 
                 # Runner als "externer" Prozess markieren
                 # Wir speichern PID und args, können aber nicht über QThread steuern
@@ -58,11 +65,14 @@ def check_existing_process(window):
                 
                 return  # Nur erster laufender Prozess relevant
             
-            except (FileNotFoundError, PermissionError, IOError):
+            except (FileNotFoundError, PermissionError, IOError) as e:
+                print(f"[DEBUG check_existing_process] Error reading /proc/{pid}/cmdline: {e}", flush=True)
                 continue
     
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[DEBUG check_existing_process] Exception: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 
 def get_running_server_command(window):
