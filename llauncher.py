@@ -75,8 +75,8 @@ def t(key: str, **kwargs) -> str:
     return translatable(key, **kwargs)
 
 
-from http_benchmark_thread import HTTPBenchmarkRunner
-from model_info_fetcher import fetch_running_model_info
+from params import get_param_definitions
+from PyQt6.QtCore import Qt, pyqtSignal, QDate, QTime, QEvent, QTimer
 from PyQt6.QtGui import QFont, QTextDocument
 from PyQt6.QtWidgets import (
     QApplication,
@@ -113,164 +113,6 @@ class llauncher(QMainWindow):
     PRESETS_FILE = CONFIG_DIR / "presets.json"
     BENCHMARKS_FILE = CONFIG_DIR / "benchmarks.json"
 
-    PARAM_DEFINITIONS_BASE = {
-   "-c": {
-        "label_key": "param_context_size",
-        "type": "slider",
-        "min": 2048,
-        "max": 8192,
-        "default": 4096,
-        "tooltip_key": "tooltip_context_size",
-        "tooltip_key": "tooltip_context_size",
-    },
-   "--cache-type-k": {
-            "label_key": "help_parser_k_type",  # Wird später mit gettext aufgelöst
-            "type": "combo",
-            "default": "f16",
-            "options": ["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
-            "tooltip_key": "tooltip_cache_type_k",
-            "tooltip_key": "tooltip_cache_type_k",
-    },
-   "--cache-type-v": {
-            "label_key": "help_parser_v_type",  # Wird später mit gettext aufgelöst
-            "type": "combo",
-            "default": "f16",
-            "options": ["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
-            "tooltip_key": "tooltip_cache_type_v",
-        },
-   "-n": {
-            "label_key": "param_max_tokens",  # Wird später mit gettext aufgelöst
-            "type": "slider",
-            "min": -1,
-            "max": 8192,
-           "default": 4096,
-            "tooltip_key": "tooltip_max_tokens",
-        },
-   "-np": {
-            "label_key": "param_parallel_slots",  # Wird später mit gettext aufgelöst
-            "type": "slider",
-            "min": -1,
-            "max": 8,
-            "default": -1,
-            "tooltip_key": "tooltip_np",
-        },
-   "-t": {
-            "label_key": "param_cpu_threads",  # Wird später mit gettext aufgelöst
-            "type": "slider",
-            "min": 1,
-            "max": 32,
-            "default": 8,
-            "tooltip_key": "tooltip_threads",
-        },
-   "-b": {
-            "label_key": "param_batch_size",  # Wird später mit gettext aufgelöst
-            "type": "slider",
-            "min": 1,
-            "max": 8192,
-           "default": 2048,
-            "tooltip_key": "tooltip_batch_size",
-        },
-   "-ngl": {
-            "label_key": "param_gpu_layers",  # Wird später mit gettext aufgelöst
-            "type": "slider",
-            "min": 0,
-            "max": "{{GPU_LAYERS}}",  # Wird dynamisch ersetzt (optional)
-            "default": 35,
-            "tooltip_key": "tooltip_gpu_layers",
-        },
-   "--temp": {
-            "label_key": "param_temperature",  # Muss noch in JSONs hinzugefügt werden
-            "type": "float_slider",
-            "min": 0.1,
-            "max": 2.0,
-            "default": 0.8,
-            "step": 0.1,
-            "tooltip_key": "tooltip_temperature",
-        },
-   "--top-p": {
-            "label_key": "param_top_p",  # Muss noch in JSONs hinzugefügt werden
-            "type": "float_slider",
-            "min": 0.1,
-            "max": 1.0,
-            "default": 0.95,
-            "step": 0.05,
-            "tooltip_key": "tooltip_top_p",
-        },
-   "--top-k": {
-            "label_key": "param_top_k",
-            "type": "slider",
-            "min": 0,
-            "max": 1000,
-            "default": 40,
-            "tooltip_key": "tooltip_top_k",
-        },
-   "--min-p": {
-            "label_key": "param_min_p",
-            "type": "float_slider",
-            "min": 0.0,
-            "max": 0.5,
-            "default": 0.05,
-            "step": 0.01,
-            "tooltip_key": "tooltip_min_p",
-        },
-   "--repeat-penalty": {
-            "label_key": "param_repeat_penalty",  # Muss noch in JSONs hinzugefügt werden
-            "type": "float_slider",
-            "min": 0.5,
-            "max": 2.5,
-            "default": 1.0,
-            "step": 0.05,
-            "tooltip_key": "tooltip_repeat_penalty",
-        },
-   "--flash-attn": {
-            "label_key": "param_flash_attn",  # Muss noch in JSONs hinzugefügt werden
-            "type": "combo",
-            "default": "off",
-            "options": ["off", "on"],
-            "tooltip_key": "tooltip_flash_attn",
-        },
-   "--host": {
-            "label_key": "param_host",  # Muss noch in JSONs hinzugefügt werden
-            "type": "text_input",
-            "default": "localhost",
-            "tooltip_key": "tooltip_host",
-        },
-   "--slot-save-path": {
-            "label_key": "param_slot_save_path",
-            "type": "path_input",
-            "default": "/dev/shm/llama-slots",
-            "tooltip_key": "tooltip_slot_save_path",
-        },
-   "benchmark_file_path": {
-            "label_key": "param_benchmark_file",
-            "type": "file_input",
-            "default": "",
-            "tooltip_key": "tooltip_benchmark_file",
-        },
-    }
-
-
-    # Dynamische Parameter definieren (ersetzt Platzhalter)
-    @classmethod
-    def get_param_definitions(cls):
-        """PARAM_DEFINITIONS mit dynamischen Werten erstellen"""
-        import copy
-        definitions = copy.deepcopy(cls.PARAM_DEFINITIONS_BASE)
-        
-        # CPU Count ersetzen
-        cpu_count = get_cpu_count()
-        for key, value in definitions.items():
-            if isinstance(value, dict) and "max" in value:
-                max_val = value["max"]
-                if isinstance(max_val, str):
-                    if "{{CPU_COUNT}}" in max_val:
-                        value["max"] = cpu_count
-                    elif "{{GPU_LAYERS}}" in max_val:
-                        # GPU Layers als 100 lassen (oder später dynamisch)
-                        value["max"] = 100
-        
-        return definitions
-
     def __init__(self):
         super().__init__()
         self.llama_cpp_path = str(Path.home() / "llama.cpp")
@@ -288,7 +130,7 @@ class llauncher(QMainWindow):
         self.light_theme = False
         
         # Dynamische Parameter definieren
-        self.PARAM_DEFINITIONS = self.get_param_definitions()
+        self.PARAM_DEFINITIONS = get_param_definitions()
 
         
  
