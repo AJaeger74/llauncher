@@ -753,40 +753,30 @@ class llauncher(QMainWindow):
         try:
             debug_text = self.debug_text.toPlainText()
             
-            # Only use the LAST [SERVER LOG METRICS] section (current benchmark)
-            # Find the last occurrence of this marker
-            last_server_log_marker = debug_text.rfind('[SERVER LOG METRICS]')
-            if last_server_log_marker == -1:
-                # No server log markers found - skip parsing
-                pass
-            else:
-                # Extract only the content after the last marker
-                current_benchmark_logs = debug_text[last_server_log_marker:]
-                
-                # Parse prompt eval time first (must be before 'eval time' to avoid matching partial)
-                match = re.search(r'prompt\s+eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', current_benchmark_logs, re.IGNORECASE)
-                if match:
-                    server_log_metrics['prompt_eval_time_ms'] = float(match.group(1))
-                    server_log_metrics['prefill_tokens'] = int(match.group(2))
-                
-                # Parse eval time (generation) - check each line to avoid matching "prompt eval"
-                lines = current_benchmark_logs.split('\n')
-                for line in lines:
-                    if 'eval time' in line and not 'prompt eval time' in line:
-                        # Skip estimated values - prefer JSON metrics
-                        if '[estimated]' in line:
-                            continue
-                        match = re.search(r'eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', line, re.IGNORECASE)
-                        if match:
-                            server_log_metrics['eval_time_ms'] = float(match.group(1))
-                            server_log_metrics['gen_tokens'] = int(match.group(2))
-                        break
-                
-                # Parse total time - skip estimated values
-                match = re.search(r'total\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', current_benchmark_logs, re.IGNORECASE)
-                if match and '[estimated]' not in match.group(0):
-                    server_log_metrics['total_time_ms'] = float(match.group(1))
-                    server_log_metrics['total_tokens'] = int(match.group(2))
+            # Parse prompt eval time first (must be before 'eval time' to avoid matching partial)
+            match = re.search(r'prompt\s+eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
+            if match:
+                server_log_metrics['prompt_eval_time_ms'] = float(match.group(1))
+                server_log_metrics['prefill_tokens'] = int(match.group(2))
+            
+            # Parse eval time (generation) - check each line to avoid matching "prompt eval"
+            lines = debug_text.split('\n')
+            for line in lines:
+                if 'eval time' in line and not 'prompt eval time' in line:
+                    # Skip estimated values - prefer JSON metrics
+                    if '[estimated]' in line:
+                        continue
+                    match = re.search(r'eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', line, re.IGNORECASE)
+                    if match:
+                        server_log_metrics['eval_time_ms'] = float(match.group(1))
+                        server_log_metrics['gen_tokens'] = int(match.group(2))
+                    break
+            
+            # Parse total time - skip estimated values
+            match = re.search(r'total\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
+            if match and '[estimated]' not in match.group(0):
+                server_log_metrics['total_time_ms'] = float(match.group(1))
+                server_log_metrics['total_tokens'] = int(match.group(2))
         except Exception as e:
             self.debug_text.append(f"Warning: Failed to parse server logs: {e}\n")
         
@@ -893,6 +883,9 @@ class llauncher(QMainWindow):
         json_completion_tokens = json_metrics.get('completion_tokens')
         if json_eval_time is not None and json_eval_time > 0 and json_completion_tokens is not None and json_completion_tokens > 0:
             display_tps = json_completion_tokens / json_eval_time
+        elif server_log_metrics.get('eval_time_ms') and server_log_metrics.get('gen_tokens'):
+            # Server log metrics are more accurate than JSON or HTTP fallback
+            display_tps = server_log_metrics['gen_tokens'] / (server_log_metrics['eval_time_ms'] / 1000)
         elif 'gen_tps' in locals() and gen_tps > 0:
             display_tps = gen_tps
         else:

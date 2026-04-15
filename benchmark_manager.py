@@ -72,6 +72,9 @@ class BenchmarkManager:
     
     def run_benchmark(self):
         """Run HTTP-based benchmark in standard (non-streaming) mode."""
+        # Clear debug text to avoid parsing old benchmark data
+        self.window.debug_text.clear()
+        
         # Build and store command for benchmark completion handler
         self._last_benchmark_command = self.window.build_full_command()
         
