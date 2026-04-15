@@ -20,9 +20,9 @@ def check_existing_process(window):
         
         if result.returncode != 0 or not result.stdout.strip():
             # Kein Prozess läuft - UI zurücksetzen, aber Progress Bar auf 0% lassen
-            window.status_label.setText(window.gettext("status_ready"))
+            window.status_label.setText(window.t("status_ready"))
             window.status_label.setStyleSheet("")
-            window.start_stop_btn.setText(window.gettext("btn_start"))
+            window.start_stop_btn.setText(window.t("btn_start"))
             window.start_stop_btn.setObjectName("StartButton")
             # Progress bar bleibt bei 0% - wird durch toggle_process() nach Stop gesetzt
             return
@@ -48,7 +48,7 @@ def check_existing_process(window):
                 if not getattr(window, 'benchmark_running', False):
                     # Nur Button-Status aktualisieren, nicht den Label-Text
                     # (on_output() verwaltet Idle/Running Status korrekt)
-                    window.start_stop_btn.setText(window.gettext("btn_stop"))
+                    window.start_stop_btn.setText(window.t("btn_stop"))
                     window.start_stop_btn.setObjectName("StopButton")
                 
                 # Runner als "externer" Prozess markieren
