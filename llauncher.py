@@ -746,7 +746,7 @@ class llauncher(QMainWindow):
         # Collect metrics from bench_thread if available (from JSON usage field)
         json_metrics = {}
         if hasattr(self, 'bench_thread') and hasattr(self.bench_thread, '_metrics'):
-            json_metrics = self.bench_thread._metrics
+            json_metrics = self.bench_thread._metrics.copy()  # Copy to avoid stale references
         
         # Parse server logs from debug text for accurate timing
         server_log_metrics = {}
@@ -763,15 +763,18 @@ class llauncher(QMainWindow):
             lines = debug_text.split('\n')
             for line in lines:
                 if 'eval time' in line and not 'prompt eval time' in line:
+                    # Skip estimated values - prefer JSON metrics
+                    if '[estimated]' in line:
+                        continue
                     match = re.search(r'eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', line, re.IGNORECASE)
                     if match:
                         server_log_metrics['eval_time_ms'] = float(match.group(1))
                         server_log_metrics['gen_tokens'] = int(match.group(2))
                     break
             
-            # Parse total time
+            # Parse total time - skip estimated values
             match = re.search(r'total\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
-            if match:
+            if match and '[estimated]' not in match.group(0):
                 server_log_metrics['total_time_ms'] = float(match.group(1))
                 server_log_metrics['total_tokens'] = int(match.group(2))
         except Exception as e:
