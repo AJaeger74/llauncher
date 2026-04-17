@@ -606,20 +606,25 @@ class llauncher(QMainWindow):
         return [f for f in models_dir.iterdir() if f.suffix == ".gguf"]
 
     def update_model_dropdown(self):
-        self.model_combo.clear()
-        models = self.find_models()
-        for model in models:
-            # Get file size via stat (cheaper than full GGUF parse)
-            try:
-                file_size = model.stat().st_size
-                size_str = f" ({format_size(file_size)})"
-            except Exception:
-                size_str = ""
-            # Display name + size, but only store the base name for presets
-            display_text = f"{model.name}{size_str}"
-            self.model_combo.addItem(display_text)
-            # Store clean filename as user data (for preset saving/loading)
-            self.model_combo.setItemData(self.model_combo.count() - 1, model.name, role=Qt.ItemDataRole.UserRole)
+        """Repopulate the model dropdown without triggering on_model_selected()."""
+        self.model_combo.blockSignals(True)
+        try:
+            self.model_combo.clear()
+            models = self.find_models()
+            for model in models:
+                # Get file size via stat (cheaper than full GGUF parse)
+                try:
+                    file_size = model.stat().st_size
+                    size_str = f" ({format_size(file_size)})"
+                except Exception:
+                    size_str = ""
+                # Display name + size, but only store the base name for presets
+                display_text = f"{model.name}{size_str}"
+                self.model_combo.addItem(display_text)
+                # Store clean filename as user data (for preset saving/loading)
+                self.model_combo.setItemData(self.model_combo.count() - 1, model.name, role=Qt.ItemDataRole.UserRole)
+        finally:
+            self.model_combo.blockSignals(False)
 
     def on_model_selected_from_index(self, idx: int):
         """Handle model selection by index to get clean filename from UserRole."""
