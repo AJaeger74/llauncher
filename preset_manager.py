@@ -79,6 +79,7 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
         name_edit.setText(item.text())
     
     preset_list.doubleClicked.connect(on_preset_double_click)
+    preset_list.setMinimumWidth(320)
     layout.addWidget(preset_list)
     
     # Eingabefeld für neuen Namen
@@ -96,6 +97,7 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     layout.addLayout(btn_layout)
     
     dialog.setLayout(layout)
+    dialog.setMinimumSize(380, 350)
     
     # Speichern-Button Aktion
     def handle_save():
