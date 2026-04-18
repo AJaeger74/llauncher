@@ -18,11 +18,13 @@ def detect_model_family(model_path: str) -> str:
     # Extract just the filename
     filename = Path(model_path).name.lower()
     
-    # Check for model family indicators
+    # Check for model family indicators (order matters: check more specific first)
     if "gemma" in filename or "gemma" in path_lower:
         return "gemma"
     if "qwen" in filename or "qwen" in path_lower:
         return "qwen"
+    if "nemotron" in filename or "nemotron" in path_lower:
+        return "nemotron"
     if "llama" in filename or "llama" in path_lower:
         return "llama"
     if "mistral" in filename or "mistral" in path_lower:
@@ -33,10 +35,6 @@ def detect_model_family(model_path: str) -> str:
         return "hermes"
     if "phi" in filename or "phi" in path_lower:
         return "phi"
-    
-    # Try to detect from config or other hints
-    if "nemotron" in filename or "nemotron" in path_lower:
-        return "nemotron"
     
     return "unknown"
 
@@ -61,6 +59,8 @@ def apply_chat_template(prompt: str, model_family: str, system_prompt: str = Non
         return _apply_gemma_template(prompt, system_prompt)
     elif model_family == "qwen":
         return _apply_qwen_template(prompt, system_prompt)
+    elif model_family == "nemotron":
+        return _apply_nemotron_template(prompt, system_prompt)
     elif model_family == "llama":
         return _apply_llama_template(prompt, system_prompt)
     elif model_family == "mistral":
@@ -91,7 +91,7 @@ def _apply_gemma_template(prompt: str, system_prompt: str = None) -> str:
 def _apply_qwen_template(prompt: str, system_prompt: str = None) -> str:
     """Qwen template format (varies by version, using common pattern):
     
-    <|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
+    </s><|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
     """
     result = "<|im_start|>user\n"
     
@@ -129,6 +129,26 @@ def _apply_mistral_template(prompt: str, system_prompt: str = None) -> str:
         result += f"{system_prompt} "
     
     result += f"{prompt} [/INST]"
+    return result
+
+
+def _apply_nemotron_template(prompt: str, system_prompt: str = None) -> str:
+    """Nemotron template format (NVIDIA conversational instruct model):
+    
+    <|user|>\n{prompt}\n</s>\n<|assistant|>
+    
+    Nemotron uses NVIDIA's proprietary <|user|>/<|assistant|> token format
+    with </s> as the turn separator. This is required for proper generation
+    and prevents the repetition loops seen without a template.
+    """
+    result = "<|user|>\n"
+    
+    if system_prompt:
+        result += f"{system_prompt}\n</s>\n<|user|>\n{prompt}"
+    else:
+        result += prompt
+    
+    result += "\n</s>\n<|assistant|>"
     return result
 
 
