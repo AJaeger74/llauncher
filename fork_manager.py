@@ -109,6 +109,7 @@ class ForkManagerDialog(QDialog):
         self.target_dir = None
         self.repo_url = None
         self.clone_thread = None  # GitCloneWorker instance
+        self._debug_text = getattr(parent, 'debug_text', None) if parent else None
         self.setup_ui()
         self.apply_theme(current_light_theme)
         self.setWindowTitle(gettext("fork_dialog_title"))
@@ -154,7 +155,9 @@ class ForkManagerDialog(QDialog):
         # --- Buttons ---
         btn_layout = QHBoxLayout()
         clone_btn = QPushButton(gettext("btn_clone_repo"))
+        clone_btn.setObjectName("btn_clone_repo")
         cancel_btn = QPushButton(gettext("btn_cancel"))
+        cancel_btn.setObjectName("btn_cancel")
 
         clone_btn.clicked.connect(self._clone_repo)
         cancel_btn.clicked.connect(self.reject)
@@ -182,11 +185,17 @@ class ForkManagerDialog(QDialog):
             self.target_dir = Path(path)
             self.dir_path_edit.setText(str(self.target_dir))
 
+    def _get_debug_text(self):
+        """Lazily get the parent window's debug text widget."""
+        if self.parent() and hasattr(self.parent(), 'debug_text'):
+            return self.parent().debug_text
+        return None
+
     def _dump_to_debug(self, message: str):
         """Write a line to the main window's debug output area."""
-        if hasattr(self, '_debug_text') and self._debug_text:
-            self._debug_text.append(message)
-
+        debug = self._get_debug_text()
+        if debug:
+            debug.append(message)
     def _clone_repo(self):
         """Validate inputs and start git clone in background thread."""
         # Prevent double-clicks
