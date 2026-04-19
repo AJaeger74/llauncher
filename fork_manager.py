@@ -156,13 +156,10 @@ class ForkManagerDialog(QDialog):
         self.url_combo.setEditable(True)
         self.url_combo.setPlaceholderText("https://github.com/...")
         self.url_combo.setMinimumWidth(300)
-        # Populate with fork entries (show name, store URL as userData)
+        # Populate with fork entries (show URL only, store URL as userData)
         for entry in self.entries:
-            display = entry["name"]
             url = entry["url"]
-            if display != url:
-                display = f"{display} ({url})"
-            self.url_combo.addItem(display, url)
+            self.url_combo.addItem(url, url)
         # Allow typing a custom URL
         self.url_combo.setEditText("")
         url_layout.addWidget(url_label)
