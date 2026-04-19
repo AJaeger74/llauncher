@@ -140,5 +140,18 @@
   "debug_block_count": "Block-Anzahl:",
   "msg_model_info_read_error": "Konnte Modell-Info nicht lesen: {error}",
   "msg_unavailable": "nicht verfügbar",
-  "msg_not_found": "nicht gefunden"
+  "msg_not_found": "nicht gefunden",
+  "btn_fork_llama": "llama fork hinzufügen",
+  "tooltip_fork_llama": "Ein llama.cpp-Repository in ein lokales Verzeichnis klonen",
+  "fork_dialog_title": "llama fork hinzufügen",
+  "lbl_fork_directory": "Zielverzeichnis:",
+  "btn_browse_dir": "Durchsuchen...",
+  "lbl_fork_url": "Repository-URL:",
+  "lbl_fork_clonedir": "Klonen in dieses Verzeichnis (Elternteil des Repo-Ordners)",
+  "btn_clone_repo": "Klonen",
+  "fork_result_success": "'{repo}' erfolgreich geklont nach '{path}'",
+  "fork_result_error": "Klonen fehlgeschlagen: {error}",
+  "msg_no_directory_selected": "Bitte wählen Sie ein Zielverzeichnis aus.",
+  "msg_no_url_entered": "Bitte geben Sie eine Repository-URL ein.",
+  "fork_result_title": "Klon-Ergebnis"
 }
