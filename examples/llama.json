@@ -1,0 +1,33 @@
+{
+  "ggerganov/llama.cpp": {
+    "repo": "https://github.com/ggml-org/llama.cpp",
+    "branch": "master",
+    "build": "cmake -B build \
+              -DGGML_CUDA=ON \
+              -DCMAKE_CUDA_ARCHITECTURES=120 \
+              -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --config Release -j$(nproc)"
+  },
+  "spiritbuun/buun-llama-cpp": {
+    "repo": "https://github.com/spiritbuun/buun-llama-cpp",
+    "branch": "master",
+    "build": "cmake -B build \
+              -DGGML_CUDA=ON \
+              -DGGML_NATIVE=ON \
+              -DGGML_CUDA_FA=ON \
+              -DGGML_CUDA_FA_ALL_QUANTS=ON \
+              -DCMAKE_CUDA_ARCHITECTURES=120 \
+              -DCMAKE_BUILD_TYPE=Release
+              cmake --build build -j$(nproc)"
+  },
+  "TheTom/llama-cpp-turboquant": {
+    "repo": "https://github.com/TheTom/llama-cpp-turboquant",
+    "branch": "feature/turboquant-kv-cache",
+    "build": "cmake -B build \
+              -DGGML_CUDA=ON \
+              -DCMAKE_CUDA_ARCHITECTURES=120 \
+              -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --config Release -j$(nproc)"
+  }
+}
+

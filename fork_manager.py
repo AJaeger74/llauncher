@@ -8,12 +8,13 @@ a background thread (non-blocking) and dumps all output to the debug
 area when complete.
 """
 
+import json
 import subprocess
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QMessageBox
+    QPushButton, QFileDialog, QMessageBox, QComboBox
 )
 
 # Import i18n gettext function
@@ -23,6 +24,29 @@ try:
 except ImportError:
     def gettext(key):
         return key
+
+
+LLAMA_JSON_PATH = Path.home() / ".llauncher" / "llama.json"
+
+
+def _load_fork_entries():
+    """Load fork entries from ~/.llauncher/llama.json.
+
+    Returns list of dicts: [{"name": str, "url": str}, ...] or [] on failure.
+    Handles malformed JSON (e.g. backslash line-continuations in build fields).
+    """
+    try:
+        with open(LLAMA_JSON_PATH, "r") as f:
+            raw = f.read()
+        import re as _re
+        # Remove backslash-newline continuations (not valid JSON)
+        raw = _re.sub(r"\s*\\\s*\n", r" ", raw)
+        # Flatten remaining newlines — JSON strings can't contain literal newlines
+        raw = raw.replace("\n", " ")
+        data = json.loads(raw)
+        return [{"name": k, "url": v.get("repo", "")} for k, v in data.items()]
+    except Exception:
+        return []
 
 
 DARK_THEME = """
@@ -48,18 +72,24 @@ class GitCloneWorker(QThread):
     output_signal = pyqtSignal(str)   # "running..." status line
     finished_signal = pyqtSignal(int, str)  # returncode, combined stdout+stderr
 
-    def __init__(self, url: str, target_path: str):
+    def __init__(self, url: str, target_path: str, branch: str = ""):
         super().__init__()
         self.url = url
         self.target_path = target_path
+        self.branch = branch
 
     def run(self):
         """Run git clone in background (non-blocking)."""
         try:
             self.output_signal.emit("running")
 
+            cmd = ["git", "clone", self.url, self.target_path]
+            if self.branch:
+                cmd.insert(1, "-b")
+                cmd.insert(2, self.branch)
+
             result = subprocess.run(
-                ["git", "clone", self.url, self.target_path],
+                cmd,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -116,15 +146,41 @@ class ForkManagerDialog(QDialog):
         help_label.setStyleSheet("color: #888888; font-size: 9pt;")
         layout.addWidget(help_label)
 
-        # --- Repository URL row ---
+        # --- Load fork entries from llama.json ---
+        self.entries = _load_fork_entries()
+
+        # --- Repository URL row (editable combo with fork entries) ---
         url_layout = QHBoxLayout()
         url_label = QLabel(gettext("lbl_fork_url"))
-        self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("https://github.com/...")
-        self.url_edit.setMinimumWidth(300)
+        self.url_combo = QComboBox()
+        self.url_combo.setEditable(True)
+        self.url_combo.setPlaceholderText("https://github.com/...")
+        self.url_combo.setMinimumWidth(300)
+        # Populate with fork entries (show name, store URL as userData)
+        for entry in self.entries:
+            display = entry["name"]
+            url = entry["url"]
+            if display != url:
+                display = f"{display} ({url})"
+            self.url_combo.addItem(display, url)
+        # Allow typing a custom URL
+        self.url_combo.setEditText("")
         url_layout.addWidget(url_label)
-        url_layout.addWidget(self.url_edit, 1)
+        url_layout.addWidget(self.url_combo, 1)
         layout.addLayout(url_layout)
+
+        # --- Branch row (optional) ---
+        branch_layout = QHBoxLayout()
+        branch_label = QLabel(gettext("lbl_fork_branch"))
+        self.branch_edit = QLineEdit()
+        self.branch_edit.setPlaceholderText(gettext("placeholder_branch_default"))
+        self.branch_edit.setMinimumWidth(300)
+        branch_hint = QLabel(gettext("lbl_fork_branch_hint"))
+        branch_hint.setStyleSheet("color: #888888; font-size: 9pt;")
+        branch_layout.addWidget(branch_label)
+        branch_layout.addWidget(self.branch_edit, 1)
+        branch_layout.addWidget(branch_hint)
+        layout.addLayout(branch_layout)
 
         # Stretch to push buttons down
         layout.addStretch()
@@ -189,7 +245,7 @@ class ForkManagerDialog(QDialog):
             return
 
         # Validate URL
-        url = self.url_edit.text().strip()
+        url = self.url_combo.currentText().strip()
         if not url:
             QMessageBox.warning(
                 self,
@@ -207,11 +263,15 @@ class ForkManagerDialog(QDialog):
 
         target_path = self.target_dir / repo_name
 
+        # Get optional branch
+        branch = self.branch_edit.text().strip()
+
         # Confirm before cloning
         reply = QMessageBox.question(
             self,
             gettext("fork_result_title"),
-            f"Clone '{url}'\ninto:\n{target_path}",
+            f"Clone '{url}'\ninto:\n{target_path}" +
+            (f"\nBranch: {branch}" if branch else ""),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
@@ -219,14 +279,18 @@ class ForkManagerDialog(QDialog):
             return
 
         # Log clone start to debug area
-        self._dump_to_debug(f"[FORK] git clone {url} {target_path}")
+        cmd_line = f"git clone"
+        if branch:
+            cmd_line += f" -b {branch}"
+        cmd_line += f" {url} {target_path}"
+        self._dump_to_debug(f"[FORK] {cmd_line}")
 
         # Disable clone button during operation
         clone_btn.setEnabled(False)
         clone_btn.setText(gettext("lbl_loading"))
 
         # Create and configure the worker thread
-        self.clone_thread = GitCloneWorker(url, str(target_path))
+        self.clone_thread = GitCloneWorker(url, str(target_path), branch)
         self.clone_thread.finished_signal.connect(self._on_clone_finished)
         self.clone_thread.start()
 
