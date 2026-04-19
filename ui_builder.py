@@ -504,6 +504,11 @@ def build_llauncher_ui(window):
     settings_btn.setToolTip(gettext("tooltip_settings"))
     settings_btn.clicked.connect(window.show_settings_dialog)
     presets_layout.addWidget(settings_btn)
+
+    fork_btn = QPushButton(gettext("btn_fork_llama"))
+    fork_btn.setToolTip(gettext("tooltip_fork_llama"))
+    fork_btn.clicked.connect(window.show_fork_dialog)
+    presets_layout.addWidget(fork_btn)
     
     presets_layout.addStretch()
 
