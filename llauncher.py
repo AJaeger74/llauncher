@@ -32,6 +32,7 @@ from preset_manager import (
     ask_quality_and_save_benchmark,
 )
 from settings_dialog import SettingsDialog
+from fork_manager import ForkManagerDialog
 
 # Import i18n for lazy gettext() loading
 from i18n import I18nManager
@@ -255,7 +256,22 @@ class llauncher(QMainWindow):
                     json.dump(config, f, indent=2)
             except Exception:
                 pass
-    
+
+
+    def show_fork_dialog(self):
+        """Show fork manager dialog for cloning llama.cpp repos."""
+        # Read current theme from config (same pattern as show_settings_dialog)
+        try:
+            with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                import json as _json
+                config = _json.load(f)
+            use_light = config.get("theme") == "light"
+        except Exception:
+            use_light = False
+
+        dialog = ForkManagerDialog(parent=self, current_light_theme=use_light)
+        dialog.exec()
+
     def on_check_process_click(self):
         """Ruft check_running_processes() auf und zeigt Output im Debug-Fenster."""
         from process_runner import check_running_processes
