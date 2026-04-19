@@ -3,8 +3,9 @@
 fork_manager – Dialog for cloning a llama.cpp repository fork.
 
 Opens a dialog where the user selects a target directory and enters
-a repo URL. On confirmation, runs `git clone <url> <target_dir>` and
-streams output to the main window's debug area via a background thread.
+a repo URL. On confirmation, runs `git clone <url> <target_dir>` in
+a background thread (non-blocking) and dumps all output to the debug
+area when complete.
 """
 
 import subprocess
@@ -42,62 +43,39 @@ QLineEdit { padding: 5px; border-radius: 3px; background-color: #ffffff; color: 
 
 
 class GitCloneWorker(QThread):
-    """Background thread that runs git clone and streams output line-by-line."""
+    """Background thread that runs git clone and returns all output."""
 
-    output_signal = pyqtSignal(str)   # stdout/stderr lines during clone
-    finished_signal = pyqtSignal(int, str)  # returncode, combined output on finish
+    output_signal = pyqtSignal(str)   # "running..." status line
+    finished_signal = pyqtSignal(int, str)  # returncode, combined stdout+stderr
 
     def __init__(self, url: str, target_path: str):
         super().__init__()
         self.url = url
         self.target_path = target_path
-        self._process = None
 
     def run(self):
-        """Run git clone with streaming output."""
+        """Run git clone in background (non-blocking)."""
         try:
-            self._process = subprocess.Popen(
+            self.output_signal.emit("running")
+
+            result = subprocess.run(
                 ["git", "clone", self.url, self.target_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                bufsize=1,  # line-buffered
+                timeout=300  # 5 minute timeout
             )
 
-            # Read output line-by-line and emit to main thread
-            for line in self._process.stdout:
-                line = line.rstrip("\n")
-                if line:
-                    self.output_signal.emit(line)
+            combined = (result.stdout + "\n" + result.stderr).strip()
+            self.finished_signal.emit(result.returncode, combined)
 
-            returncode = self._process.wait()
-
-            # Emit final summary line
-            combined = self._get_combined_output()
-            self.finished_signal.emit(returncode, combined)
-
+        except subprocess.TimeoutExpired:
+            self.finished_signal.emit(-1, "Clone timed out (5 min)")
         except FileNotFoundError:
             self.finished_signal.emit(-1, "'git' command not found")
         except Exception as e:
             self.finished_signal.emit(-1, str(e))
-
-    def _get_combined_output(self):
-        """Retrieve any remaining output after process ended."""
-        if self._process and self._process.stdout:
-            remaining = self._process.stdout.read().strip()
-            return remaining
-        return ""
-
-    def terminate_process(self):
-        """Kill the git clone process."""
-        if self._process and self._process.poll() is None:
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
 
 
 class ForkManagerDialog(QDialog):
@@ -109,7 +87,6 @@ class ForkManagerDialog(QDialog):
         self.target_dir = None
         self.repo_url = None
         self.clone_thread = None  # GitCloneWorker instance
-        self._debug_text = getattr(parent, 'debug_text', None) if parent else None
         self.setup_ui()
         self.apply_theme(current_light_theme)
         self.setWindowTitle(gettext("fork_dialog_title"))
@@ -196,6 +173,7 @@ class ForkManagerDialog(QDialog):
         debug = self._get_debug_text()
         if debug:
             debug.append(message)
+
     def _clone_repo(self):
         """Validate inputs and start git clone in background thread."""
         # Prevent double-clicks
@@ -254,13 +232,8 @@ class ForkManagerDialog(QDialog):
 
         # Create and configure the worker thread
         self.clone_thread = GitCloneWorker(url, str(target_path))
-        self.clone_thread.output_signal.connect(self._on_clone_output)
         self.clone_thread.finished_signal.connect(self._on_clone_finished)
         self.clone_thread.start()
-
-    def _on_clone_output(self, line: str):
-        """Handle streaming output from git clone."""
-        self._dump_to_debug(f"[FORK] {line}")
 
     def _on_clone_finished(self, returncode: int, combined_output: str):
         """Handle clone completion."""
@@ -278,6 +251,11 @@ class ForkManagerDialog(QDialog):
         target_path = self.target_dir / repo_name
 
         if returncode == 0:
+            # Dump git output to debug area
+            if combined_output.strip():
+                self._dump_to_debug(f"[FORK] {combined_output}")
+            else:
+                self._dump_to_debug("[FORK] (no output)")
             self._dump_to_debug(
                 f"[FORK] ✓ Cloned '{repo_name}' → {target_path}"
             )
@@ -289,7 +267,8 @@ class ForkManagerDialog(QDialog):
             self.accept()
         else:
             error_msg = combined_output.strip() if combined_output else "unknown error"
-            self._dump_to_debug(f"[FORK] ✗ Clone failed (exit {returncode}): {error_msg}")
+            self._dump_to_debug(f"[FORK] ✗ Clone failed (exit {returncode})")
+            self._dump_to_debug(f"[FORK] {error_msg}")
             QMessageBox.critical(
                 self,
                 gettext("fork_result_title"),
