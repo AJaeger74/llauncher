@@ -140,5 +140,18 @@
   "debug_block_count": "Block count:",
   "msg_model_info_read_error": "Could not read model info: {error}",
   "msg_unavailable": "unavailable",
-  "msg_not_found": "not found"
+  "msg_not_found": "not found",
+  "btn_fork_llama": "Add llama fork",
+  "tooltip_fork_llama": "Clone a llama.cpp repository to a local directory",
+  "fork_dialog_title": "Add llama fork",
+  "lbl_fork_directory": "Target Directory:",
+  "btn_browse_dir": "Browse...",
+  "lbl_fork_url": "Repository URL:",
+  "lbl_fork_clonedir": "Clone into this directory (parent of the repo folder)",
+  "btn_clone_repo": "Clone",
+  "fork_result_success": "Successfully cloned '{repo}' to '{path}'",
+  "fork_result_error": "Clone failed: {error}",
+  "msg_no_directory_selected": "Please select a target directory.",
+  "msg_no_url_entered": "Please enter a repository URL.",
+  "fork_result_title": "Clone Result"
 }
