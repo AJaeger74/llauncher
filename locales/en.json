@@ -153,5 +153,6 @@
   "fork_result_error": "Clone failed: {error}",
   "msg_no_directory_selected": "Please select a target directory.",
   "msg_no_url_entered": "Please enter a repository URL.",
-  "fork_result_title": "Clone Result"
+  "fork_result_title": "Clone Result",
+  "lbl_loading": "Loading..."
 }

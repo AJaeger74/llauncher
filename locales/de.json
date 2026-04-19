@@ -153,5 +153,6 @@
   "fork_result_error": "Klonen fehlgeschlagen: {error}",
   "msg_no_directory_selected": "Bitte wählen Sie ein Zielverzeichnis aus.",
   "msg_no_url_entered": "Bitte geben Sie eine Repository-URL ein.",
-  "fork_result_title": "Klon-Ergebnis"
+  "fork_result_title": "Klon-Ergebnis",
+  "lbl_loading": "Laden..."
 }

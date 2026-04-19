@@ -223,12 +223,7 @@ class ForkManagerDialog(QDialog):
 
         # Disable clone button during operation
         clone_btn.setEnabled(False)
-        try:
-            from i18n import I18nManager
-            loading_text = I18nManager.get_instance().gettext("lbl_loading")
-        except Exception:
-            loading_text = "Loading..."
-        clone_btn.setText(loading_text)
+        clone_btn.setText(gettext("lbl_loading"))
 
         # Create and configure the worker thread
         self.clone_thread = GitCloneWorker(url, str(target_path))
