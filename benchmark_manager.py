@@ -108,7 +108,7 @@ class BenchmarkManager:
         """Cancel the currently running benchmark."""
         print("[DEBUG] cancel_benchmark() called!")  # Terminal output for debugging
         
-        bench_thread = getattr(self.window, 'bench_thread', None)
+        bench_thread = self.bench_thread
         if not bench_thread:
             self.window.debug_text.append("ERROR: No benchmark thread found to cancel!")
             return
@@ -133,5 +133,5 @@ class BenchmarkManager:
     
     def is_benchmark_running(self):
         """Check if a benchmark is currently running."""
-        bench_thread = getattr(self.window, 'bench_thread', None)
+        bench_thread = self.bench_thread
         return bench_thread is not None and bench_thread.isRunning()
