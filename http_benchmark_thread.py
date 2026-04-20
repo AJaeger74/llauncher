@@ -51,6 +51,7 @@ class HTTPBenchmarkRunner(QThread):
         self._cancelled = False
         self._cancel_read, self._cancel_write = os.pipe()
         self._sock = None  # Underlying socket for cancellation unblocking
+        self._conn = None  # HTTP connection object — close this for reliable cancellation
         self._stream_buffer = ""
         self._context_content = ""  # Will be loaded in run()
         
@@ -77,9 +78,12 @@ class HTTPBenchmarkRunner(QThread):
             os.write(self._cancel_write, b"x")
         except Exception:
             pass
-        if hasattr(self, '_sock') and self._sock:
+        # Close the http.client connection — this reliably interrupts blocking reads
+        # Closing just the raw socket is unreliable because http.client wraps it
+        # in internal buffering layers that may not propagate the close.
+        if self._conn:
             try:
-                self._sock.close()
+                self._conn.close()
             except Exception:
                 pass
     
@@ -408,7 +412,8 @@ class HTTPBenchmarkRunner(QThread):
             
             # Use http.client for reliable socket access
             conn = http.client.HTTPConnection(host, port, timeout=300)
-            self._sock = conn.sock  # Direct socket reference for cancellation
+            self._conn = conn  # Store for cancellation (call close() to interrupt blocking read)
+            self._sock = conn.sock if conn.sock else None
             conn.request("POST", parsed.path, body=data_json, headers={'Content-Type': 'application/json'})
             response = conn.getresponse()
             

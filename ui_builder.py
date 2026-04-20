@@ -7,8 +7,30 @@ Baute alle Layouts, Sliders, Buttons und Labels auf.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
+
+
+def _get_git_branch():
+    """Detect current git branch name from .git/HEAD, fallback to 'main'."""
+    try:
+        git_dir = Path(__file__).parent / ".git"
+        if git_dir.is_file():
+            with open(git_dir) as f:
+                ref = f.read().strip()  # e.g. "ref: refs/heads/my-branch"
+                ref_path = ref.split(" ", 1)[-1]
+                head_file = git_dir.parent / ref_path
+        else:
+            head_file = git_dir / "HEAD"
+        with open(head_file) as f:
+            ref = f.read().strip()
+        if ref.startswith("ref: refs/heads/"):
+            return ref.split("refs/heads/")[-1]
+    except Exception:
+        pass
+    return "main"
+
 
 # ========== THEME STYLES ==========
 DARK_THEME = """
@@ -73,7 +95,7 @@ def build_llauncher_ui(window):
         window: llauncher QMainWindow Instance (wird modifiziert)
     """
     # Grund-Setup
-    window.setWindowTitle(f"llauncher v{window.VERSION}")
+    window.setWindowTitle(f"llauncher {window.VERSION} ({_get_git_branch()})")
     window.setMinimumSize(1000, 800)
 
     central_widget = QWidget()
