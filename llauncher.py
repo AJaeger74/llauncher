@@ -780,7 +780,7 @@ class llauncher(QMainWindow):
             debug_text = self.debug_text.toPlainText()
             
             # Parse prompt eval time first (must be before 'eval time' to avoid matching partial)
-            match = re.search(r'prompt\s+eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
+            match = re.search(r'prompt\s+eval\s+time\s*[:=]\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
             if match:
                 server_log_metrics['prompt_eval_time_ms'] = float(match.group(1))
                 server_log_metrics['prefill_tokens'] = int(match.group(2))
@@ -792,14 +792,14 @@ class llauncher(QMainWindow):
                     # Skip estimated values - prefer JSON metrics
                     if '[estimated]' in line:
                         continue
-                    match = re.search(r'eval\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', line, re.IGNORECASE)
+                    match = re.search(r'eval\s+time\s*[:=]\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', line, re.IGNORECASE)
                     if match:
                         server_log_metrics['eval_time_ms'] = float(match.group(1))
                         server_log_metrics['gen_tokens'] = int(match.group(2))
                     break
             
             # Parse total time - skip estimated values
-            match = re.search(r'total\s+time\s*=\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
+            match = re.search(r'total\s+time\s*[:=]\s*([\d.]+)\s+ms\s*/\s*(\d+)\s+tokens', debug_text, re.IGNORECASE)
             if match and '[estimated]' not in match.group(0):
                 server_log_metrics['total_time_ms'] = float(match.group(1))
                 server_log_metrics['total_tokens'] = int(match.group(2))
@@ -917,14 +917,20 @@ class llauncher(QMainWindow):
         else:
             display_tps = tps
         
-        # Pass benchmark data to the dialog
+        # Pass benchmark data to the dialog with preload/gen metrics
         ask_quality_and_save_benchmark(
             self,
             self.debug_text,
             self.status_label,
             display_tps,
             token_count,
-            full_command
+            full_command,
+            preload_time=display_metrics.get('prompt_eval_time'),
+            preload_tokens=display_metrics.get('prefill_tokens'),
+            preload_tps=pe_tps if 'pe_tps' in locals() else None,
+            gen_time=display_metrics.get('eval_time'),
+            gen_tokens=gen_tokens if 'gen_tokens' in locals() else None,
+            gen_tps=gen_tps if 'gen_tps' in locals() else None,
         )
         
         # Disable cancel button and reset status after dialog closes
@@ -1121,11 +1127,11 @@ class llauncher(QMainWindow):
         row = index.row()
         col = index.column()
         
-        # Nur 4. Spalte (Kommandozeile) ist kopierbar
-        if col != 3:
+        # Nur 9. Spalte (Kommandozeile) ist kopierbar
+        if col != 8:
             return
         
-        command_item = self.bench_table.item(row, 3)
+        command_item = self.bench_table.item(row, 8)
         command = command_item.text()
         
         # Ins Clipboard kopieren

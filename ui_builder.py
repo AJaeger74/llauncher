@@ -547,20 +547,40 @@ def build_llauncher_ui(window):
     bench_label.setFont(QFont("Monospace", 9))
 
     window.bench_table = QTableWidget()
-    window.bench_table.setColumnCount(4)
-    window.bench_table.setHorizontalHeaderLabels([gettext("bench_table_date"), gettext("bench_table_tps"), gettext("bench_table_quality"), gettext("lbl_command_line")])
-    
+    window.bench_table.setColumnCount(9)
+    window.bench_table.setHorizontalHeaderLabels([
+        gettext("bench_table_date"),
+        gettext("bench_table_preload_time"),
+        gettext("bench_table_preload_tokens"),
+        gettext("bench_table_preload_tps"),
+        gettext("bench_table_gen_time"),
+        gettext("bench_table_gen_tokens"),
+        gettext("bench_table_gen_tps"),
+        gettext("bench_table_quality"),
+        gettext("lbl_command_line"),
+    ])
+
     # Nur Doppelklick auf Qualitätsspalte erlaubt zum Editieren
     window.bench_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
-    
-    # Fixe Spaltenbreiten: Datum/Zeit (150px), TPS und Qualität schmal, Kommandozeile streckt sich
+
+    # Fixe Spaltenbreiten: Datum, Preload/Gen metrisch schmal, Qualität, Kommandozeile streckt sich
     window.bench_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-    window.bench_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+    window.bench_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+    window.bench_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+    window.bench_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+    window.bench_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+    window.bench_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+    window.bench_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
     window.bench_table.setColumnWidth(0, 150)  # Datum/Zeit fix
-    window.bench_table.setColumnWidth(1, 80)   # TPS fix (5 Stellen vor + Komma + 2 nach = max 8 Zeichen)
-    window.bench_table.setColumnWidth(2, 90)   # Qualität fix (Sehr gut / Gut / Mittel / Schlecht)
+    window.bench_table.setColumnWidth(1, 80)   # Preload Time fix (z.B. "320ms")
+    window.bench_table.setColumnWidth(2, 55)   # Preload Tokens fix (z.B. "16")
+    window.bench_table.setColumnWidth(3, 65)   # Preload TPS fix (z.B. "50.0")
+    window.bench_table.setColumnWidth(4, 80)   # Generation Time fix (z.B. "1,2s")
+    window.bench_table.setColumnWidth(5, 55)   # Generation Tokens fix (z.B. "240")
+    window.bench_table.setColumnWidth(6, 65)   # Generation TPS fix (z.B. "200.0")
+    window.bench_table.setColumnWidth(7, 90)   # Qualität fix (Sehr gut / Gut / Mittel / Schlecht)
     
     # Kontextmenü für Rechtsklick aktivieren
     window.bench_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -589,9 +609,23 @@ def build_llauncher_ui(window):
             import csv
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Datum/Zeit", "TPS", "Qualität", "Kommandozeile"])
+                writer.writerow([
+                    "Datum/Zeit", "Qualität", "Kommandozeile",
+                    "Preload Time (s)", "Preload Tokens", "Preload TPS",
+                    "Gen Time (s)", "Gen Tokens", "Gen TPS"
+                ])
                 for b in benchmarks:
-                    writer.writerow([b["timestamp"], b["tps"], b["quality"], b["full_command"]])
+                    writer.writerow([
+                        b.get("timestamp", ""),
+                        b.get("quality", ""),
+                        b.get("full_command", ""),
+                        b.get("preload_time", ""),
+                        b.get("preload_tokens", ""),
+                        b.get("preload_tps", ""),
+                        b.get("gen_time", ""),
+                        b.get("gen_tokens", ""),
+                        b.get("gen_tps", ""),
+                    ])
         
         elif file_path.endswith('.json'):
             import json

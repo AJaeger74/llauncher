@@ -12,13 +12,17 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QTextEdit,
     QListWidget,
     QLineEdit,
     QDialog,
+    QGridLayout,
+    QGroupBox,
 )
+from PyQt6.QtGui import QFont
 from PyQt6.QtCore import QDate, QTime, Qt
 from i18n import I18nManager
 gettext = I18nManager.get_instance().gettext
@@ -319,18 +323,181 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
     debug_text.setPlainText(preset_header)
 
 
+class BenchmarkRatingDialog(QDialog):
+    """Custom dialog showing detailed benchmark metrics with quality input."""
+    
+    def __init__(self, window, tps, token_count, full_command,
+                 preload_time=None, preload_tokens=None, preload_tps=None,
+                 gen_time=None, gen_tokens=None, gen_tps=None):
+        super().__init__(window)
+        self.setWindowTitle(gettext("dialog_rating_title"))
+        self.setModal(True)
+        self.setMinimumSize(480, 380)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(12)
+        
+        # Title
+        title_label = QLabel(gettext("msg_benchmark_complete_title"))
+        title_label.setStyleSheet("font-weight: bold; font-size: 13pt;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title_label)
+        
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        
+        row = 0
+        mono = QFont("Monospace")
+        
+        if preload_time is not None:
+            # Preload section header
+            h = QLabel(gettext("lbl_preload_section"))
+            h.setStyleSheet("font-weight: bold; font-size: 10pt; color: #5dade2;")
+            grid.addWidget(h, row, 0, 1, 4)
+            row += 1
+            
+            # Time + Tokens on same row
+            lbl = QLabel(f"{gettext('lbl_preload_time')}:  ")
+            grid.addWidget(lbl, row, 0)
+            v = QLabel(self._format_time(preload_time))
+            v.setFont(mono)
+            grid.addWidget(v, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
+            lbl2 = QLabel(f"{gettext('lbl_preload_tokens')}:  ")
+            grid.addWidget(lbl2, row, 2)
+            v2 = QLabel(str(preload_tokens))
+            v2.setFont(mono)
+            grid.addWidget(v2, row, 3, alignment=Qt.AlignmentFlag.AlignRight)
+            row += 1
+            
+            # TPS on its own row
+            lbl3 = QLabel(f"{gettext('lbl_preload_tps')}:  ")
+            grid.addWidget(lbl3, row, 0)
+            v3 = QLabel(f"{preload_tps:.2f}")
+            v3.setFont(mono)
+            grid.addWidget(v3, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
+            # colspan for empty space
+            row += 1
+        
+        if gen_time is not None:
+            h = QLabel(gettext("lbl_gen_section"))
+            h.setStyleSheet("font-weight: bold; font-size: 10pt; color: #5dade2;")
+            grid.addWidget(h, row, 0, 1, 4)
+            row += 1
+            
+            lbl4 = QLabel(f"{gettext('lbl_gen_time')}:  ")
+            grid.addWidget(lbl4, row, 0)
+            v4 = QLabel(self._format_time(gen_time))
+            v4.setFont(mono)
+            grid.addWidget(v4, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
+            lbl5 = QLabel(f"{gettext('lbl_gen_tokens')}:  ")
+            grid.addWidget(lbl5, row, 2)
+            v5 = QLabel(str(gen_tokens))
+            v5.setFont(mono)
+            grid.addWidget(v5, row, 3, alignment=Qt.AlignmentFlag.AlignRight)
+            row += 1
+            
+            lbl6 = QLabel(f"{gettext('lbl_gen_tps')}:  ")
+            grid.addWidget(lbl6, row, 0)
+            v6 = QLabel(f"{gen_tps:.2f}")
+            v6.setFont(mono)
+            grid.addWidget(v6, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
+            row += 1
+        
+        # Summary
+        lbl7 = QLabel(f"{gettext('lbl_overall_tps')}:  ")
+        grid.addWidget(lbl7, row, 0)
+        item = QLabel(f"{tps:.2f} TPS")
+        item.setFont(QFont("Monospace", 10, QFont.Weight.Bold))
+        grid.addWidget(item, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
+        lbl8 = QLabel(f"{gettext('lbl_gen_count')}:  ")
+        grid.addWidget(lbl8, row, 2)
+        v7 = QLabel(str(token_count))
+        v7.setFont(mono)
+        grid.addWidget(v7, row, 3, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        main_layout.addLayout(grid)
+        
+        # Quality input section
+        quality_layout = QVBoxLayout()
+        quality_label = QLabel(gettext("lbl_quality_input"))
+        quality_label.setFont(QFont("Monospace", 10))
+        quality_layout.addWidget(quality_label)
+        
+        self.quality_edit = QLineEdit()
+        self.quality_edit.setPlaceholderText(gettext("dlg_quality_placeholder"))
+        self.quality_edit.setFont(QFont("Monospace", 11))
+        quality_layout.addWidget(self.quality_edit)
+        main_layout.addLayout(quality_layout)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        save_btn = QPushButton(gettext("btn_save_rating"))
+        save_btn.setStyleSheet("""
+            QPushButton { 
+                background-color: #27ae60; color: white; padding: 8px 20px; 
+                border-radius: 4px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #219a52; }
+        """)
+        save_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(save_btn)
+        
+        cancel_btn = QPushButton(gettext("btn_cancel"))
+        cancel_btn.setStyleSheet("""
+            QPushButton { 
+                background-color: #7f8c8d; color: white; padding: 8px 20px; 
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #6c7a7b; }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        main_layout.addLayout(btn_layout)
+    
+    def _format_time(self, seconds):
+        """Format seconds as ms or s."""
+        if seconds < 1:
+            return f"{seconds*1000:.0f}ms"
+        return f"{seconds:.2f}s"
+    
+    def get_quality(self):
+        return self.quality_edit.text().strip()
+
+
 def ask_quality_and_save_benchmark(window, debug_text, status_label, 
-                                   tps, token_count, full_command):
+                                   tps, token_count, full_command,
+                                   preload_time=None, preload_tokens=None, preload_tps=None,
+                                   gen_time=None, gen_tokens=None, gen_tps=None):
     """Fragt Qualitätsbewertung ab und speichert Benchmark.
     
     full_command: Vollständige Kommandozeile (z.B. "/home/user/llama.cpp/llama-server -m /home/user/models/model.gguf -c 2048 ...")
+    preload_time: Prefill/Preload Zeit in Sekunden (float)
+    preload_tokens: Anzahl Prefill-Tokens (int)
+    preload_tps: Prefill/Preload Tokens per Second (float)
+    gen_time: Generation Zeit in Sekunden (float)
+    gen_tokens: Anzahl generierter Tokens (int)
+    gen_tps: Generation Tokens per Second (float)
     """
     
-    quality, ok = QInputDialog.getText(
-        window, gettext("dialog_quality_title"),
-        gettext("msg_benchmark_complete").format(tps=tps, token_count=token_count) + "\n\n" + gettext("lbl_quality_input")
+    # Custom rating dialog with all metrics
+    dialog = BenchmarkRatingDialog(
+        window, tps, token_count, full_command,
+        preload_time=preload_time,
+        preload_tokens=preload_tokens,
+        preload_tps=preload_tps,
+        gen_time=gen_time,
+        gen_tokens=gen_tokens,
+        gen_tps=gen_tps,
     )
-    if not ok or not quality:
+    
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    
+    quality = dialog.get_quality()
+    if not quality:
         return None
     
     # Benchmark speichern
@@ -343,30 +510,93 @@ def ask_quality_and_save_benchmark(window, debug_text, status_label,
         "tps": round(tps, 2),
         "quality": quality,
     }
+    # Neue Felder hinzufügen falls vorhanden
+    if preload_time is not None:
+        benchmark_entry["preload_time"] = round(preload_time, 3)
+    if preload_tokens is not None:
+        benchmark_entry["preload_tokens"] = preload_tokens
+    if preload_tps is not None:
+        benchmark_entry["preload_tps"] = round(preload_tps, 2)
+    if gen_time is not None:
+        benchmark_entry["gen_time"] = round(gen_time, 3)
+    if gen_tokens is not None:
+        benchmark_entry["gen_tokens"] = gen_tokens
+    if gen_tps is not None:
+        benchmark_entry["gen_tps"] = round(gen_tps, 2)
+    
     save_benchmarks([benchmark_entry])
     
     # Tabelle aktualisieren
     row = window.bench_table.rowCount()
     window.bench_table.insertRow(row)
     
-    # Datum/Zeit: read-only (standardmäßig ItemIsEditable entfernen)
+    # Datum/Zeit: read-only
     date_item = QTableWidgetItem(timestamp)
     date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     window.bench_table.setItem(row, 0, date_item)
     
-    # TPS: read-only
-    tps_item = QTableWidgetItem(f"{tps:.2f}")
-    tps_item.setFlags(tps_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-    window.bench_table.setItem(row, 1, tps_item)
+    # Preload Time: read-only (col 1)
+    if preload_time is not None:
+        preload_str = f"{preload_time*1000:.0f}ms" if preload_time < 1 else f"{preload_time:.2f}s"
+    else:
+        preload_str = "-"
+    preload_time_item = QTableWidgetItem(preload_str)
+    preload_time_item.setFlags(preload_time_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 1, preload_time_item)
     
-    # Qualität: editierbar (ItemIsEditable setzen)
+    # Preload Tokens: read-only (col 2)
+    if preload_tokens is not None:
+        preload_tok_str = str(preload_tokens)
+    else:
+        preload_tok_str = "-"
+    preload_tok_item = QTableWidgetItem(preload_tok_str)
+    preload_tok_item.setFlags(preload_tok_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 2, preload_tok_item)
+    
+    # Preload TPS: read-only (col 3)
+    if preload_tps is not None:
+        preload_tps_str = f"{preload_tps:.2f}"
+    else:
+        preload_tps_str = "-"
+    preload_tps_item = QTableWidgetItem(preload_tps_str)
+    preload_tps_item.setFlags(preload_tps_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 3, preload_tps_item)
+    
+    # Generation Time: read-only (col 4)
+    if gen_time is not None:
+        gen_str = f"{gen_time*1000:.0f}ms" if gen_time < 1 else f"{gen_time:.2f}s"
+    else:
+        gen_str = "-"
+    gen_time_item = QTableWidgetItem(gen_str)
+    gen_time_item.setFlags(gen_time_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 4, gen_time_item)
+    
+    # Generation Tokens: read-only (col 5)
+    if gen_tokens is not None:
+        gen_tok_str = str(gen_tokens)
+    else:
+        gen_tok_str = "-"
+    gen_tok_item = QTableWidgetItem(gen_tok_str)
+    gen_tok_item.setFlags(gen_tok_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 5, gen_tok_item)
+    
+    # Generation TPS: read-only (col 6)
+    if gen_tps is not None:
+        gen_tps_str = f"{gen_tps:.2f}"
+    else:
+        gen_tps_str = "-"
+    gen_tps_item = QTableWidgetItem(gen_tps_str)
+    gen_tps_item.setFlags(gen_tps_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    window.bench_table.setItem(row, 6, gen_tps_item)
+    
+    # Qualität: editierbar (col 7)
     quality_item = QTableWidgetItem(quality)
     quality_item.setFlags(quality_item.flags() | Qt.ItemFlag.ItemIsEditable)
-    window.bench_table.setItem(row, 2, quality_item)
+    window.bench_table.setItem(row, 7, quality_item)
     
-    # Kommandozeile: read-only
+    # Kommandozeile: read-only (col 8)
     cmd_item = QTableWidgetItem(full_command)
     cmd_item.setFlags(cmd_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-    window.bench_table.setItem(row, 3, cmd_item)
+    window.bench_table.setItem(row, 8, cmd_item)
     
     return benchmark_entry
