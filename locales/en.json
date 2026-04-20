@@ -43,7 +43,7 @@
   "bench_table_date": "Date/Time",
   "bench_table_tps": "TPS",
   "bench_table_preload_time": "Preload Time",
-  "bench_table_preload_tokens": "Preload Tokens",
+  "bench_table_preload_tokens": "Tokens",
   "bench_table_preload_tps": "Preload TPS",
   "bench_table_gen_time": "Gen Time",
   "bench_table_gen_tokens": "Gen Tokens",

@@ -574,12 +574,12 @@ def build_llauncher_ui(window):
     window.bench_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
     window.bench_table.setColumnWidth(0, 150)  # Datum/Zeit fix
-    window.bench_table.setColumnWidth(1, 80)   # Preload Time fix (z.B. "320ms")
-    window.bench_table.setColumnWidth(2, 55)   # Preload Tokens fix (z.B. "16")
-    window.bench_table.setColumnWidth(3, 65)   # Preload TPS fix (z.B. "50.0")
-    window.bench_table.setColumnWidth(4, 80)   # Generation Time fix (z.B. "1,2s")
-    window.bench_table.setColumnWidth(5, 55)   # Generation Tokens fix (z.B. "240")
-    window.bench_table.setColumnWidth(6, 65)   # Generation TPS fix (z.B. "200.0")
+    window.bench_table.setColumnWidth(1, 90)   # Preload Time fix (z.B. "320ms")
+    window.bench_table.setColumnWidth(2, 90)   # Preload Tokens fix (z.B. "16")
+    window.bench_table.setColumnWidth(3, 90)   # Preload TPS fix (z.B. "50.0")
+    window.bench_table.setColumnWidth(4, 90)   # Generation Time fix (z.B. "1,2s")
+    window.bench_table.setColumnWidth(5, 90)   # Generation Tokens fix (z.B. "240")
+    window.bench_table.setColumnWidth(6, 90)   # Generation TPS fix (z.B. "200.0")
     window.bench_table.setColumnWidth(7, 90)   # Qualität fix (Sehr gut / Gut / Mittel / Schlecht)
     
     # Kontextmenü für Rechtsklick aktivieren
