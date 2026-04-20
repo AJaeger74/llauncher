@@ -78,12 +78,18 @@ class HTTPBenchmarkRunner(QThread):
             os.write(self._cancel_write, b"x")
         except Exception:
             pass
-        # Close the http.client connection — this reliably interrupts blocking reads
-        # Closing just the raw socket is unreliable because http.client wraps it
-        # in internal buffering layers that may not propagate the close.
+        # Close the http.client connection (streaming mode)
         if self._conn:
             try:
                 self._conn.close()
+            except Exception:
+                pass
+        # For urllib (standard benchmark), close the raw socket directly
+        # This interrupts the blocking response.read() call
+        if self._sock:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+                self._sock.close()
             except Exception:
                 pass
     
@@ -279,7 +285,18 @@ class HTTPBenchmarkRunner(QThread):
             with urllib.request.urlopen(req, timeout=300) as response:
                 self._sock = response.fp.raw._sock  # Store for cancellation unblocking
                 start_response = time.time()
-                result = json.loads(response.read().decode('utf-8'))
+                try:
+                    raw = response.read().decode('utf-8')
+                except Exception as e:
+                    # Socket was closed by cancel() — exit silently
+                    if self._cancelled:
+                        return
+                    raise
+                result = json.loads(raw)
+            
+            # Check if cancelled while reading
+            if self._cancelled:
+                return
             
             total_time = time.time() - start_time
             
