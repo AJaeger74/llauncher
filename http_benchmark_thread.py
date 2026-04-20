@@ -217,11 +217,8 @@ class HTTPBenchmarkRunner(QThread):
             cleaned = re.sub(pattern, ' ', cleaned, flags=re.MULTILINE)
             
         return cleaned
-        return cleaned
 
     def run(self):
-        import urllib.request, urllib.error
-        
         self.output_signal.emit(f"DEBUG: run() started!\n")
         
         # Load benchmark file in run() where signals work
@@ -392,7 +389,8 @@ class HTTPBenchmarkRunner(QThread):
             self.finished_signal.emit(0, 0)
     
     def _run_streaming(self, url: str, data: dict):
-        import urllib.request, json
+        import http.client
+        from urllib.parse import urlparse
         
         try:
             request_start = time.time()
@@ -401,20 +399,40 @@ class HTTPBenchmarkRunner(QThread):
             last_token_time = request_start
             first_token_time = None
             
-            data_json = json.dumps(data).encode('utf-8')
-            req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
+            # Parse URL for http.client
+            parsed = urlparse(url)
+            host = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == 'https' else 80)
             
-            with urllib.request.urlopen(req, timeout=300) as response:
-                self._sock = response.fp.raw._sock  # Store for cancellation unblocking
-                for line in response:
-                    if self._cancelled:
-                        break
+            data_json = json.dumps(data).encode('utf-8')
+            
+            # Use http.client for reliable socket access
+            conn = http.client.HTTPConnection(host, port, timeout=300)
+            self._sock = conn.sock  # Direct socket reference for cancellation
+            conn.request("POST", parsed.path, body=data_json, headers={'Content-Type': 'application/json'})
+            response = conn.getresponse()
+            
+            buffer = b""
+            data_line = None  # Track last parsed JSON line for metrics extraction
+            
+            while True:
+                if self._cancelled:
+                    break
+                
+                chunk = response.read(8192)
+                if not chunk:
+                    break
+                
+                buffer += chunk
+                # Process complete lines from buffer
+                while b'\n' in buffer:
+                    line, buffer = buffer.split(b'\n', 1)
+                    line_str = line.decode('utf-8').strip()
                     
-                    line = line.decode('utf-8').strip()
-                    if not line or not line.startswith('data:'):
+                    if not line_str or not line_str.startswith('data:'):
                         continue
                     
-                    data_line = line[5:].strip()
+                    data_line = line_str[5:].strip()
                     if data_line == '[DONE]':
                         break
                     
@@ -453,6 +471,9 @@ class HTTPBenchmarkRunner(QThread):
                                 self.output_signal.emit(cleaned)
                     except json.JSONDecodeError:
                         continue
+                    
+                    if data_line == '[DONE]':
+                        break
             
             # After streaming loop
             inference_end = time.time() - request_start
@@ -477,30 +498,30 @@ class HTTPBenchmarkRunner(QThread):
             tps = token_count / generation_time if generation_time > 0 else 0
             
             # Also check for server-side usage info in SSE stream (llama.cpp may send it)
-           # Also check for server-side usage info in SSE stream (llama.cpp may send it)
             try:
-                json_data = json.loads(data_line if 'data_line' in locals() else '{}')
-                if 'choices' in json_data and len(json_data['choices']) > 0:
-                    choice = json_data['choices'][0]
-                    usage = choice.get('usage', {})
-                    
-                    # Update metrics with server-provided data (ensure numeric types)
-                    if usage.get('completion_tokens'):
-                        token_count = int(usage['completion_tokens'])
-                    
-                    if usage.get('prompt_tokens'):
-                        self._metrics["prefill_tokens"] = int(usage['prompt_tokens'])
-                    
-                    if usage.get('prompt_eval_time'):
-                        self._metrics["prompt_eval_time"] = float(usage['prompt_eval_time']) / 1000
-                    
-                    if usage.get('eval_time'):
-                        self._metrics["eval_time"] = float(usage['eval_time']) / 1000
-                    
-                    # Recalculate TPS with server-provided tokens (ensure numeric types)
-                    generation_time = self._metrics["generation_time"] or inference_end
-                    tps = float(token_count) / float(generation_time) if generation_time > 0 else 0
-                    
+                if data_line and data_line != '[DONE]':
+                    json_data = json.loads(data_line)
+                    if 'choices' in json_data and len(json_data['choices']) > 0:
+                        choice = json_data['choices'][0]
+                        usage = choice.get('usage', {})
+                        
+                        # Update metrics with server-provided data (ensure numeric types)
+                        if usage.get('completion_tokens'):
+                            token_count = int(usage['completion_tokens'])
+                        
+                        if usage.get('prompt_tokens'):
+                            self._metrics["prefill_tokens"] = int(usage['prompt_tokens'])
+                        
+                        if usage.get('prompt_eval_time'):
+                            self._metrics["prompt_eval_time"] = float(usage['prompt_eval_time']) / 1000
+                        
+                        if usage.get('eval_time'):
+                            self._metrics["eval_time"] = float(usage['eval_time']) / 1000
+                        
+                        # Recalculate TPS with server-provided tokens (ensure numeric types)
+                        generation_time = self._metrics["generation_time"] or inference_end
+                        tps = float(token_count) / float(generation_time) if generation_time > 0 else 0
+                        
             except (json.JSONDecodeError, KeyError):
                 pass  # Continue with local estimation
             
@@ -517,7 +538,7 @@ class HTTPBenchmarkRunner(QThread):
             # Ensure numeric types before emitting signal
             self.finished_signal.emit(float(tps), int(token_count))
             
-        except urllib.error.URLError as e:
+        except http.client.HTTPException as e:
             self.output_signal.emit(f"Network error: {e}\n")
             self.finished_signal.emit(0, 0)
         except Exception as e:
