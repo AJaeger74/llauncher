@@ -411,9 +411,15 @@ class HTTPBenchmarkRunner(QThread):
             data_json = json.dumps(data).encode('utf-8')
             
             # Use http.client for reliable socket access
-            conn = http.client.HTTPConnection(host, port, timeout=300)
-            self._conn = conn  # Store for cancellation (call close() to interrupt blocking read)
+            conn = http.client.HTTPConnection(host, port, timeout=None)
+            self._conn = conn  # Store for cancellation
             self._sock = conn.sock if conn.sock else None
+            
+            # Set a short timeout on the socket itself so select() can interrupt
+            # This is the key: without a timeout, read() blocks indefinitely
+            if self._sock:
+                self._sock.settimeout(0.5)  # 500ms timeout = responsive cancellation
+            
             conn.request("POST", parsed.path, body=data_json, headers={'Content-Type': 'application/json'})
             response = conn.getresponse()
             
@@ -424,7 +430,35 @@ class HTTPBenchmarkRunner(QThread):
                 if self._cancelled:
                     break
                 
-                chunk = response.read(8192)
+                # Use select() to check if socket has data or is closed
+                try:
+                    readable, _, errored = select.select([self._sock], [], [self._sock], 0.5)
+                    
+                    # Check for errors first
+                    if errored:
+                        self.output_signal.emit("Warning: Socket error during streaming\n")
+                        break
+                    
+                    if not readable:
+                        # No data available in 0.5s - check for cancellation
+                        continue
+                    
+                    # Read available data non-blockingly
+                    try:
+                        chunk = response.read(8192)
+                    except Exception as e:
+                        if self._cancelled:
+                            break
+                        raise
+                
+                except socket.timeout:
+                    # Timeout is expected - just means no data yet
+                    continue
+                except (ConnectionResetError, BrokenPipeError) as e:
+                    if self._cancelled:
+                        break
+                    raise
+            
                 if not chunk:
                     break
                 
@@ -544,7 +578,8 @@ class HTTPBenchmarkRunner(QThread):
             self.finished_signal.emit(float(tps), int(token_count))
             
         except http.client.HTTPException as e:
-            self.output_signal.emit(f"Network error: {e}\n")
+            if not self._cancelled:
+                self.output_signal.emit(f"Network error: {e}\n")
             self.finished_signal.emit(0, 0)
         except Exception as e:
             if not self._cancelled:
