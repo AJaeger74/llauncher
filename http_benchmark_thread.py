@@ -413,15 +413,16 @@ class HTTPBenchmarkRunner(QThread):
             # Use http.client for reliable socket access
             conn = http.client.HTTPConnection(host, port, timeout=None)
             self._conn = conn  # Store for cancellation
-            self._sock = conn.sock if conn.sock else None
-            
-            # Set a short timeout on the socket itself so select() can interrupt
-            # This is the key: without a timeout, read() blocks indefinitely
-            if self._sock:
-                self._sock.settimeout(0.5)  # 500ms timeout = responsive cancellation
             
             conn.request("POST", parsed.path, body=data_json, headers={'Content-Type': 'application/json'})
             response = conn.getresponse()
+            
+            # Socket is created lazily by http.client during request() - get it after connection is established
+            self._sock = conn.sock if conn.sock else None
+            
+            # Set a short timeout on the socket so select() can interrupt
+            if self._sock:
+                self._sock.settimeout(0.5)  # 500ms timeout = responsive cancellation
             
             buffer = b""
             data_line = None  # Track last parsed JSON line for metrics extraction
@@ -584,7 +585,7 @@ class HTTPBenchmarkRunner(QThread):
         except Exception as e:
             if not self._cancelled:
                 self.output_signal.emit(f"Error: {e}\n")
-            self._metrics["total_time"] = self._server_log_metrics['total_time_ms'] / 1000
+            self._metrics["total_time"] = self._server_log_metrics.get('total_time_ms') / 1000 if self._server_log_metrics.get('total_time_ms') else None
 
         # Update completion_tokens and total_tokens from server logs
         if self._server_log_metrics.get('gen_tokens'):
