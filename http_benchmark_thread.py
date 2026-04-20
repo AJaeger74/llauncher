@@ -50,6 +50,7 @@ class HTTPBenchmarkRunner(QThread):
         self.model_path = model_path
         self._cancelled = False
         self._cancel_read, self._cancel_write = os.pipe()
+        self._sock = None  # Underlying socket for cancellation unblocking
         self._stream_buffer = ""
         self._context_content = ""  # Will be loaded in run()
         
@@ -275,6 +276,7 @@ class HTTPBenchmarkRunner(QThread):
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
             
             with urllib.request.urlopen(req, timeout=300) as response:
+                self._sock = response.fp.raw._sock  # Store for cancellation unblocking
                 start_response = time.time()
                 result = json.loads(response.read().decode('utf-8'))
             
@@ -403,6 +405,7 @@ class HTTPBenchmarkRunner(QThread):
             req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
             
             with urllib.request.urlopen(req, timeout=300) as response:
+                self._sock = response.fp.raw._sock  # Store for cancellation unblocking
                 for line in response:
                     if self._cancelled:
                         break
