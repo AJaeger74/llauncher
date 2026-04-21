@@ -151,11 +151,12 @@ class HfDownloadWorker(QThread):
     progress_signal = pyqtSignal(str, int, int)  # filename, current_bytes, total_bytes
     finished_signal = pyqtSignal(bool, str)  # success, result_message
 
-    def __init__(self, short_id: str, file_path: str, target_dir: str):
+    def __init__(self, short_id: str, file_path: str, target_dir: str, file_name: str):
         super().__init__()
         self.short_id = short_id
         self.file_path = file_path
         self.target_dir = target_dir
+        self.file_name = file_name
 
     def run(self):
         try:
@@ -169,7 +170,7 @@ class HfDownloadWorker(QThread):
         target = Path(self.target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
-        dst = target / self.file_path
+        dst = target / self.file_name
         dst.parent.mkdir(parents=True, exist_ok=True)
 
         # --- Determine file size via HEAD -------------------------------
@@ -517,10 +518,27 @@ class HfDownloadDialog(QDialog):
             return
 
         model_dir = self._get_model_directory()
-        target_dir = os.path.join(model_dir, short_id.replace("/", "_"))
+        repo_subdir = short_id.replace("/", "_")
+        target_dir = os.path.join(model_dir, repo_subdir)
+        file_name = os.path.basename(file_path)  # Extract just the filename
+        dst_path = Path(model_dir) / repo_subdir / file_name
+
+        # Check if file already exists — ask for overwrite
+        if dst_path.exists():
+            reply = QMessageBox.question(
+                self,
+                gettext("hf_dl_dialog_title"),
+                gettext("msg_file_exists").format(path=str(dst_path)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.No:
+                # User declined overwrite — close dialog
+                self.reject()
+                return
 
         # Start worker thread
-        self.worker = HfDownloadWorker(short_id, file_path, target_dir)
+        self.worker = HfDownloadWorker(short_id, file_path, target_dir, file_name)
         self.worker.progress_signal.connect(self._on_progress)
         self.worker.finished_signal.connect(self._on_download_finished)
         self.worker.start()
@@ -541,8 +559,11 @@ class HfDownloadDialog(QDialog):
         self.download_btn.setEnabled(True)
         if success:
             QMessageBox.information(self, gettext("hf_dl_dialog_title"), message)
+            # Close the dialog after user dismisses the success message
+            self.reject()
         else:
             QMessageBox.critical(self, gettext("hf_dl_dialog_title"), message)
+            # Leave dialog open on error so user can try again
         self.status_label.setText(message)
         self.progress_bar.setValue(100 if success else 0)
 

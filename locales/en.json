@@ -189,5 +189,6 @@
   "msg_download_complete": "Download complete: {path}",
   "msg_download_error": "Download error: {error}",
   "msg_no_files_found": "No files found.",
-  "msg_repo_loading_failed": "Failed to load repo files: {error}"
+  "msg_repo_loading_failed": "Failed to load repo files: {error}",
+  "msg_file_exists": "File already exists at:\n{path}\n\nOverwrite?"
 }

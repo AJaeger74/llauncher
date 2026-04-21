@@ -189,5 +189,6 @@
   "msg_download_complete": "Download abgeschlossen: {path}",
   "msg_download_error": "Download-Fehler: {error}",
   "msg_no_files_found": "Keine Dateien gefunden.",
-  "msg_repo_loading_failed": "Repository-Dateien konnten nicht geladen werden: {error}"
+  "msg_repo_loading_failed": "Repository-Dateien konnten nicht geladen werden: {error}",
+  "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?"
 }
