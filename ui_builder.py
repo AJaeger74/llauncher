@@ -531,6 +531,11 @@ def build_llauncher_ui(window):
     fork_btn.setToolTip(gettext("tooltip_fork_llama"))
     fork_btn.clicked.connect(window.show_fork_dialog)
     presets_layout.addWidget(fork_btn)
+
+    download_model_btn = QPushButton(gettext("btn_download_model"))
+    download_model_btn.setToolTip(gettext("tooltip_download_model"))
+    download_model_btn.clicked.connect(window.show_hf_download_dialog)
+    presets_layout.addWidget(download_model_btn)
     
     presets_layout.addStretch()
 

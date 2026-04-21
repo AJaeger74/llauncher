@@ -177,5 +177,17 @@
   "msg_no_directory_selected": "Please select a target directory.",
   "msg_no_url_entered": "Please enter a repository URL.",
   "fork_result_title": "Clone Result",
-  "lbl_loading": "Loading..."
+  "lbl_loading": "Loading...",
+  "btn_download_model": "Download Model",
+  "tooltip_download_model": "Download a model file from Hugging Face Hub",
+  "hf_dl_dialog_title": "Download from Hugging Face",
+  "lbl_hf_url_or_repo": "Model URL or owner/repo:",
+  "placeholder_hf_url_repo": "e.g. mudler/Carnice-Qwen3.6-MoE-35B-A3B-APEX-GGUF",
+  "lbl_hf_files": "Files in repository:",
+  "btn_download_file": "Download",
+  "msg_downloading": "Downloading...",
+  "msg_download_complete": "Download complete: {path}",
+  "msg_download_error": "Download error: {error}",
+  "msg_no_files_found": "No files found.",
+  "msg_repo_loading_failed": "Failed to load repo files: {error}"
 }

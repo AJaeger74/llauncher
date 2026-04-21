@@ -33,6 +33,7 @@ from preset_manager import (
 )
 from settings_dialog import SettingsDialog
 from fork_manager import ForkManagerDialog
+from hf_download_dialog import HfDownloadDialog
 
 # Import i18n for lazy gettext() loading
 from i18n import I18nManager
@@ -270,6 +271,19 @@ class llauncher(QMainWindow):
             use_light = False
 
         dialog = ForkManagerDialog(parent=self, current_light_theme=use_light)
+        dialog.exec()
+
+    def show_hf_download_dialog(self):
+        """Show Hugging Face download dialog."""
+        try:
+            with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
+                import json as _json
+                config = _json.load(f)
+            use_light = config.get("theme") == "light"
+        except Exception:
+            use_light = False
+
+        dialog = HfDownloadDialog(parent=self, current_light_theme=use_light)
         dialog.exec()
 
     def on_check_process_click(self):
