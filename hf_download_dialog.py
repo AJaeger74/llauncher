@@ -123,6 +123,9 @@ def parse_hf_url(raw: str):
 
 def human_size(nbytes: int) -> str:
     """Format bytes as a human-readable string (e.g. 1.5 GiB)."""
+    # Handle negative values caused by PyQt6 signal serialization overflow.
+    # When os.path.getsize() returns > 2^31, PyQt6 may cast to signed 32-bit.
+    nbytes = abs(nbytes)
     if nbytes <= 0:
         return "0 B"
     units = ("B", "KiB", "MiB", "GiB", "TiB")
