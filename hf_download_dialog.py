@@ -706,17 +706,16 @@ class HfDownloadDialog(QDialog):
         # Debug: log every signal so we can see what's actually coming in.
         if getattr(self, '_size_change_call_count', 0) == 0:
             debug(f"[SIZE] First _start_download call: cur={current_bytes:,} init={self._initial_partial_size}")
-        
-        if self._initial_partial_size is not None and self.size_label.text() != "0 B":
-            self._worker_first_signal_processed = True
-            if current_bytes == 0 or current_bytes < self._initial_partial_size * 0.8:
-                debug(f"[SIZE] Guard skipping: cur={current_bytes:,} init={self._initial_partial_size:,} (threshold={self._initial_partial_size*0.8/1024/1024/1024:.2f} GiB)")
-                return
+
+        # Only block when current_bytes is truly 0 (no data yet).
+        # The old 80% threshold was way too high — it blocked every signal
+        # because current_bytes starts at ~730 MB and grows slowly,
+        # while the threshold was 80% of initial_partial_size (~9.93 GB).
+        if current_bytes == 0:
+            debug(f"[SIZE] Guard skipping (current_bytes==0)")
+            return
 
         # Update on every signal, not just when raw bytes change.
-        # This ensures the label keeps updating even if the worker sends
-        # duplicate values during fsync pauses or network hiccups.
-        old_display = self.size_label.text()
         new_display = human_size(current_bytes)
         debug(f"[SIZE] Setting label: {new_display} (last_raw={self._last_size_bytes:,})")
         self.size_label.setText(new_display)
