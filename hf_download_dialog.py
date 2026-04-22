@@ -706,8 +706,11 @@ class HfDownloadDialog(QDialog):
         # Protect initial partial size from being overwritten by worker's
         # first signal (which may read start_pos=0 or a stale offset).
         if self._initial_partial_size is not None and self.size_label.text() != "0 B":
+            # Mark that we've seen the first worker signal. Subsequent signals
+            # will go through even if still below the 80% threshold.
+            self._worker_first_signal_processed = True
             if current_bytes == 0 or current_bytes < self._initial_partial_size * 0.8:
-                debug(f"[SIZE] Guard skipping: cur={current_bytes:,} init={self._initial_partial_size:,}")
+                debug(f"[SIZE] Guard skipping first signal: cur={current_bytes:,} init={self._initial_partial_size:,}")
                 return
 
         # Only update if the *raw byte value* changed — this catches every
