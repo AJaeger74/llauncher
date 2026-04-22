@@ -707,12 +707,14 @@ class HfDownloadDialog(QDialog):
         # first signal (which may read start_pos=0 or a stale offset).
         if self._initial_partial_size is not None and self.size_label.text() != "0 B":
             if current_bytes == 0 or current_bytes < self._initial_partial_size * 0.8:
+                debug(f"[SIZE] Guard skipping: cur={current_bytes:,} init={self._initial_partial_size:,}")
                 return
 
         # Only update if the *raw byte value* changed — this catches every
         # real increment on disk, even when human_size() rounds to the same
         # displayed string (e.g. 15,314 GiB → 15,318 GiB stays "15,31 GiB").
         if current_bytes != self._last_size_bytes:
+            debug(f"[SIZE] Updating: {human_size(current_bytes)} (was {human_size(self._last_size_bytes)})")
             self.size_label.setText(f"{human_size(current_bytes)}")
             self._last_size_bytes = current_bytes
 
