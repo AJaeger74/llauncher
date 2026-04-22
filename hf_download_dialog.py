@@ -723,8 +723,15 @@ class HfDownloadDialog(QDialog):
         # while the actual file size (`init`) is much larger (e.g. ~19B).
         if getattr(self, '_first_worker_current', None) is None:
             self._first_worker_current = current_bytes
+        elif abs(current_bytes - self._first_worker_current) > self._initial_partial_size * 1.2:
+            # The first signal set it to the positive real_size value. Now the
+            # worker sends a negative (truncated) value — re-baseline on it.
+            debug(f"[SIZE] Re-baselining from {self._first_worker_current:,} to {current_bytes:,}")
+            self._first_worker_current = current_bytes
+            delta = 0
+        else:
+            delta = current_bytes - self._first_worker_current
         
-        delta = current_bytes - self._first_worker_current
         display_value = self._initial_partial_size + delta
         
         new_display = human_size(display_value)
