@@ -374,6 +374,8 @@ class HfDownloadDialog(QDialog):
         # --- Progress row ---
         progress_layout = QHBoxLayout()
         self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setVisible(False)  # Hidden for now
         
         # File size label - shows real on-disk size
