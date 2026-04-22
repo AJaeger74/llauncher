@@ -735,12 +735,21 @@ class HfDownloadDialog(QDialog):
             # (e.g. +4.1B) but current_bytes has wrapped past 2^31 to negative
             # (e.g. -190M). The raw subtraction gives a huge negative delta.
             # Normalize by adding 2^32 to the negative value before computing delta.
+            # The (fwc - cur) > 2^31 check works for both negative AND small-positive
+            # cur values — once cur crosses zero after a wrap, fwc - cur is still > 2^31.
             fwc = self._first_worker_current
             cur = current_bytes
-            if cur < 0 and fwc > 0 and (fwc - cur) > 2**31:
+            # Detect wrap-around by checking if the gap between fwc and cur
+            # spans more than one 32-bit range. Always normalize by adding
+            # 2^32 when gap > 2^31, regardless of whether cur is positive
+            # or negative. This correctly handles the case where cur crosses
+            # from negative to positive (e.g. -1M → +1M) — the gap stays large
+            # so we keep normalizing instead of falling through to delta = 0.
+            gap = abs(fwc - cur)
+            if gap > 2**31:
                 cur_normalized = cur + (2**32)
                 delta = cur_normalized - fwc
-                debug(f"[SIZE] Wrap detected: cur={cur:,} normalized={cur_normalized:,} delta={delta:,}")
+                debug(f"[SIZE] Wrap detected: gap={gap:,} cur={cur:,} normalized={cur_normalized:,} delta={delta:,}")
             else:
                 delta = cur - fwc
         
