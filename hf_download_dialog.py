@@ -721,7 +721,7 @@ class HfDownloadDialog(QDialog):
         # Establish the base value for delta calculation from the first worker signal.
         # This handles cases where `current_bytes` gets truncated (e.g. to ~-1.5B)
         # while the actual file size (`init`) is much larger (e.g. ~19B).
-        if getattr(self, '_first_worker_current', None) is None and current_bytes < self._initial_partial_size:
+        if getattr(self, '_first_worker_current', None) is None:
             self._first_worker_current = current_bytes
         
         delta = current_bytes - self._first_worker_current
