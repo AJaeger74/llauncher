@@ -721,9 +721,14 @@ class HfDownloadDialog(QDialog):
          # Establish the base value for delta calculation from the first worker signal.
         # This handles cases where `current_bytes` gets truncated (e.g. to ~-1.5B)
         # while the actual file size (`init`) is much larger (e.g. ~19B).
+        # Delta is computed relative to init, not relative to the first signal's
+        # raw value — this prevents delta from being stuck at small values when
+        # all signals come with similar truncated numbers.
         delta = 0
         if getattr(self, '_first_worker_current', None) is None:
+            # First worker signal: set base to cur and record init as the anchor.
             self._first_worker_current = current_bytes
+            self._init_for_delta = self._initial_partial_size
         elif abs(current_bytes - self._first_worker_current) > self._initial_partial_size * 1.2:
             # The first signal set it to the positive real_size value. Now the
             # worker sends a negative (truncated) value — re-baseline on it.
@@ -731,27 +736,25 @@ class HfDownloadDialog(QDialog):
             self._first_worker_current = current_bytes
             delta = 0
         else:
-            # Handle the common wrap-around case: _first_worker_current is positive
-            # (e.g. +4.1B) but current_bytes has wrapped past 2^31 to negative
-            # (e.g. -190M). The raw subtraction gives a huge negative delta.
-            # Normalize by adding 2^32 to the negative value before computing delta.
-            # The (fwc - cur) > 2^31 check works for both negative AND small-positive
-            # cur values — once cur crosses zero after a wrap, fwc - cur is still > 2^31.
+            # Compute delta relative to init (the initial partial file size).
+            # Even though both fwc and cur are truncated values (~-2.1B),
+            # they represent on-disk sizes. By anchoring to init, we get
+            # the correct absolute display value regardless of truncation.
             fwc = self._first_worker_current
             cur = current_bytes
-            # Detect wrap-around by checking if the gap between fwc and cur
-            # spans more than one 32-bit range. Always normalize by adding
-            # 2^32 when gap > 2^31, regardless of whether cur is positive
-            # or negative. This correctly handles the case where cur crosses
-            # from negative to positive (e.g. -1M → +1M) — the gap stays large
-            # so we keep normalizing instead of falling through to delta = 0.
-            gap = abs(fwc - cur)
-            if gap > 2**31:
-                cur_normalized = cur + (2**32)
-                delta = cur_normalized - fwc
-                debug(f"[SIZE] Wrap detected: gap={gap:,} cur={cur:,} normalized={cur_normalized:,} delta={delta:,}")
-            else:
-                delta = cur - fwc
+            init = self._init_for_delta
+
+            # Normalize truncated values to absolute by adding 2^32.
+            # Always add 2^32 (not just for negative values) so that when
+            # cur crosses from negative to positive it stays in the same cycle
+            # and doesn't cause a discontinuity in delta.
+            fwc_abs = fwc + (2**32)
+            cur_abs = cur + (2**32)
+
+            # Delta is the difference between current and baseline on-disk size.
+            delta = cur_abs - fwc_abs
+
+            debug(f"[SIZE] Delta calc: fwc={fwc:,}({fwc_abs:,}) cur={cur:,}({cur_abs:,}) init={init:,} delta={delta:,}")
         
         display_value = self._initial_partial_size + delta
         
