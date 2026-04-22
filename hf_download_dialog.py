@@ -714,16 +714,21 @@ class HfDownloadDialog(QDialog):
         # The old 80% threshold was way too high — it blocked every signal
         # because current_bytes starts at ~730 MB and grows slowly,
         # while the threshold was 80% of initial_partial_size (~9.93 GB).
+      # Only block when current_bytes is truly 0 (no data yet).
         if current_bytes == 0:
-            debug(f"[SIZE] Guard skipping (current_bytes==0)")
             return
 
-        # Update on every signal, not just when raw bytes change.
-        # Use max() because current_bytes may be truncated to ~1.8B by PyQt6
-        # signal serialization while init stays at the full ~15B value.
-        display_value = max(current_bytes, self._initial_partial_size)
+        # Establish the base value for delta calculation from the first worker signal.
+        # This handles cases where `current_bytes` gets truncated (e.g. to ~-1.5B)
+        # while the actual file size (`init`) is much larger (e.g. ~19B).
+        if getattr(self, '_first_worker_current', None) is None and current_bytes < self._initial_partial_size:
+            self._first_worker_current = current_bytes
+        
+        delta = current_bytes - self._first_worker_current
+        display_value = self._initial_partial_size + delta
+        
         new_display = human_size(display_value)
-        debug(f"[SIZE] Setting label: {new_display} (cur={current_bytes:,} init={self._initial_partial_size:,})")
+        debug(f"[SIZE] Setting label: {new_display} (cur={current_bytes:,} init={self._initial_partial_size:,} delta={delta:,})")
         self.size_label.setText(new_display)
         self._last_size_bytes = current_bytes
 
