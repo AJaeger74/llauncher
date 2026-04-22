@@ -123,8 +123,6 @@ def parse_hf_url(raw: str):
 
 def human_size(nbytes: int) -> str:
     """Format bytes as a human-readable string (e.g. 1.5 GiB)."""
-    # Handle negative values caused by PyQt6 signal serialization overflow.
-    # When os.path.getsize() returns > 2^31, PyQt6 may cast to signed 32-bit.
     nbytes = abs(nbytes)
     if nbytes <= 0:
         return "0 B"
@@ -173,7 +171,7 @@ def list_repo_files(short_id: str) -> list[dict]:
 class HfDownloadWorker(QThread):
     """Worker thread for downloading a file from Hugging Face."""
 
-    size_changed = pyqtSignal(str, int)  # filename, current_bytes_on_disk
+    size_changed = pyqtSignal(str, object)  # filename, current_bytes_on_disk (object to avoid 32-bit PyQt int truncation)
     finished_signal = pyqtSignal(bool, str)  # success, result_message
 
     def __init__(self, short_id: str, file_path: str, target_dir: str, file_name: str):
@@ -203,6 +201,10 @@ class HfDownloadWorker(QThread):
         partial_path = Path(str(dst) + ".partial")
 
         debug(f"[HfDownload] _download() STARTED for {self.file_name}")
+        debug(f"[HfDownload] worker: target={target}, file_name={self.file_name}")
+        debug(f"[HfDownload] worker: dst={dst}")
+        debug(f"[HfDownload] worker: partial_path={partial_path}")
+        debug(f"[HfDownload] worker: partial_path_str={str(partial_path)}")
 
         max_retries = 5
         attempt = 0
@@ -248,7 +250,7 @@ class HfDownloadWorker(QThread):
                                 # from disk to handle any last partial writes.
                                 current = os.path.getsize(partial_path)
                                 debug(f"[HfDownload] Empty chunk at current={current:,} bytes, start_pos={start_pos}, first_chunk={first_chunk}")
-                                
+
                                 if start_pos == 0 and first_chunk:
                                     # Fresh download – empty first read means
                                     # connection dropped before any data arrived.
@@ -263,7 +265,7 @@ class HfDownloadWorker(QThread):
                                     raise ConnectionError(
                                         gettext("msg_download_incomplete").format()
                                     )
-                                
+
                                 debug(f"[HfDownload] Download complete! total_written={bytes_written_this_session:,} bytes this session")
                                 break  # genuine end of stream
 
@@ -272,14 +274,17 @@ class HfDownloadWorker(QThread):
                             fh.flush()
                             os.fsync(fh.fileno())
                             bytes_written_this_session += len(chunk)
-                            
-                            # Real on-disk size (includes resume offset + bytes
-                            # written this session). Always authoritative.
-                            current = os.path.getsize(partial_path)
+
+                            # Read real on-disk size after fsync for accurate
+                            # progress reporting.
+                            sz = os.path.getsize(partial_path)
+                            debug(f"[HfDownload] post-write getsize: {sz:,} bytes at partial_path={partial_path}")
+                            debug(f"[HfDownload] about to emit: file_path={self.file_path!r}, size={sz} (type={type(sz).__name__})")
                             self.size_changed.emit(
                                 self.file_path,
-                                os.path.getsize(partial_path),
+                                sz,
                             )
+                            debug(f"[HfDownload] emit done for size={sz}")
 
                     debug(f"[HfDownload] Inner loop finished after {bytes_written_this_session:,} bytes")
                 # --- Atomic rename (success) ----------------------------
@@ -308,11 +313,12 @@ class HfDownloadWorker(QThread):
                 import time
 
                 wait_time = min(2 ** attempt, 30)  # cap at 30s
-                # Always read real on-disk size for accurate progress during wait
+                # Read on-disk size for accurate progress during retry wait
                 current = os.path.getsize(partial_path) if partial_path.exists() else start_pos
+                debug(f"[HfDownload] retry getsize: {current:,} bytes at partial_path={partial_path}")
                 self.size_changed.emit(
                     self.file_path,
-                    os.path.getsize(partial_path),
+                    current,
                 )
                 debug(f"[HfDownload] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
@@ -357,7 +363,6 @@ class HfDownloadDialog(QDialog):
         self._file_list = []  # Current file list from HF API
         self._current_short_id = None
         self._request_counter = 0  # Monotonically increasing request ID
-        self._last_size_bytes = 0  # Raw byte value for change detection
 
         self.setup_ui()
         self.apply_theme(current_light_theme)
@@ -655,32 +660,15 @@ class HfDownloadDialog(QDialog):
         # Compute partial path the same way the worker does, so we can show
         # the size of an existing partial file *before* the download starts.
         dst_path_full = Path(target_dir) / file_name
-        partial_path = str(dst_path_full) + ".partial"
-     # If a partial file already exists on disk, show its size immediately.
-        # Store it so we can protect it from being overwritten by the worker's
-        # first signal (which may read start_pos=0 if fsync hasn't completed).
-        if os.path.exists(partial_path):
-            real_size = os.path.getsize(partial_path)
-            self._initial_partial_size = real_size
+        partial_path_str = str(dst_path_full) + ".partial"
+        debug(f"[HfDownload] _start_download: target_dir={target_dir}, file_name={file_name}")
+        debug(f"[HfDownload] _start_download: dst_path_full={dst_path_full}")
+        debug(f"[HfDownload] _start_download: partial_path_str={partial_path_str}")
+        debug(f"[HfDownload] _start_download: realpath={os.path.realpath(partial_path_str)}")
+        if os.path.exists(partial_path_str):
+            real_size = os.path.getsize(partial_path_str)
+            debug(f"[HfDownload] _start_download: partial_size={real_size:,}")
             self._on_size_changed(file_name, real_size)
-        else:
-            self._initial_partial_size = None
-
-        # Track how many times _on_size_changed has been called.
-        # The first call comes from _start_download() with real_size (no
-        # offset needed). Subsequent calls come from the worker thread and
-        # need the offset added so the display shows total on-disk size.
-        self._size_change_call_count = 0
-        
-        # Flag to track whether the worker's first signal has been processed.
-        # This prevents the early return in _on_size_changed() from blocking
-        # updates when current_bytes happens to be 0 on the first signal.
-        self._worker_first_signal_processed = False
-        
-        # Track the raw byte value (not the formatted string) so we catch
-        # every real change on disk, even when human_size() rounds to the
-        # same displayed text.
-        self._last_size_bytes = 0
 
         self.status_label.setText(gettext("msg_downloading"))
 
@@ -698,68 +686,22 @@ class HfDownloadDialog(QDialog):
         self.worker.start()
         debug(f"Worker started for {file_name}")
 
-    def _on_worker_started(self):
-        """Called when worker's run() begins."""
-        debug("Worker.run() entered")
-
     def _on_size_changed(self, filename: str, current_bytes: int):
         """Update file size label from filesystem."""
         self.size_label.setVisible(True)
 
-        # Debug: log every signal so we can see what's actually coming in.
-        if getattr(self, '_size_change_call_count', 0) == 0:
-            debug(f"[SIZE] First _start_download call: cur={current_bytes:,} init={self._initial_partial_size}")
-
-        # Only block when current_bytes is truly 0 (no data yet).
-        # The old 80% threshold was way too high — it blocked every signal
-        # because current_bytes starts at ~730 MB and grows slowly,
-        # while the threshold was 80% of initial_partial_size (~9.93 GB).
-      # Only block when current_bytes is truly 0 (no data yet).
-        if current_bytes == 0:
+        # Ignore zero — means worker hasn't written anything yet.
+        if current_bytes <= 0:
             return
 
-         # Establish the base value for delta calculation from the first worker signal.
-        # This handles cases where `current_bytes` gets truncated (e.g. to ~-1.5B)
-        # while the actual file size (`init`) is much larger (e.g. ~19B).
-        # Delta is computed relative to init, not relative to the first signal's
-        # raw value — this prevents delta from being stuck at small values when
-        # all signals come with similar truncated numbers.
-        delta = 0
-        if getattr(self, '_first_worker_current', None) is None:
-            # First worker signal: set base to cur and record init as the anchor.
-            self._first_worker_current = current_bytes
-            self._init_for_delta = self._initial_partial_size
-        elif abs(current_bytes - self._first_worker_current) > self._initial_partial_size * 1.2:
-            # The first signal set it to the positive real_size value. Now the
-            # worker sends a negative (truncated) value — re-baseline on it.
-            debug(f"[SIZE] Re-baselining from {self._first_worker_current:,} to {current_bytes:,}")
-            self._first_worker_current = current_bytes
-            delta = 0
-        else:
-            # Compute delta relative to the first worker signal value.
-            # Both fwc and cur represent on-disk file sizes; they may be in
-            # different 32-bit cycles when cur wraps around. By adding 2^32
-            # only to delta (not to both values separately), we keep them
-            # aligned and avoid the constant negative-delta bug.
-            fwc = self._first_worker_current
-            cur = current_bytes
-            init = self._init_for_delta
+        # Debug: log raw value before processing
+        debug(f"[SIZE] Handler received: filename={filename!r}, current_bytes={current_bytes} (type={type(current_bytes).__name__})")
 
-            delta = cur - fwc
-
-            # If the gap between cur and fwc exceeds half a cycle (2^31),
-            # they are in different 32-bit cycles — add 2^32 to delta.
-            if abs(delta) > 2**31:
-                delta += 2**32
-
-            debug(f"[SIZE] Delta calc: fwc={fwc:,} cur={cur:,} init={init:,} delta={delta:,}")
-        
-        display_value = self._initial_partial_size + delta
-        
-        new_display = human_size(display_value)
-        debug(f"[SIZE] Setting label: {new_display} (cur={current_bytes:,} init={self._initial_partial_size:,} delta={delta:,})")
+        # Simple approach: display the raw on-disk size directly.
+        # The worker already calls os.path.getsize() which is the source of truth.
+        new_display = human_size(current_bytes)
+        debug(f"[SIZE] Label set: {new_display} ({current_bytes:,} bytes)")
         self.size_label.setText(new_display)
-        self._last_size_bytes = current_bytes
 
     def _on_download_finished(self, success: bool, message: str):
         """Handle download completion."""

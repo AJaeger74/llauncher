@@ -188,6 +188,8 @@
   "msg_downloading": "Wird heruntergeladen...",
   "msg_download_complete": "Download abgeschlossen: {path}",
   "msg_download_error": "Download-Fehler: {error}",
+  "msg_download_empty": "Verbindung zum Server konnte nicht hergestellt werden.",
+  "msg_download_incomplete": "Download unvollständig ({current}/{total} Byte). Erneut versuchen...",
   "msg_no_files_found": "Keine Dateien gefunden.",
   "msg_repo_loading_failed": "Repository-Dateien konnten nicht geladen werden: {error}",
   "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?"
