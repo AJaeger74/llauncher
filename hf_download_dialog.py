@@ -172,6 +172,7 @@ class HfDownloadWorker(QThread):
     """Worker thread for downloading a file from Hugging Face."""
 
     size_changed = pyqtSignal(str, object)  # filename, current_bytes_on_disk (object to avoid 32-bit PyQt int truncation)
+    progress_percent = pyqtSignal(int)  # 0-100
     finished_signal = pyqtSignal(bool, str)  # success, result_message
 
     def __init__(self, short_id: str, file_path: str, target_dir: str, file_name: str):
@@ -235,6 +236,18 @@ class HfDownloadWorker(QThread):
                     content_length = resp.headers.get('Content-Length')
                     debug(f"[HfDownload] got response: status={status_code}, Content-Length={content_length}")
                     
+                    # Compute total file size for progress bar
+                    # For fresh download: total = content_length
+                    # For resumed (206): total = start_pos + remaining (content_length)
+                    self._total_size = None
+                    if content_length is not None:
+                        cl = int(content_length)
+                        if start_pos > 0 and status_code == 206:
+                            self._total_size = start_pos + cl
+                        elif start_pos == 0:
+                            self._total_size = cl
+                    debug(f"[HfDownload] total_file_size={self._total_size:,}" if self._total_size else "[HfDownload] total_file_size=None (no Content-Length)")
+                    
                     mode = "ab" if start_pos > 0 else "wb"
                     first_chunk = True
 
@@ -286,6 +299,11 @@ class HfDownloadWorker(QThread):
                             )
                             debug(f"[HfDownload] emit done for size={sz}")
 
+                            # Emit progress percentage if total is known
+                            if self._total_size is not None and self._total_size > 0:
+                                pct = min(100, int(sz * 100 // self._total_size))
+                                self.progress_percent.emit(pct)
+
                     debug(f"[HfDownload] Inner loop finished after {bytes_written_this_session:,} bytes")
                 # --- Atomic rename (success) ----------------------------
                 if partial_path.exists():
@@ -320,6 +338,10 @@ class HfDownloadWorker(QThread):
                     self.file_path,
                     current,
                 )
+                # Also emit progress percentage if total is known
+                if self._total_size is not None and self._total_size > 0:
+                    pct = min(100, int(current * 100 // self._total_size))
+                    self.progress_percent.emit(pct)
                 debug(f"[HfDownload] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
 
@@ -600,6 +622,7 @@ class HfDownloadDialog(QDialog):
         debug("=== DOWNLOAD START ===")
         
         self.download_btn.setEnabled(False)
+        # Reset progress bar at start (will be updated by worker signals)
         self.progress_bar.setValue(0)
         
         # Show download in progress in UI label
@@ -682,7 +705,11 @@ class HfDownloadDialog(QDialog):
         
         self.worker = HfDownloadWorker(short_id, file_path, target_dir, file_name)
         self.worker.size_changed.connect(self._on_size_changed)
+        self.worker.progress_percent.connect(self.progress_bar.setValue)
         self.worker.finished_signal.connect(self._on_download_finished)
+        # Show progress bar during download
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)
         self.worker.start()
         debug(f"Worker started for {file_name}")
 
@@ -705,14 +732,12 @@ class HfDownloadDialog(QDialog):
 
     def _on_download_finished(self, success: bool, message: str):
         """Handle download completion."""
+        # Set final progress bar state
+        self.progress_bar.setValue(100 if success else 0)
+        # Ensure size label is visible
+        self.size_label.setVisible(True)
         self.download_btn.setEnabled(True)
-        # Ensure size label reflects final state before closing
         if success:
-            # Force one last update to the size label from the UI thread
-            if hasattr(self.worker, 'size_changed'):
-                # Get the last emitted size if available, or rely on the label
-                pass
-            self.size_label.setVisible(True)
             QMessageBox.information(self, gettext("hf_dl_dialog_title"), message)
             # Close the dialog after user dismisses the success message
             self.reject()
@@ -720,7 +745,6 @@ class HfDownloadDialog(QDialog):
             QMessageBox.critical(self, gettext("hf_dl_dialog_title"), message)
             # Leave dialog open on error so user can try again
         self.status_label.setText(message)
-        self.progress_bar.setValue(100 if success else 0)
 
     def apply_theme(self, use_light: bool):
         """Apply light or dark theme to the dialog."""
