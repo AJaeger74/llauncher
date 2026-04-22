@@ -703,23 +703,24 @@ class HfDownloadDialog(QDialog):
         """Update file size label from filesystem."""
         self.size_label.setVisible(True)
 
-        # Protect initial partial size from being overwritten by worker's
-        # first signal (which may read start_pos=0 or a stale offset).
+        # Debug: log every signal so we can see what's actually coming in.
+        if self._size_change_call_count == 0:
+            debug(f"[SIZE] First _start_download call: cur={current_bytes:,} init={self._initial_partial_size}")
+        
         if self._initial_partial_size is not None and self.size_label.text() != "0 B":
-            # Mark that we've seen the first worker signal. Subsequent signals
-            # will go through even if still below the 80% threshold.
             self._worker_first_signal_processed = True
             if current_bytes == 0 or current_bytes < self._initial_partial_size * 0.8:
-                debug(f"[SIZE] Guard skipping first signal: cur={current_bytes:,} init={self._initial_partial_size:,}")
+                debug(f"[SIZE] Guard skipping: cur={current_bytes:,} init={self._initial_partial_size:,} (threshold={self._initial_partial_size*0.8/1024/1024/1024:.2f} GiB)")
                 return
 
-        # Only update if the *raw byte value* changed — this catches every
-        # real increment on disk, even when human_size() rounds to the same
-        # displayed string (e.g. 15,314 GiB → 15,318 GiB stays "15,31 GiB").
-        if current_bytes != self._last_size_bytes:
-            debug(f"[SIZE] Updating: {human_size(current_bytes)} (was {human_size(self._last_size_bytes)})")
-            self.size_label.setText(f"{human_size(current_bytes)}")
-            self._last_size_bytes = current_bytes
+        # Update on every signal, not just when raw bytes change.
+        # This ensures the label keeps updating even if the worker sends
+        # duplicate values during fsync pauses or network hiccups.
+        old_display = self.size_label.text()
+        new_display = human_size(current_bytes)
+        debug(f"[SIZE] Setting label: {new_display} (last_raw={self._last_size_bytes:,})")
+        self.size_label.setText(new_display)
+        self._last_size_bytes = current_bytes
 
     def _on_download_finished(self, success: bool, message: str):
         """Handle download completion."""
