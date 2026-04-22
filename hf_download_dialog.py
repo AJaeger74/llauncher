@@ -37,7 +37,6 @@ except ImportError:
     def gettext(key):
         return key
 
-
 # ===================================================================
 # Constants
 # ===================================================================
@@ -45,29 +44,6 @@ except ImportError:
 HUB_BASE = "https://huggingface.co"
 REQUEST_TIMEOUT = 30  # seconds for HTTP requests
 CHUNK_SIZE = 1024 * 1024  # 1 MB download chunks
-DEBUG_LOG = str(Path.home()) + "/.llauncher/hf_download.log"
-
-
-
-def debug(msg: str):
-    """Write debug message to both stderr and log file."""
-    from datetime import datetime
-    ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    line = f"[{ts}] {msg}\n"
-    sys.stderr.write(line)
-    sys.stderr.flush()  # Force flush so GUI-launched apps show output
-    try:
-        with open(DEBUG_LOG, "a") as f:
-            f.write(line)
-            f.flush()
-    except Exception:
-        pass
-
-
-def debug_log_path() -> str:
-    """Return the resolved path to the debug log file."""
-    return DEBUG_LOG
-
 
 # ===================================================================
 # Helpers – URL parsing (same logic as hf_download.py)
@@ -116,7 +92,6 @@ def parse_hf_url(raw: str):
 
     return short_id, None
 
-
 # ===================================================================
 # Helpers – size formatting
 # ===================================================================
@@ -130,7 +105,6 @@ def human_size(nbytes: int) -> str:
     exp = min(int(math.log(nbytes, 1024)), len(units) - 1)
     val = nbytes / (1024 ** exp)
     return f"{val:.2f} {units[exp]}"
-
 
 # ===================================================================
 # Repo listing via HF Tree API
@@ -162,7 +136,6 @@ def list_repo_files(short_id: str) -> list[dict]:
     # Sort by size descending – largest first (most likely to be what user wants)
     result.sort(key=lambda f: f["size_bytes"], reverse=True)
     return result
-
 
 # ===================================================================
 # Worker thread – handles downloads in the background
@@ -201,12 +174,6 @@ class HfDownloadWorker(QThread):
         dst.parent.mkdir(parents=True, exist_ok=True)
         partial_path = Path(str(dst) + ".partial")
 
-        debug(f"[HfDownload] _download() STARTED for {self.file_name}")
-        debug(f"[HfDownload] worker: target={target}, file_name={self.file_name}")
-        debug(f"[HfDownload] worker: dst={dst}")
-        debug(f"[HfDownload] worker: partial_path={partial_path}")
-        debug(f"[HfDownload] worker: partial_path_str={str(partial_path)}")
-
         max_retries = 5
         attempt = 0
 
@@ -215,16 +182,12 @@ class HfDownloadWorker(QThread):
             start_pos = 0
             if partial_path.exists():
                 start_pos = partial_path.stat().st_size
-            
-            debug(f"[HfDownload] start_pos={start_pos:,} bytes ({start_pos/1024/1024/1024:.2f} GB), partial exists={partial_path.exists()}")
 
             # --- Open stream and download -------------------------------
             headers: dict[str, str] = {}
             if start_pos > 0:
                 headers["Range"] = f"bytes={start_pos}-"
-                debug(f"[HfDownload] Range header: {headers['Range']}")
             
-            debug(f"[HfDownload] Making HTTP request to {url}...")
 
             current = start_pos  # always defined for progress reporting on retry
 
@@ -234,7 +197,6 @@ class HfDownloadWorker(QThread):
                 with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
                     status_code = resp.status
                     content_length = resp.headers.get('Content-Length')
-                    debug(f"[HfDownload] got response: status={status_code}, Content-Length={content_length}")
                     
                     # Compute total file size for progress bar
                     # For fresh download: total = content_length
@@ -246,7 +208,6 @@ class HfDownloadWorker(QThread):
                             self._total_size = start_pos + cl
                         elif start_pos == 0:
                             self._total_size = cl
-                    debug(f"[HfDownload] total_file_size={self._total_size:,}" if self._total_size else "[HfDownload] total_file_size=None (no Content-Length)")
                     
                     mode = "ab" if start_pos > 0 else "wb"
                     first_chunk = True
@@ -254,15 +215,12 @@ class HfDownloadWorker(QThread):
                     with open(partial_path, mode) as fh:
                         bytes_written_this_session = 0
                         while True:
-                            debug(f"[HfDownload] reading chunk (first={first_chunk})...")
                             chunk = resp.read(CHUNK_SIZE)
-                            debug(f"[HfDownload] chunk received: {len(chunk) if chunk else 0} bytes")
                             
                             if not chunk:
                                 # Empty chunk = end of stream. Read real size
                                 # from disk to handle any last partial writes.
                                 current = os.path.getsize(partial_path)
-                                debug(f"[HfDownload] Empty chunk at current={current:,} bytes, start_pos={start_pos}, first_chunk={first_chunk}")
 
                                 if start_pos == 0 and first_chunk:
                                     # Fresh download – empty first read means
@@ -279,7 +237,6 @@ class HfDownloadWorker(QThread):
                                         gettext("msg_download_incomplete").format()
                                     )
 
-                                debug(f"[HfDownload] Download complete! total_written={bytes_written_this_session:,} bytes this session")
                                 break  # genuine end of stream
 
                             first_chunk = False
@@ -291,25 +248,20 @@ class HfDownloadWorker(QThread):
                             # Read real on-disk size after fsync for accurate
                             # progress reporting.
                             sz = os.path.getsize(partial_path)
-                            debug(f"[HfDownload] post-write getsize: {sz:,} bytes at partial_path={partial_path}")
-                            debug(f"[HfDownload] about to emit: file_path={self.file_path!r}, size={sz} (type={type(sz).__name__})")
                             self.size_changed.emit(
                                 self.file_path,
                                 sz,
                             )
-                            debug(f"[HfDownload] emit done for size={sz}")
 
                             # Emit progress percentage if total is known
                             if self._total_size is not None and self._total_size > 0:
                                 pct = min(100, int(sz * 100 // self._total_size))
                                 self.progress_percent.emit(pct)
 
-                    debug(f"[HfDownload] Inner loop finished after {bytes_written_this_session:,} bytes")
                 # --- Atomic rename (success) ----------------------------
                 if partial_path.exists():
                     partial_path.replace(dst)
                 
-                debug(f"[HfDownload] Renamed .partial to final file: {dst}")
                 self.finished_signal.emit(
                     True, gettext("msg_download_complete").format(path=str(dst))
                 )
@@ -318,7 +270,6 @@ class HfDownloadWorker(QThread):
             except Exception as exc:
                 attempt += 1
                 error_msg = str(exc)
-                debug(f"[HfDownload] Error (attempt {attempt}/{max_retries}): {error_msg}")
                 
                 if attempt >= max_retries:
                     # Final failure – keep partial for manual inspection
@@ -333,7 +284,6 @@ class HfDownloadWorker(QThread):
                 wait_time = min(2 ** attempt, 30)  # cap at 30s
                 # Read on-disk size for accurate progress during retry wait
                 current = os.path.getsize(partial_path) if partial_path.exists() else start_pos
-                debug(f"[HfDownload] retry getsize: {current:,} bytes at partial_path={partial_path}")
                 self.size_changed.emit(
                     self.file_path,
                     current,
@@ -342,11 +292,7 @@ class HfDownloadWorker(QThread):
                 if self._total_size is not None and self._total_size > 0:
                     pct = min(100, int(current * 100 // self._total_size))
                     self.progress_percent.emit(pct)
-                debug(f"[HfDownload] Retrying in {wait_time}s...")
                 time.sleep(wait_time)
-
-        debug(f"[HfDownload] _download() EXITED (final)")
-
 
 # ===================================================================
 # Worker thread – fetches file listings in the background
@@ -369,7 +315,6 @@ class HfFilesWorker(QThread):
             self.files_ready.emit(files)
         except Exception as exc:
             self.error_occurred.emit(gettext("msg_repo_loading_failed").format(error=str(exc)))
-
 
 # ===================================================================
 # Dialog
@@ -612,14 +557,6 @@ class HfDownloadDialog(QDialog):
 
     def _start_download(self):
         """Start the background download."""
-        # Clear log file for fresh debug run
-        try:
-            with open(DEBUG_LOG, "w") as f:
-                f.write("")
-        except Exception:
-            pass
-        
-        debug("=== DOWNLOAD START ===")
         
         self.download_btn.setEnabled(False)
         # Reset progress bar at start (will be updated by worker signals)
@@ -684,22 +621,15 @@ class HfDownloadDialog(QDialog):
         # the size of an existing partial file *before* the download starts.
         dst_path_full = Path(target_dir) / file_name
         partial_path_str = str(dst_path_full) + ".partial"
-        debug(f"[HfDownload] _start_download: target_dir={target_dir}, file_name={file_name}")
-        debug(f"[HfDownload] _start_download: dst_path_full={dst_path_full}")
-        debug(f"[HfDownload] _start_download: partial_path_str={partial_path_str}")
-        debug(f"[HfDownload] _start_download: realpath={os.path.realpath(partial_path_str)}")
         if os.path.exists(partial_path_str):
             real_size = os.path.getsize(partial_path_str)
-            debug(f"[HfDownload] _start_download: partial_size={real_size:,}")
             self._on_size_changed(file_name, real_size)
 
         self.status_label.setText(gettext("msg_downloading"))
 
         # --- Create and start the worker ----------------------------------
-        debug(f"Creating worker: short_id={short_id}, file_path={file_path}, target_dir={target_dir}, file_name={file_name}")
         
         if self.worker is not None and self.worker.isRunning():
-            debug("Terminating existing worker...")
             self.worker.terminate()
             self.worker.wait(1000)
         
@@ -711,7 +641,6 @@ class HfDownloadDialog(QDialog):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.worker.start()
-        debug(f"Worker started for {file_name}")
 
     def _on_size_changed(self, filename: str, current_bytes: int):
         """Update file size label from filesystem."""
@@ -722,12 +651,10 @@ class HfDownloadDialog(QDialog):
             return
 
         # Debug: log raw value before processing
-        debug(f"[SIZE] Handler received: filename={filename!r}, current_bytes={current_bytes} (type={type(current_bytes).__name__})")
 
         # Simple approach: display the raw on-disk size directly.
         # The worker already calls os.path.getsize() which is the source of truth.
         new_display = human_size(current_bytes)
-        debug(f"[SIZE] Label set: {new_display} ({current_bytes:,} bytes)")
         self.size_label.setText(new_display)
 
     def _on_download_finished(self, success: bool, message: str):
