@@ -719,8 +719,11 @@ class HfDownloadDialog(QDialog):
             return
 
         # Update on every signal, not just when raw bytes change.
-        new_display = human_size(current_bytes)
-        debug(f"[SIZE] Setting label: {new_display} (last_raw={self._last_size_bytes:,})")
+        # Use max() because current_bytes may be truncated to ~1.8B by PyQt6
+        # signal serialization while init stays at the full ~15B value.
+        display_value = max(current_bytes, self._initial_partial_size)
+        new_display = human_size(display_value)
+        debug(f"[SIZE] Setting label: {new_display} (cur={current_bytes:,} init={self._initial_partial_size:,})")
         self.size_label.setText(new_display)
         self._last_size_bytes = current_bytes
 
