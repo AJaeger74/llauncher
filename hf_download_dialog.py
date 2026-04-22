@@ -672,6 +672,11 @@ class HfDownloadDialog(QDialog):
         # This prevents the early return in _on_size_changed() from blocking
         # updates when current_bytes happens to be 0 on the first signal.
         self._worker_first_signal_processed = False
+        
+        # Track the raw byte value (not the formatted string) so we catch
+        # every real change on disk, even when human_size() rounds to the
+        # same displayed text.
+        self._last_size_bytes = 0
 
         self.status_label.setText(gettext("msg_downloading"))
 
@@ -703,11 +708,12 @@ class HfDownloadDialog(QDialog):
             if current_bytes == 0 or current_bytes < self._initial_partial_size * 0.8:
                 return
 
-        # Only update if value changed to prevent unnecessary UI repaints
-        current_text = self.size_label.text()
-        new_text = f"{human_size(current_bytes)}"
-        if current_text != new_text:
-            self.size_label.setText(new_text)
+        # Only update if the *raw byte value* changed — this catches every
+        # real increment on disk, even when human_size() rounds to the same
+        # displayed string (e.g. 15,314 GiB → 15,318 GiB stays "15,31 GiB").
+        if current_bytes != self._last_size_bytes:
+            self.size_label.setText(f"{human_size(current_bytes)}")
+            self._last_size_bytes = current_bytes
 
     def _on_download_finished(self, success: bool, message: str):
         """Handle download completion."""
