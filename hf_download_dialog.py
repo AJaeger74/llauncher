@@ -736,25 +736,23 @@ class HfDownloadDialog(QDialog):
             self._first_worker_current = current_bytes
             delta = 0
         else:
-            # Compute delta relative to init (the initial partial file size).
-            # Even though both fwc and cur are truncated values (~-2.1B),
-            # they represent on-disk sizes. By anchoring to init, we get
-            # the correct absolute display value regardless of truncation.
+            # Compute delta relative to the first worker signal value.
+            # Both fwc and cur represent on-disk file sizes; they may be in
+            # different 32-bit cycles when cur wraps around. By adding 2^32
+            # only to delta (not to both values separately), we keep them
+            # aligned and avoid the constant negative-delta bug.
             fwc = self._first_worker_current
             cur = current_bytes
             init = self._init_for_delta
 
-            # Normalize truncated values to absolute by adding 2^32.
-            # Always add 2^32 (not just for negative values) so that when
-            # cur crosses from negative to positive it stays in the same cycle
-            # and doesn't cause a discontinuity in delta.
-            fwc_abs = fwc + (2**32)
-            cur_abs = cur + (2**32)
+            delta = cur - fwc
 
-            # Delta is the difference between current and baseline on-disk size.
-            delta = cur_abs - fwc_abs
+            # If the gap between cur and fwc exceeds half a cycle (2^31),
+            # they are in different 32-bit cycles — add 2^32 to delta.
+            if abs(delta) > 2**31:
+                delta += 2**32
 
-            debug(f"[SIZE] Delta calc: fwc={fwc:,}({fwc_abs:,}) cur={cur:,}({cur_abs:,}) init={init:,} delta={delta:,}")
+            debug(f"[SIZE] Delta calc: fwc={fwc:,} cur={cur:,} init={init:,} delta={delta:,}")
         
         display_value = self._initial_partial_size + delta
         
