@@ -731,7 +731,18 @@ class HfDownloadDialog(QDialog):
             self._first_worker_current = current_bytes
             delta = 0
         else:
-            delta = current_bytes - self._first_worker_current
+            # Handle the common wrap-around case: _first_worker_current is positive
+            # (e.g. +4.1B) but current_bytes has wrapped past 2^31 to negative
+            # (e.g. -190M). The raw subtraction gives a huge negative delta.
+            # Normalize by adding 2^32 to the negative value before computing delta.
+            fwc = self._first_worker_current
+            cur = current_bytes
+            if cur < 0 and fwc > 0 and (fwc - cur) > 2**31:
+                cur_normalized = cur + (2**32)
+                delta = cur_normalized - fwc
+                debug(f"[SIZE] Wrap detected: cur={cur:,} normalized={cur_normalized:,} delta={delta:,}")
+            else:
+                delta = cur - fwc
         
         display_value = self._initial_partial_size + delta
         
