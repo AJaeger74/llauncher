@@ -354,6 +354,7 @@ class HfDownloadDialog(QDialog):
         self._file_list = []  # Current file list from HF API
         self._current_short_id = None
         self._request_counter = 0  # Monotonically increasing request ID
+        self._last_size_bytes = 0  # Raw byte value for change detection
 
         self.setup_ui()
         self.apply_theme(current_light_theme)
