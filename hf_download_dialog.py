@@ -704,7 +704,7 @@ class HfDownloadDialog(QDialog):
         self.size_label.setVisible(True)
 
         # Debug: log every signal so we can see what's actually coming in.
-        if self._size_change_call_count == 0:
+        if getattr(self, '_size_change_call_count', 0) == 0:
             debug(f"[SIZE] First _start_download call: cur={current_bytes:,} init={self._initial_partial_size}")
         
         if self._initial_partial_size is not None and self.size_label.text() != "0 B":
