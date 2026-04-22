@@ -597,16 +597,29 @@ class HfDownloadDialog(QDialog):
         self.worker.finished_signal.connect(self._on_download_finished)
         self.worker.start()
 
-        # If a partial file already exists on disk, show its size immediately
+        # If a partial file already exists on disk, show its size immediately.
+        # Store it so we can protect it from being overwritten by the worker's
+        # first signal (which may read start_pos=0 if fsync hasn't completed).
         if os.path.exists(partial_path):
             real_size = os.path.getsize(partial_path)
+            self._initial_partial_size = real_size
             self._on_size_changed(file_name, real_size)
+        else:
+            self._initial_partial_size = None
 
         self.status_label.setText(gettext("msg_downloading"))
 
     def _on_size_changed(self, filename: str, current_bytes: int):
         """Update file size label from filesystem."""
         self.size_label.setVisible(True)
+        
+        # Protect initial partial size from being overwritten by worker's
+        # first signal (which may read start_pos=0 if fsync hasn't completed).
+        if (self._initial_partial_size is not None 
+                and current_bytes == 0 
+                and self.size_label.text() != "0 B"):
+            return
+        
         # Only update if value changed to prevent unnecessary UI repaints
         current_text = self.size_label.text()
         new_text = f"{human_size(current_bytes)}"
