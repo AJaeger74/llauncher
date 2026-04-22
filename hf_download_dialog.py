@@ -148,7 +148,7 @@ def list_repo_files(short_id: str) -> list[dict]:
 class HfDownloadWorker(QThread):
     """Worker thread for downloading a file from Hugging Face."""
 
-    progress_signal = pyqtSignal(str, int, int)  # filename, current_bytes, total_bytes
+    size_changed = pyqtSignal(str, int)  # filename, current_bytes_on_disk
     finished_signal = pyqtSignal(bool, str)  # success, result_message
 
     def __init__(self, short_id: str, file_path: str, target_dir: str, file_name: str):
@@ -166,67 +166,102 @@ class HfDownloadWorker(QThread):
 
     def _download(self):
         """Execute the actual HTTP download with progress reporting."""
+        import os
+
         url = f"{HUB_BASE}/{self.short_id}/resolve/main/{self.file_path}"
         target = Path(self.target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
         dst = target / self.file_name
         dst.parent.mkdir(parents=True, exist_ok=True)
-
-        # --- Determine file size via HEAD -------------------------------
-        total_size = 0
-        try:
-            req = Request(url, method="HEAD")
-            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-                total_size = int(resp.headers.get("Content-Length", 0))
-        except Exception:
-            pass
-
-        if not total_size:
-            # Fallback: use GET endpoint
-            url = f"{HUB_BASE}/{self.short_id}/raw/main/{self.file_path}"
-
-        # --- Check for resume candidate -------------------------------
-        start_pos = 0
         partial_path = Path(str(dst) + ".partial")
-        if partial_path.exists():
-            start_pos = partial_path.stat().st_size
-            total_size = start_pos + total_size if total_size else start_pos
 
-        # --- Open stream and download -----------------------------------
-        headers: dict[str, str] = {}
-        if start_pos > 0 and total_size:
-            headers["Range"] = f"bytes={start_pos}-"
+        max_retries = 5
+        attempt = 0
 
-        try:
-            req = Request(url, headers=headers)
-            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-                resp_total = int(resp.headers.get("Content-Length", 0))
-                if start_pos > 0 and total_size:
-                    total_size = start_pos + resp_total
-
-                mode = "ab" if start_pos > 0 else "wb"
-                current = start_pos
-
-                with open(partial_path, mode) as fh:
-                    while True:
-                        chunk = resp.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        fh.write(chunk)
-                        current += len(chunk)
-                        self.progress_signal.emit(
-                            self.file_path, current, total_size if total_size > 0 else current
-                        )
-
-            # --- Atomic rename (success) ----------------------------------
+        while True:
+            # --- Check for resume candidate -----------------------------
+            start_pos = 0
             if partial_path.exists():
-                partial_path.replace(dst)
+                start_pos = partial_path.stat().st_size
 
-            self.finished_signal.emit(True, gettext("msg_download_complete").format(path=str(dst)))
+            # --- Open stream and download -------------------------------
+            headers: dict[str, str] = {}
+            if start_pos > 0:
+                headers["Range"] = f"bytes={start_pos}-"
 
-        except Exception as exc:
-            self.finished_signal.emit(False, gettext("msg_download_error").format(error=str(exc)))
+            current = start_pos  # always defined for progress reporting on retry
+
+            try:
+                req = Request(url, headers=headers)
+                with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                    mode = "ab" if start_pos > 0 else "wb"
+                    first_chunk = True
+
+                    with open(partial_path, mode) as fh:
+                        while True:
+                            chunk = resp.read(CHUNK_SIZE)
+                            if not chunk:
+                                # Empty chunk = end of stream. Read real size
+                                # from disk to handle any last partial writes.
+                                current = os.path.getsize(partial_path)
+                                if start_pos == 0 and first_chunk:
+                                    # Fresh download – empty first read means
+                                    # connection dropped before any data arrived.
+                                    raise ConnectionError(
+                                        gettext("msg_download_empty").format()
+                                    )
+                                # Resume case: empty first read after a valid
+                                # Range header means "no more data to send".
+                                # Server considers the file complete.
+                                if current < start_pos:
+                                    # Data was lost during download – retry
+                                    raise ConnectionError(
+                                        gettext("msg_download_incomplete").format()
+                                    )
+                                break  # genuine end of stream
+
+                            first_chunk = False
+                            fh.write(chunk)
+                            fh.flush()
+                            os.fsync(fh.fileno())
+                            # Real on-disk size (includes resume offset + bytes
+                            # written this session). Always authoritative.
+                            current = os.path.getsize(partial_path)
+                            self.size_changed.emit(
+                                self.file_path,
+                                os.path.getsize(partial_path),
+                            )
+
+                # --- Atomic rename (success) ----------------------------
+                if partial_path.exists():
+                    partial_path.replace(dst)
+                self.finished_signal.emit(
+                    True, gettext("msg_download_complete").format(path=str(dst))
+                )
+                return  # done, no more retries needed
+
+            except Exception as exc:
+                attempt += 1
+                error_msg = str(exc)
+                if attempt >= max_retries:
+                    # Final failure – keep partial for manual inspection
+                    self.finished_signal.emit(
+                        False, gettext("msg_download_error").format(error=error_msg)
+                    )
+                    return
+
+               # Not final – wait with exponential backoff and retry
+                import time
+
+                wait_time = min(2 ** attempt, 30)  # cap at 30s
+                # Always read real on-disk size for accurate progress during wait
+                current = os.path.getsize(partial_path) if partial_path.exists() else start_pos
+                self.size_changed.emit(
+                    self.file_path,
+                    os.path.getsize(partial_path),
+                )
+                time.sleep(wait_time)
 
 
 # ===================================================================
@@ -310,11 +345,15 @@ class HfDownloadDialog(QDialog):
         # --- Progress row ---
         progress_layout = QHBoxLayout()
         self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFixedHeight(24)
+        self.progress_bar.setVisible(False)  # Hidden for now
+        
+        # File size label - shows real on-disk size
+        self.size_label = QLabel("0 B")
+        self.size_label.setStyleSheet("color: #4fc3f7; font-size: 10pt; font-weight: bold;")
+        self.size_label.setVisible(False)
 
         progress_layout.addWidget(self.progress_bar, stretch=1)
+        progress_layout.addWidget(self.size_label)
         layout.addLayout(progress_layout)
 
         # --- Status label ---
@@ -491,6 +530,9 @@ class HfDownloadDialog(QDialog):
         """Start the background download."""
         self.download_btn.setEnabled(False)
         self.progress_bar.setValue(0)
+        
+        # Ensure size label is visible from the start
+        self.size_label.setVisible(True)
 
         text = self.url_edit.text().strip()
         if not text:
@@ -519,9 +561,16 @@ class HfDownloadDialog(QDialog):
 
         model_dir = self._get_model_directory()
         repo_subdir = short_id.replace("/", "_")
-        target_dir = os.path.join(model_dir, repo_subdir)
+
+        # Avoid double-adding subdir if model_dir already ends with it
+        model_dir_stripped = model_dir.rstrip(os.sep)
+        if model_dir_stripped.endswith(os.sep + repo_subdir) or model_dir_stripped == repo_subdir:
+            target_dir = model_dir_stripped
+        else:
+            target_dir = os.path.join(model_dir, repo_subdir)
+
         file_name = os.path.basename(file_path)  # Extract just the filename
-        dst_path = Path(model_dir) / repo_subdir / file_name
+        dst_path = Path(target_dir) / file_name
 
         # Check if file already exists — ask for overwrite
         if dst_path.exists():
@@ -537,27 +586,43 @@ class HfDownloadDialog(QDialog):
                 self.reject()
                 return
 
+        # Compute partial path the same way the worker does, so we can show
+        # the size of an existing partial file *before* the download starts.
+        dst_path_full = Path(target_dir) / file_name
+        partial_path = str(dst_path_full) + ".partial"
+
         # Start worker thread
         self.worker = HfDownloadWorker(short_id, file_path, target_dir, file_name)
-        self.worker.progress_signal.connect(self._on_progress)
+        self.worker.size_changed.connect(self._on_size_changed)
         self.worker.finished_signal.connect(self._on_download_finished)
         self.worker.start()
 
+        # If a partial file already exists on disk, show its size immediately
+        if os.path.exists(partial_path):
+            real_size = os.path.getsize(partial_path)
+            self._on_size_changed(file_name, real_size)
+
         self.status_label.setText(gettext("msg_downloading"))
 
-    def _on_progress(self, filename: str, current: int, total: int):
-        """Update progress bar."""
-        if total > 0:
-            pct = int((current / total) * 100)
-            self.progress_bar.setValue(pct)
-            self.progress_bar.setFormat(f"{human_size(current)} / {human_size(total)}")
-        else:
-            self.progress_bar.setFormat(human_size(current))
+    def _on_size_changed(self, filename: str, current_bytes: int):
+        """Update file size label from filesystem."""
+        self.size_label.setVisible(True)
+        # Only update if value changed to prevent unnecessary UI repaints
+        current_text = self.size_label.text()
+        new_text = f"{human_size(current_bytes)}"
+        if current_text != new_text:
+            self.size_label.setText(new_text)
 
     def _on_download_finished(self, success: bool, message: str):
         """Handle download completion."""
         self.download_btn.setEnabled(True)
+        # Ensure size label reflects final state before closing
         if success:
+            # Force one last update to the size label from the UI thread
+            if hasattr(self.worker, 'size_changed'):
+                # Get the last emitted size if available, or rely on the label
+                pass
+            self.size_label.setVisible(True)
             QMessageBox.information(self, gettext("hf_dl_dialog_title"), message)
             # Close the dialog after user dismisses the success message
             self.reject()
