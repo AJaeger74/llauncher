@@ -18,6 +18,7 @@ import math
 import os
 import re
 import sys
+import ctypes
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -141,6 +142,21 @@ def list_repo_files(short_id: str) -> list[dict]:
 # Worker thread – handles downloads in the background
 # ===================================================================
 
+
+def _async_raise(tid, exc_type):
+    """Raise an exception in a running Python thread via ctypes.
+    This is the only reliable way to interrupt a blocking socket read."""
+    if not tid:
+        return
+    try:
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_long(tid),
+            ctypes.py_object(exc_type)
+        )
+    except Exception:
+        pass
+
+
 class HfDownloadWorker(QThread):
     """Worker thread for downloading a file from Hugging Face."""
 
@@ -154,10 +170,41 @@ class HfDownloadWorker(QThread):
         self.file_path = file_path
         self.target_dir = target_dir
         self.file_name = file_name
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Signal the worker to stop as soon as possible.
+        This method can be called from any thread."""
+        # 1. Set the cancellation flag – the download loop checks this each iteration.
+        self._cancelled = True
+
+        # 2. If a response object is still open, close its socket to unblock urlopen.
+        if hasattr(self, "_current_response") and self._current_response:
+            try:
+                self._current_response.fp.close()
+            except Exception:
+                pass
+
+        # 3. Raise KeyboardInterrupt in the worker's own thread to break out of
+        #    any blocking read. The injected exception is caught by run().
+        try:
+            tid = self.threadId()
+            if tid != -1:
+                _async_raise(tid, KeyboardInterrupt)
+        except Exception:
+            pass
 
     def run(self):
         try:
             self._download()
+        except KeyboardInterrupt:
+            # Cancellation injected via ctypes – _download should have already
+            # emitted the cancel signal before we got here. If it didn't
+            # (e.g. exception arrived mid-connect before we checked _cancelled),
+            # emit it now to be safe.
+            if not getattr(self, "_signal_emitted", False):
+                self.finished_signal.emit(False, gettext("msg_download_cancelled"))
+            return
         except Exception as exc:
             self.finished_signal.emit(False, str(exc))
 
@@ -195,6 +242,7 @@ class HfDownloadWorker(QThread):
                 req = Request(url, headers=headers)
                 
                 with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                    self._current_response = resp  # For cancellation from closeEvent
                     status_code = resp.status
                     content_length = resp.headers.get('Content-Length')
                     
@@ -211,6 +259,7 @@ class HfDownloadWorker(QThread):
                     
                     mode = "ab" if start_pos > 0 else "wb"
                     first_chunk = True
+                    download_aborted = False
 
                     with open(partial_path, mode) as fh:
                         bytes_written_this_session = 0
@@ -245,6 +294,11 @@ class HfDownloadWorker(QThread):
                             os.fsync(fh.fileno())
                             bytes_written_this_session += len(chunk)
 
+                            # Check for cancellation every chunk
+                            if self._cancelled:
+                                download_aborted = True
+                                break
+
                             # Read real on-disk size after fsync for accurate
                             # progress reporting.
                             sz = os.path.getsize(partial_path)
@@ -258,10 +312,18 @@ class HfDownloadWorker(QThread):
                                 pct = min(100, int(sz * 100 // self._total_size))
                                 self.progress_percent.emit(pct)
 
-                # --- Atomic rename (success) ----------------------------
+                # --- Handle completion or abortion --------------------------
+                if download_aborted:
+                    # User cancelled — keep partial for resume, emit cancel signal
+                    self._signal_emitted = True
+                    self.finished_signal.emit(False, gettext("msg_download_cancelled"))
+                    return
+
+                # Atomic rename (success)
                 if partial_path.exists():
                     partial_path.replace(dst)
-                
+
+                self._signal_emitted = True
                 self.finished_signal.emit(
                     True, gettext("msg_download_complete").format(path=str(dst))
                 )
@@ -270,9 +332,10 @@ class HfDownloadWorker(QThread):
             except Exception as exc:
                 attempt += 1
                 error_msg = str(exc)
-                
+
                 if attempt >= max_retries:
                     # Final failure – keep partial for manual inspection
+                    self._signal_emitted = True
                     self.finished_signal.emit(
                         False, gettext("msg_download_error").format(error=error_msg)
                     )
@@ -739,11 +802,20 @@ class HfDownloadDialog(QDialog):
                 QPushButton:disabled {
                     color: #777;
                 }
-            """)
+            """
+)
+
+    def reject(self):
+        """Called when user clicks Cancel or closes the dialog via X button.
+        Cancels any running download before proceeding."""
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.worker.wait(3000)  # graceful termination window
+        super().reject()
 
     def closeEvent(self, event):
-        """Cancel any running download when dialog is closed."""
+        """Cancel any running download when dialog is closed (e.g. via X button)."""
         if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
+            self.worker.cancel()
+            self.worker.wait(5000)  # give more time for cleanup via closeEvent path
         event.accept()
