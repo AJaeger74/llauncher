@@ -4,6 +4,15 @@ A mixer-style launcher for controlling llama.cpp with presets, benchmarking, and
 ![Llaunchy](llauncher.png)
 ## Features
 
+◆ **Hugging Face Model Download**  
+Download GGUF models directly from Hugging Face Hub:
+- Browse and search model repositories
+- Progress bar with centered percentage display
+- Cancel mid-download (graceful shutdown + partial file cleanup)
+- Overwrite confirmation for existing local files
+- i18n translations (de/en)
+- Saved to: configured model directory
+
 ◆ **Parameter Control** like on a mixing console  
 Each parameter has a slider (integer) or float slider with edit field:
 - `-c` Context Size (dynamic maximum from GGUF)
@@ -88,6 +97,7 @@ python3 llauncher.py
 ├── help_parser.py      # Dynamic parameter extraction from llama-server --help
 ├── preset_manager.py   # Preset dialogs (save/load/benchmark rating)
 ├── benchmark_runner.py # Benchmarking logic and HTTP benchmarker
+├── hf_download_dialog.py# Hugging Face model download dialog (progress, cancel)
 ├── model_info_fetcher.py# Running model info via HTTP API
 └── README.md
 ```
@@ -112,6 +122,7 @@ For vision models:
 - **Process Management**: QThread with multi-signal shutdown (SIGINT→SIGTERM→SIGKILL)
 - **Styling**: Qt Style Sheet (QSS)
 - **Modularized**: ~1500 lines in llauncher.py, other modules < 500 lines
+- **Signal Handling**: Custom `object` type signals to avoid PyQt6 32-bit int truncation on large value emissions (progress sizes)
 
 ## Extension Possibilities
 

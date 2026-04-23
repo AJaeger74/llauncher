@@ -126,14 +126,16 @@ def apply_preset(window, preset: dict):
     
     # Pfade setzen (volle Pfade!)
     llama_path = preset.get("llama_cpp_path", str(Path.home() / "llama.cpp"))
-    model_dir = preset.get("model_directory", str(Path.home() / "models"))
     
     window.llama_cpp_path = llama_path
-    window.model_directory = model_dir
     
     # UI-Textfelder aktualisieren
     if Path(llama_path).exists():
         window.exe_line.setText(llama_path)
+    
+    # model_directory kommt immer noch aus config.json (load_config())
+    # Preset referenziert eventuell ein anderes Verzeichnis - nur für UI-Anzeige
+    model_dir = preset.get("model_directory", str(Path.home() / "models"))
     if Path(model_dir).exists():
         window.model_line.setText(model_dir)
 

@@ -157,7 +157,7 @@ def build_llauncher_ui(window):
     
     window.model_combo = QComboBox()
     window.update_model_dropdown()
-    window.model_combo.currentIndexChanged.connect(lambda idx: window.on_model_selected_from_index(idx))
+    window.model_combo.activated.connect(lambda idx: window.on_model_selected_from_index(idx))
     
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
@@ -531,6 +531,11 @@ def build_llauncher_ui(window):
     fork_btn.setToolTip(gettext("tooltip_fork_llama"))
     fork_btn.clicked.connect(window.show_fork_dialog)
     presets_layout.addWidget(fork_btn)
+
+    download_model_btn = QPushButton(gettext("btn_download_model"))
+    download_model_btn.setToolTip(gettext("tooltip_download_model"))
+    download_model_btn.clicked.connect(window.show_hf_download_dialog)
+    presets_layout.addWidget(download_model_btn)
     
     presets_layout.addStretch()
 
@@ -665,7 +670,53 @@ def setup_timers_and_load(window):
     window.process_check_timer.start()
     
     # Konfiguration und Dropdowns laden
+    # Zuerst Config laden (setzt llama_cpp_path, theme, model_directory aus config.json)
     window.load_config()
+    
+    # Dann Executables suchen (mit dem aus Config geladenen Pfad)
+    window.exe_combo.blockSignals(True)
+    try:
+        window.find_executables()
+    finally:
+        pass
+    
+    # Gespeicherte Binary aus Config selektieren (muss NACH find_executables passieren,
+    # weil erst dann Items in der ComboBox sind)
+    try:
+        config_path = Path.home() / ".llauncher" / "config.json"
+        with open(config_path, 'r') as f:
+            cfg = json.load(f)
+        selected_exec = cfg.get("selected_executable") or cfg.get("selected_exe")
+        if selected_exec:
+            # Extrahiere nur den Dateinamen aus dem vollen Pfad für den Vergleich
+            exe_filename = Path(selected_exec).name
+            idx = window.exe_combo.findText(exe_filename)
+            if idx >= 0:
+                window.exe_combo.setCurrentIndex(idx)
+            else:
+                # Wenn gespeicherte Binary nicht mehr gefunden (z.B. umbenannt), Default setzen
+                exe_index = window.exe_combo.findText("llama-server")
+                if exe_index >= 0:
+                    window.exe_combo.setCurrentIndex(exe_index)
+    except Exception as e:
+        window.debug_text.append(f"⚠ Fehler beim Laden der Binary aus Config: {e}")
+    
+    # Fallback-Default: llama-server wenn noch nichts ausgewählt wurde
+    if not window.exe_combo.currentText():
+        exe_index = window.exe_combo.findText("llama-server")
+        if exe_index >= 0:
+            window.exe_combo.setCurrentIndex(exe_index)
+    
+    # Cache-Type K/V Dropdowns nach Startup initialisieren (Signal feuert nicht bei programmatischer Auswahl!)
+    exe_name = window.exe_combo.currentText().strip()
+    if exe_name and exe_name != "llama.cpp nicht gefunden":
+        exe_full_path = str(Path(window.llama_cpp_path) / exe_name)
+        try:
+            window.update_cache_type_options(exe_full_path)
+        except Exception as e:
+            window.debug_text.append(f"⚠ Cache-Type initialisieren fehlgeschlagen: {e}")
+    
+    # Model dropdown neu laden
     window.update_model_dropdown()
     
     # Benchmark-Datei aus Config laden und ins UI-Feld setzen
@@ -679,9 +730,3 @@ def setup_timers_and_load(window):
             window.debug_text.append(f"✓ {gettext('lbl_benchmark_file_loaded')}: {benchmark_file_path}")
     except Exception as e:
         window.debug_text.append(f"⚠ {gettext('lbl_error_loading_config')}: {e}")
-    
-    # Erst Prozess prüfen, dann Parameter laden (statt umgekehrt)
-    # WICHTIG: Nur wenn kein Preset geladen werden soll - sonst UI zerstören
-    if not window._load_running_process_args_silent():
-        # Kein externer Prozess gefunden - Presets laden als Fallback
-        window.apply_presets()
