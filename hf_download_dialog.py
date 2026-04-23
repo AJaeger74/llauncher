@@ -758,6 +758,10 @@ class HfDownloadDialog(QDialog):
                     border-radius: 3px;
                     padding: 4px;
                 }
+                QProgressBar::chunk {
+                    background-color: #0078d7;
+                    border-radius: 2px;
+                }
                 QPushButton {
                     background-color: #e0e0e0;
                     border: 1px solid #bbb;
@@ -785,6 +789,10 @@ class HfDownloadDialog(QDialog):
                     border-radius: 3px;
                     padding: 4px;
                     color: #ddd;
+                }
+                QProgressBar::chunk {
+                    background-color: #0078d7;
+                    border-radius: 2px;
                 }
                 QComboBox::drop-down {
                     border: none;
