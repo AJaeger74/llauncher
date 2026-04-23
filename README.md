@@ -6,12 +6,12 @@ A mixer-style launcher for controlling llama.cpp with presets, benchmarking, and
 
 ◆ **Hugging Face Model Download**  
 Download GGUF models directly from Hugging Face Hub:
+- Use full URL or author/reponame syntax for interactive selection
 - Browse and search model repositories
-- Progress bar with centered percentage display
-- Cancel mid-download (graceful shutdown + partial file cleanup)
+- Progress bar with percentage display
+- Cancel mid-download (keeping partial file for resuming later)
 - Overwrite confirmation for existing local files
-- i18n translations (de/en)
-- Saved to: configured model directory
+- Saved under: subdir of configured model base directory
 
 ◆ **Parameter Control** like on a mixing console  
 Each parameter has a slider (integer) or float slider with edit field:
