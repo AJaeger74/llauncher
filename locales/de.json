@@ -193,5 +193,6 @@
   "msg_repo_loading_failed": "Repository-Dateien konnten nicht geladen werden: {error}",
   "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?",
   "msg_yes": "Ja",
-  "msg_no": "Nein"
+  "msg_no": "Nein",
+  "msg_download_cancelled": "Download abgebrochen."
 }

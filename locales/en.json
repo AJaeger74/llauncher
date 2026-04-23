@@ -193,5 +193,6 @@
   "msg_repo_loading_failed": "Failed to load repo files: {error}",
   "msg_file_exists": "File already exists at:\n{path}\n\nOverwrite?",
   "msg_yes": "Yes",
-  "msg_no": "No"
+  "msg_no": "No",
+  "msg_download_cancelled": "Download cancelled."
 }
