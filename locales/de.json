@@ -127,7 +127,6 @@
   "lbl_exe_label": "llama.cpp:",
   "msg_select_preset": "Preset auswählen:",
   "btn_load": "Laden",
-  "btn_cancel": "Abbrechen",
   "msg_no_selection": "Keine Auswahl",
   "msg_please_select": "Bitte wähle ein Preset aus.",
   "lbl_benchmark_file_loaded": "Benchmark-Datei geladen",
@@ -192,5 +191,7 @@
   "msg_download_incomplete": "Download unvollständig ({current}/{total} Byte). Erneut versuchen...",
   "msg_no_files_found": "Keine Dateien gefunden.",
   "msg_repo_loading_failed": "Repository-Dateien konnten nicht geladen werden: {error}",
-  "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?"
+  "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?",
+  "msg_yes": "Ja",
+  "msg_no": "Nein"
 }

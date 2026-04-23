@@ -607,14 +607,18 @@ class HfDownloadDialog(QDialog):
 
         # Check if file already exists — ask for overwrite
         if dst_path.exists():
-            reply = QMessageBox.question(
-                self,
-                gettext("hf_dl_dialog_title"),
-                gettext("msg_file_exists").format(path=str(dst_path)),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle(gettext("hf_dl_dialog_title"))
+            msg_box.setText(gettext("msg_file_exists").format(path=str(dst_path)))
+            yes_btn = msg_box.addButton(
+                gettext("msg_yes"), QMessageBox.ButtonRole.YesRole
             )
-            if reply == QMessageBox.StandardButton.No:
+            no_btn = msg_box.addButton(
+                gettext("msg_no"), QMessageBox.ButtonRole.NoRole
+            )
+            msg_box.setDefaultButton(no_btn)
+            msg_box.exec()
+            if msg_box.clickedButton() != yes_btn:
                 # User declined overwrite — close dialog
                 self.reject()
                 return

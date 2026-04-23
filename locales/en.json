@@ -109,7 +109,7 @@
   "tooltip_threads": "Number of CPU threads to use for text generation (more threads = faster processing)",
   "tooltip_batch_size": "Maximum batch size for processing input prompts (llama.cpp default: 2048)",
   "tooltip_gpu_layers": "Number of transformer layers to offload to GPU for faster inference",
-"tooltip_temperature": "Sampling temperature for text generation (lower values = more deterministic, higher values = more creative)",
+  "tooltip_temperature": "Sampling temperature for text generation (lower values = more deterministic, higher values = more creative)",
   "tooltip_top_p": "Top-p (nucleus) sampling parameter (lower values = more focused output, higher values = more diverse)",
   "tooltip_top_k": "Maximum number of tokens for top-k sampling (0 = disabled, higher values = more diversity)",
   "tooltip_min_p": "Minimum token probability threshold (p-sampling) - tokens with p < min_p are removed (0.0 = disabled)",
@@ -127,7 +127,6 @@
   "lbl_exe_label": "llama.cpp:",
   "msg_select_preset": "Select a preset:",
   "btn_load": "Load",
-  "btn_cancel": "Cancel",
   "msg_no_selection": "No selection",
   "msg_please_select": "Please select a preset.",
   "lbl_benchmark_file_loaded": "Benchmark file loaded",
@@ -192,5 +191,7 @@
   "msg_download_incomplete": "Download incomplete ({current}/{total} bytes). Retrying...",
   "msg_no_files_found": "No files found.",
   "msg_repo_loading_failed": "Failed to load repo files: {error}",
-  "msg_file_exists": "File already exists at:\n{path}\n\nOverwrite?"
+  "msg_file_exists": "File already exists at:\n{path}\n\nOverwrite?",
+  "msg_yes": "Yes",
+  "msg_no": "No"
 }
