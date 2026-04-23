@@ -663,7 +663,7 @@ class llauncher(QMainWindow):
         model_path = (Path(self.model_directory) / name).resolve()
         self.selected_model = str(model_path)
         
-         # Debug Output: Modell-Informationen anzeigen
+        # Debug Output: Modell-Informationen anzeigen
         if model_path.exists() and model_path.is_file():
             try:
                 info = get_model_info(str(model_path))
@@ -706,16 +706,22 @@ class llauncher(QMainWindow):
         # ctx_size Slider Maximum aus GGUF-Datei lesen
         if model_path.exists() and model_path.is_file():
             ctx_length = read_gguf_context_length(str(model_path))
+            sys.stderr.write(f"[model] on_model_selected: {model_path.name}, ctx_length={ctx_length}\n")
             if ctx_length and ctx_length > 0:
                 slider_data = self.param_sliders["-c"]
                 slider = slider_data["slider"]
                 edit = slider_data["edit"]
+                
+                old_max = slider.maximum()
+                sys.stderr.write(f"[model] ctx_size slider: max {old_max} → {ctx_length}\n")
                 
                 # Slider Maximum setzen (kein Cap, aber realistisch begrenzen)
                 slider.setMaximum(ctx_length)
                 # Default auf den gelesenen Wert setzen – ABER nur wenn wir nicht gerade
                 # externe Parameter von einem laufenden Prozess laden!
                 if not getattr(self, 'loading_running_args', False):
+                    old_val = slider.value()
+                    sys.stderr.write(f"[model] ctx_size slider: setValue {old_val} → {ctx_length}\n")
                     slider.setValue(ctx_length)
                 
                 # Edit-Widget Breite aktualisieren für neue maximale Zahl

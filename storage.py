@@ -6,6 +6,7 @@ Unabhängig von PyQt6, kann unit-getestet werden.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -151,7 +152,7 @@ def apply_preset(window, preset: dict):
         if idx >= 0:
             window.exe_combo.setCurrentIndex(idx)
 
-    # Modell auswählen (voller Pfad)
+     # Modell auswählen (voller Pfad)
     selected_model = preset.get("selected_model")
     if selected_model and Path(selected_model).exists():
         model_name = Path(selected_model).name
@@ -164,8 +165,19 @@ def apply_preset(window, preset: dict):
                 break
         
         if idx >= 0:
-            window.model_combo.setCurrentIndex(idx)
-            window.selected_model = selected_model
+            # GGUF-Kontextlänge lesen und Slider-Maximum VOR dem Parameter-Loop setzen
+            # (verhindert dass Qt den Wert clampt wenn setValue() aufgerufen wird)
+            ctx_length = read_gguf_context_length(selected_model)
+            if ctx_length and ctx_length > 0 and "-c" in window.param_sliders:
+                slider_data = window.param_sliders["-c"]
+                slider_data["slider"].setMaximum(ctx_length)
+            
+            window.model_combo.blockSignals(True)
+            try:
+                window.model_combo.setCurrentIndex(idx)
+                window.selected_model = selected_model
+            finally:
+                window.model_combo.blockSignals(False)
 
     # mmproj setzen (voller Pfad! - immer setzen, nicht nur wenn existiert!)
     mmproj_path = preset.get("mmproj_path", "")
@@ -209,9 +221,13 @@ def apply_preset(window, preset: dict):
                         slider.setValue(0)
                         slider_data["edit"].setText("all")
                     else:
+                        old_val = slider.value()
                         slider.setValue(int(value))
+                        sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
                 else:
+                    old_val = slider_data.value()
                     slider_data.setValue(int(value))
+                    sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
 
             # Sonderfall: -ngl mit "all" Checkbox → Edit auf "all", Slider = 0 (unwichtig)
             if param_key == "-ngl":
@@ -239,6 +255,7 @@ def apply_preset(window, preset: dict):
     # Wenn ein Modell ausgewählt ist, ctx_size Slider Maximum aktualisieren
     if preset.get("selected_model") and Path(preset["selected_model"]).exists():
         ctx_length = read_gguf_context_length(preset["selected_model"])
+        sys.stderr.write(f"[preset] loaded model context_length: {ctx_length}\n")
         if ctx_length and ctx_length > 0:
             slider_data = window.param_sliders["-c"]
             if isinstance(slider_data, dict):
@@ -249,6 +266,8 @@ def apply_preset(window, preset: dict):
                 slider = slider_data
                 edit = None
 
+            old_max = slider.maximum()
+            sys.stderr.write(f"[preset] ctx_size slider: maximum {old_max} → {ctx_length}\n")
             slider.setMaximum(ctx_length)
 
             # Edit-Widget Breite aktualisieren für neue maximale Zahl
