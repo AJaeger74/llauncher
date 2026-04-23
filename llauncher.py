@@ -441,7 +441,7 @@ class llauncher(QMainWindow):
                 path = selected_paths[0]
                 self.model_line.setText(path)
                 self.model_directory = path
-                save_config({"model_directory": path})
+                self.debug_text.append(f"ℹ model_directory geändert: {path}")
                 self.update_model_dropdown()
 
     def find_executables(self):
@@ -1424,6 +1424,7 @@ class llauncher(QMainWindow):
 
             if model_dir and Path(model_dir).exists():
                 self.model_directory = model_dir
+                self.debug_text.append(f"ℹ model_directory aus config.json geladen: {model_dir}")
                 self.model_line.setText(model_dir)
             if selected_exec:
                 idx = self.exe_combo.findText(selected_exec)

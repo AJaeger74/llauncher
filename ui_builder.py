@@ -670,7 +670,42 @@ def setup_timers_and_load(window):
     window.process_check_timer.start()
     
     # Konfiguration und Dropdowns laden
+    # Zuerst Config laden (setzt llama_cpp_path, theme, model_directory aus config.json)
     window.load_config()
+    
+    # Dann Executables suchen (mit dem aus Config geladenen Pfad)
+    window.exe_combo.blockSignals(True)
+    try:
+        window.find_executables()
+    finally:
+        pass
+    
+    # Gespeicherte Binary aus Config selektieren (muss NACH find_executables passieren,
+    # weil erst dann Items in der ComboBox sind)
+    try:
+        config_path = Path.home() / ".llauncher" / "config.json"
+        with open(config_path, 'r') as f:
+            cfg = json.load(f)
+        selected_exec = cfg.get("selected_executable") or cfg.get("selected_exe")
+        if selected_exec:
+            idx = window.exe_combo.findText(selected_exec)
+            if idx >= 0:
+                window.exe_combo.setCurrentIndex(idx)
+            else:
+                # Wenn gespeicherte Binary nicht mehr gefunden (z.B. umbenannt), Default setzen
+                exe_index = window.exe_combo.findText("llama-server")
+                if exe_index >= 0:
+                    window.exe_combo.setCurrentIndex(exe_index)
+    except Exception as e:
+        window.debug_text.append(f"⚠ Fehler beim Laden der Binary aus Config: {e}")
+    
+    # Fallback-Default: llama-server wenn noch nichts ausgewählt wurde
+    if not window.exe_combo.currentText():
+        exe_index = window.exe_combo.findText("llama-server")
+        if exe_index >= 0:
+            window.exe_combo.setCurrentIndex(exe_index)
+    
+    # Model dropdown neu laden
     window.update_model_dropdown()
     
     # Benchmark-Datei aus Config laden und ins UI-Feld setzen
@@ -684,9 +719,3 @@ def setup_timers_and_load(window):
             window.debug_text.append(f"✓ {gettext('lbl_benchmark_file_loaded')}: {benchmark_file_path}")
     except Exception as e:
         window.debug_text.append(f"⚠ {gettext('lbl_error_loading_config')}: {e}")
-    
-    # Erst Prozess prüfen, dann Parameter laden (statt umgekehrt)
-    # WICHTIG: Nur wenn kein Preset geladen werden soll - sonst UI zerstören
-    if not window._load_running_process_args_silent():
-        # Kein externer Prozess gefunden - Presets laden als Fallback
-        window.apply_presets()
