@@ -464,7 +464,7 @@ class llauncher(QMainWindow):
         # Guard: Signal kann mit leerem String feuern beim ersten Mal
         if not name or name == "":
             return
-            
+        
         # Volle Pfad speichern
         exe_full_path = Path(self.llama_cpp_path) / name
         
@@ -473,18 +473,9 @@ class llauncher(QMainWindow):
             "selected_executable": str(exe_full_path),  # Key muss mit load_config() übereinstimmen
         })
         
-        # Debug: Zeige was wir haben
-        self.debug_text.append(f"=== Binary-Auswahl ===")
-        self.debug_text.append(f"llama_cpp_path: {self.llama_cpp_path}")
-        self.debug_text.append(f"name (aus ComboBox): {name!r}")
-        self.debug_text.append(f"exe_full_path: {str(exe_full_path)}")
-        
         # Dynamisch cache-type-k/v Optionen aus --help extrahieren
-        # Nur wenn name nicht leer und kein Verzeichnis-Pfad (keine '/' im Namen)
-        if name and '/' not in name and '\\' not in name:  # Name darf keine Pfadtrenner enthalten
+        if name and '/' not in name and '\\' not in name:
             self.update_cache_type_options(str(exe_full_path))
-        else:
-            self.debug_text.append(f"⚠️ Skipping --help (name leer oder ungültig)")
     
     def update_cache_type_options(self, binary_path: str):
         """
@@ -494,9 +485,7 @@ class llauncher(QMainWindow):
         Args:
             binary_path: Pfad zum llama-server Binary
         """
-        # Guard: Prüfen ob Path existiert (temporär auskommentiert für Debug)
         if not Path(binary_path).exists():
-            self.debug_text.append(f"⚠️ Binary nicht gefunden: {binary_path}")
             return
         
         try:
@@ -733,6 +722,13 @@ class llauncher(QMainWindow):
                 max_width = len(str(ctx_length)) * 9 + 15
                 edit.setMinimumWidth(max_width)
                 edit.setMaximumWidth(max_width)
+        
+        # Cache-Type K/V Dropdowns aktualisieren mit aktuellem Binary-Pfad
+        if hasattr(self, 'exe_combo') and hasattr(self, 'llama_cpp_path'):
+            exe_name = self.exe_combo.currentText()
+            if exe_name and exe_name.strip():
+                binary_path = str(Path(self.llama_cpp_path) / exe_name)
+                self.update_cache_type_options(binary_path)
         
         save_config({
             "model_directory": self.model_directory,
@@ -1427,17 +1423,16 @@ class llauncher(QMainWindow):
                 self.debug_text.append(f"ℹ model_directory aus config.json geladen: {model_dir}")
                 self.model_line.setText(model_dir)
             if selected_exec:
-                idx = self.exe_combo.findText(selected_exec)
+                # Extrahiere nur den Dateinamen aus dem vollen Pfad für den Vergleich
+                exe_filename = Path(selected_exec).name
+                idx = self.exe_combo.findText(exe_filename)
                 if idx >= 0:
                     self.exe_combo.setCurrentIndex(idx)
                     # Cache-Type Optionen direkt aktualisieren (Signal vielleicht nicht ausgelöst)
-                    exe_full_path = Path(self.llama_cpp_path) / selected_exec
-                    self.debug_text.append(f"=== Config-Load: Binary {selected_exec!r} ===")
-                    self.debug_text.append(f"Pfad: {str(exe_full_path)}")
-                    if '/' not in selected_exec and '\\' not in selected_exec:
-                        self.update_cache_type_options(str(exe_full_path))
-                    else:
-                        self.debug_text.append("⚠️ Skipping --help (ungültiger Name)")
+                    exe_full_path = str(Path(self.llama_cpp_path) / exe_filename)
+                    self.debug_text.append(f"=== Config-Load: Binary {exe_filename!r} ===")
+                    self.debug_text.append(f"Pfad: {exe_full_path}")
+                    self.update_cache_type_options(exe_full_path)
 
             if selected_model:
                 self.selected_model = selected_model

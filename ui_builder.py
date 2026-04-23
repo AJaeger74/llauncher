@@ -688,7 +688,9 @@ def setup_timers_and_load(window):
             cfg = json.load(f)
         selected_exec = cfg.get("selected_executable") or cfg.get("selected_exe")
         if selected_exec:
-            idx = window.exe_combo.findText(selected_exec)
+            # Extrahiere nur den Dateinamen aus dem vollen Pfad für den Vergleich
+            exe_filename = Path(selected_exec).name
+            idx = window.exe_combo.findText(exe_filename)
             if idx >= 0:
                 window.exe_combo.setCurrentIndex(idx)
             else:
@@ -704,6 +706,15 @@ def setup_timers_and_load(window):
         exe_index = window.exe_combo.findText("llama-server")
         if exe_index >= 0:
             window.exe_combo.setCurrentIndex(exe_index)
+    
+    # Cache-Type K/V Dropdowns nach Startup initialisieren (Signal feuert nicht bei programmatischer Auswahl!)
+    exe_name = window.exe_combo.currentText().strip()
+    if exe_name and exe_name != "llama.cpp nicht gefunden":
+        exe_full_path = str(Path(window.llama_cpp_path) / exe_name)
+        try:
+            window.update_cache_type_options(exe_full_path)
+        except Exception as e:
+            window.debug_text.append(f"⚠ Cache-Type initialisieren fehlgeschlagen: {e}")
     
     # Model dropdown neu laden
     window.update_model_dropdown()
