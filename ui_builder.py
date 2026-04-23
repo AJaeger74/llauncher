@@ -140,15 +140,16 @@ def build_llauncher_ui(window):
     model_row_layout.addWidget(window.model_line)
     model_row_layout.addWidget(browse_model_btn)
     
-    exe_label = QLabel(gettext("lbl_exe_label"))
-    exe_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-    exe_label.setStyleSheet("margin-top: 8px;")
-    
     model_label = QLabel(gettext("lbl_models_label"))
     model_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     model_label.setStyleSheet("margin-top: 8px;")
     
-    paths_layout.addRow(exe_label, exe_row)
+    # Header für Executable-Pfad-Zeile (eigener Key statt lbl_exe_label)
+    exe_path_header = QLabel(gettext("lbl_exe_directory"))
+    exe_path_header.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+    exe_path_header.setStyleSheet("margin-top: 8px;")
+    
+    paths_layout.addRow(exe_path_header, exe_row)
     paths_layout.addRow(model_label, model_row)
     
     window.exe_combo = QComboBox()
@@ -162,7 +163,7 @@ def build_llauncher_ui(window):
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
     
-    paths_layout.addRow(gettext("lbl_exe_label"), window.exe_combo)
+    paths_layout.addRow(gettext("lbl_exe_select"), window.exe_combo)
     paths_layout.addRow(gettext("lbl_model_select"), window.model_combo)
     paths_layout.addRow(gettext("lbl_mmproj_vision"), window.mmproj_line)
     

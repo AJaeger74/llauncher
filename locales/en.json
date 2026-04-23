@@ -125,6 +125,8 @@
   "msg_preset_saved_title": "Preset saved!",
   "lbl_models_label": "Models:",
   "lbl_exe_label": "llama.cpp:",
+  "lbl_exe_directory": "llama.cpp directory:",
+  "lbl_exe_select": "Detected executables:",
   "msg_select_preset": "Select a preset:",
   "btn_load": "Load",
   "msg_no_selection": "No selection",
