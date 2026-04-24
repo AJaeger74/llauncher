@@ -19,6 +19,9 @@ Funktion: parse_cache_type_options(binary_path)
 import subprocess
 from typing import Optional
 
+# Standard-Werte die in fast allen llama.cpp Builds unterstützt werden
+FALLBACK_CACHE_TYPES = ['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl']
+
 
 def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
     """
@@ -114,10 +117,6 @@ def _extract_allowed_values(lines: list[str], start_idx: int) -> list[str]:
         if not line.strip() or (line.startswith('-') and not line.startswith(' ')):
             break
         
-        # "(default:" oder "(env:" bedeutet Ende der allowed values
-        if '(default:' in line.lower() or '(env:' in line.lower():
-            break
-        
         # "allowed values:" finden und Werte extrahieren
         if 'allowed values:' in line.lower():
             # Nach dem ":" alles nehmen
@@ -128,14 +127,11 @@ def _extract_allowed_values(lines: list[str], start_idx: int) -> list[str]:
                 val = val.strip().lower()
                 if val and not val.startswith('(') and val not in allowed_values:
                     allowed_values.append(val)
-        
-        # Auch einfache Zeilen mit Werten prüfen (wenn keine "allowed values:" Linie da ist)
-        elif line.strip() and not line.startswith('('):
-            # Werte wie "f32, f16, bf16" auf einer eigenen Zeile
-            for val in line.replace(',', ' ').split():
-                val = val.strip().lower()
-                if val and not val.startswith('(') and val not in allowed_values:
-                    allowed_values.append(val)
+    
+   # Wenn keine Werte gefunden wurden (z.B. il_llama.cpp zeigt nur default),
+    # verwende bekannte Standard-Werte
+    if not allowed_values:
+        return list(FALLBACK_CACHE_TYPES)
     
     return allowed_values
 
