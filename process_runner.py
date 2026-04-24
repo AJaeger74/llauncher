@@ -328,6 +328,9 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         '--ctx-size': '-c',
         '--batch-size': '-b',
         '--parallel': '-np',
+        '--cache-type-k': '-ctk',
+        '--cache-type-v': '-ctv',
+        '--flash-attn': '-fa',
         '--ubatch-size': None,  # External, unmanaged parameter
     }
 
@@ -336,6 +339,9 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         '-c': '--ctx-size',
         '-b': '--batch-size',
         '-np': '--parallel',
+        '-ctk': '--cache-type-k',
+        '-ctv': '--cache-type-v',
+        '-fa': '--flash-attn',
         '-m': '--model',
         '-n': '--predict-prev',  # -n for predict-prev context
         '--mmproj': '--mmproj',  # mmproj stays as-is
@@ -383,11 +389,15 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         if key == '--batch-size' or key == '-b':
             print(f"[DEBUG] Processing batch-size: key={key}, value={value}")
 
-        # First try standard mapping (--param -> -param)
+      # First try standard mapping (--param -> -param)
         mapped_key = PARAM_ALIAS_MAP.get(key, key)
-
+        
         # If mapped_key still has --, check reverse map (-param -> --param)
         if mapped_key.startswith('--'):
+            mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
+         # Also check if short form (e.g., -ctk, -fa, -md) needs to be converted to long form
+        elif mapped_key.startswith('-'):
+            # Short flag -> try to convert to long form via ALIAS_TO_LONG_MAP
             mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
 
         # Handle special parameters that are managed but NOT in PARAM_DEFINITIONS
@@ -402,10 +412,10 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                 managed_args[key] = value
                 continue
 
-        # Determine the actual key to use in param_definitions (for slider/combo params)
+       # Determine the actual key to use in param_definitions (for slider/combo params)
         actual_key = key if key in param_definitions else mapped_key if mapped_key in param_definitions else None
-
-        print(f"[DEBUG] Processing param: key={key}, value={value}, mapped={mapped_key}, actual={actual_key}")
+        
+        print(f"[DEBUG] Processing param: key={key}, value={value}, mapped={mapped_key}, actual={actual_key}, in_defs={key in param_definitions}")
 
         if actual_key:
             if actual_key in ('-c', '-n', '-t', '-b', '-ngl', '-np') or key in ('-c', '-n', '-t', '-b', '-ngl', '-np'):
@@ -444,6 +454,8 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
             elif actual_key and actual_key.startswith('--'):
                 param_sliders = getattr(window, 'param_sliders', {})
                 slider_data = param_sliders.get(actual_key, {})
+                
+                print(f"[DEBUG] Combo/edit param: key={key}, actual_key={actual_key}, slider_data keys={list(slider_data.keys()) if slider_data else 'EMPTY'}")
 
                 if slider_data:
                     combo = slider_data.get('combo')
@@ -454,12 +466,14 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                         else:
                             combo.setCurrentText(value)
                         managed_args[actual_key] = value
+                        print(f"[DEBUG] Set combo {actual_key} to {value}")
                         continue
 
                     edit = slider_data.get('edit')
                     if edit and not slider_data.get('slider'):
                         edit.setText(value)
                         managed_args[actual_key] = value
+                        print(f"[DEBUG] Set edit {actual_key} to {value}")
                         continue
                     else:
                         slider = slider_data.get('slider')
@@ -472,18 +486,26 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                             except ValueError:
                                 pass  # Skip invalid float values
                             managed_args[actual_key] = value
+                            print(f"[DEBUG] Set float_slider {actual_key} to {value}")
                             continue
 
-    # If we reach here, parameter is not managed - keep in normalized_args
-    if mapped_key:  # Only add if mapped_key is not None
-        normalized_args[mapped_key] = value
-
-    external_args = normalized_args
+    # After processing all parameters, build normalized_args with unmapped params
+    for key, value in external_args.items():
+        # Check if this parameter or its mapped form was managed
+        mapped_key = PARAM_ALIAS_MAP.get(key, key)
+        if mapped_key.startswith('--'):
+            mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
+        elif mapped_key.startswith('-'):
+            mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
+        
+        if key not in managed_args and mapped_key not in managed_args:
+            # Keep original key format for external display
+            normalized_args[key] = value
 
     # Filter out managed parameters AND special parameters (mmproj, model)
     # Note: --mmproj is managed via mmproj_line but not in PARAM_DEFINITIONS
     excluded_keys = ('-m', '--model', '--mmproj')  # Always exclude these from external display
-    external_only = {k: v for k, v in external_args.items()
-                     if k not in managed_args and k not in excluded_keys}
+    external_only = {k: v for k, v in normalized_args.items()
+                     if k not in excluded_keys}
 
     return external_only, model_path, exe_path, pid_found
