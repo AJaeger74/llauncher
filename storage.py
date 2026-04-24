@@ -181,110 +181,102 @@ def apply_preset(window, preset: dict):
 
     # mmproj setzen (voller Pfad! - immer setzen, nicht nur wenn existiert!)
     mmproj_path = preset.get("mmproj_path", "")
-    # Wichtig: mmproj_line muss auch bei leerem String gesetzt werden (None-Check, nicht Truth-Check!)
     if mmproj_path is not None:
         window.mmproj_line.setText(mmproj_path)
 
-    # Parameter-Slider setzen
+    # Wenn ein Modell ausgewählt ist, ctx_size Slider Maximum aktualisieren
+    # (MUSS vor dem params-Loop passieren, damit Slider-Wert nicht geclampt wird)
+    if preset.get("selected_model") and Path(preset["selected_model"]).exists():
+        ctx_length = read_gguf_context_length(preset["selected_model"])
+        sys.stderr.write(f"[preset] loaded model context_length: {ctx_length}\n")
+        if ctx_length and ctx_length > 0:
+            slider_data = window.param_sliders.get("-c")
+            if slider_data:
+                slider = slider_data["slider"] if isinstance(slider_data, dict) else slider_data
+                edit = slider_data["edit"] if isinstance(slider_data, dict) else None
+                
+                old_max = slider.maximum()
+                sys.stderr.write(f"[preset] ctx_size slider: maximum {old_max} → {ctx_length}\n")
+                slider.setMaximum(ctx_length)
+
+                # Edit-Widget Breite aktualisieren für neue maximale Zahl
+                if edit:
+                    max_width = len(str(ctx_length)) * 9 + 15
+                    edit.setMinimumWidth(max_width)
+                    edit.setMaximumWidth(max_width)
+
+    # Parameter-Slider setzen (NACH Maximum-Update für -c, damit Werte nicht geclampt werden)
     for param_key, value in preset.get("params", {}).items():
         # benchmark_file_path NICHT überschreiben (rein user-spezifisch)
         if param_key == "benchmark_file_path":
             continue
             
-        if param_key in window.param_sliders:
-            config = window.PARAM_DEFINITIONS[param_key]
+        if param_key not in window.param_sliders:
+            continue
             
-            if config.get("type") == "float_slider":
-                # Float-Slider: Wert aus Edit-Widget setzen
-                slider_data = window.param_sliders[param_key]
-                value_edit = slider_data["edit"]
-                value_edit.setText(f"{value:.2f}")
-            elif config.get("type") == "combo":
-                # ComboBox: Wert als String setzen
-                slider_data = window.param_sliders[param_key]
-                combo = slider_data["combo"]
-                idx = combo.findText(str(value))
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-            elif config.get("type") in ("text_input", "path_input"):
-                # Textfeld oder Pfad-Eingabe – Wert als String setzen
-                slider_data = window.param_sliders[param_key]
-                value_edit = slider_data["edit"]
-                value_edit.setText(str(value))
-            else:
-                # Integer-Slider: Wert direkt setzen (value ist bereits gespeichert)
-                slider_data = window.param_sliders[param_key]
-                if isinstance(slider_data, dict):
-                    slider = slider_data["slider"]
-                    # Sonderfall: -ngl mit String "all" → Edit auf "all", Slider auf 0
-                    if param_key == "-ngl" and isinstance(value, str) and value == "all":
-                        slider.setValue(0)
-                        slider_data["edit"].setText("all")
-                    else:
-                        old_val = slider.value()
-                        slider.setValue(int(value))
-                        sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
-                else:
-                    old_val = slider_data.value()
-                    slider_data.setValue(int(value))
-                    sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
-
-            # Sonderfall: -ngl mit "all" Checkbox → Edit auf "all", Slider = 0 (unwichtig)
-            if param_key == "-ngl":
-                # Prüfen ob Wert "all" als String gespeichert ist ODER ngl_all Flag vorhanden
-                ngl_all_value = preset.get("params", {}).get("-ngl") == "all" or preset.get("ngl_all", False)
-                has_checkbox = hasattr(window, "ngl_all_checkbox")
-                checkbox_exists = window.ngl_all_checkbox if has_checkbox else None
-                # Debug: Log checkbox state
-                window.debug_text.append(f"DEBUG ngl_all: value={ngl_all_value}, has_attr={has_checkbox}, checkbox={checkbox_exists}")
-                if has_checkbox and checkbox_exists:
-                    window.ngl_all_checkbox.setChecked(ngl_all_value)
-                    window.debug_text.append(f"DEBUG ngl_all: Checkbox set to {ngl_all_value}")
-                    # Edit-Feld auf "all" setzen wenn aktiviert (für Konsistenz im Debug-Output)
-                    if ngl_all_value and isinstance(slider_data, dict):
-                        value_edit = slider_data["edit"]
-                        try:
-                            value_edit.setText("all")
-                        except Exception:
-                            pass
-                    # Slider-Wert auf 0 setzen wenn "all" aktiviert (vermeidet Verwirrung)
-                    if ngl_all_value and isinstance(slider_data, dict):
-                        slider = slider_data["slider"]
-                        slider.setValue(0)
-
-    # Wenn ein Modell ausgewählt ist, ctx_size Slider Maximum aktualisieren
-    if preset.get("selected_model") and Path(preset["selected_model"]).exists():
-        ctx_length = read_gguf_context_length(preset["selected_model"])
-        sys.stderr.write(f"[preset] loaded model context_length: {ctx_length}\n")
-        if ctx_length and ctx_length > 0:
-            slider_data = window.param_sliders["-c"]
+        config = window.PARAM_DEFINITIONS[param_key]
+        
+        if config.get("type") == "float_slider":
+            # Float-Slider: Wert aus Edit-Widget setzen
+            slider_data = window.param_sliders[param_key]
+            value_edit = slider_data["edit"]
+            value_edit.setText(f"{value:.2f}")
+        elif config.get("type") == "combo":
+            # ComboBox: Wert als String setzen
+            slider_data = window.param_sliders[param_key]
+            combo = slider_data["combo"]
+            idx = combo.findText(str(value))
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        elif config.get("type") in ("text_input", "path_input"):
+            # Textfeld oder Pfad-Eingabe – Wert als String setzen
+            slider_data = window.param_sliders[param_key]
+            value_edit = slider_data["edit"]
+            value_edit.setText(str(value))
+        else:
+            # Integer-Slider: Wert direkt setzen (value ist bereits gespeichert)
+            slider_data = window.param_sliders[param_key]
             if isinstance(slider_data, dict):
                 slider = slider_data["slider"]
-                edit = slider_data["edit"]
+                # Sonderfall: -ngl mit String "all" → Edit auf "all", Slider auf 0
+                if param_key == "-ngl" and isinstance(value, str) and value == "all":
+                    slider.setValue(0)
+                    slider_data["edit"].setText("all")
+                else:
+                    old_val = slider.value()
+                    slider.setValue(int(value))
+                    sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
             else:
-                # Fallback für alte Struktur (sollte nicht vorkommen)
-                slider = slider_data
-                edit = None
+                old_val = slider_data.value()
+                slider_data.setValue(int(value))
+                sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
 
-            old_max = slider.maximum()
-            sys.stderr.write(f"[preset] ctx_size slider: maximum {old_max} → {ctx_length}\n")
-            slider.setMaximum(ctx_length)
-
-            # Edit-Widget Breite aktualisieren für neue maximale Zahl
-            max_width = len(str(ctx_length)) * 9 + 15
-            edit.setMinimumWidth(max_width)
-            edit.setMaximumWidth(max_width)
+        # Sonderfall: -ngl mit "all" Checkbox → Edit auf "all", Slider = 0 (unwichtig)
+        if param_key == "-ngl":
+            ngl_all_value = preset.get("params", {}).get("-ngl") == "all" or preset.get("ngl_all", False)
+            has_checkbox = hasattr(window, "ngl_all_checkbox")
+            checkbox_exists = window.ngl_all_checkbox if has_checkbox else None
+            if has_checkbox and checkbox_exists:
+                window.ngl_all_checkbox.setChecked(ngl_all_value)
+                if ngl_all_value and isinstance(slider_data, dict):
+                    value_edit = slider_data["edit"]
+                    try:
+                        value_edit.setText("all")
+                    except Exception:
+                        pass
+                    slider = slider_data["slider"]
+                    slider.setValue(0)
 
     # Debug: log loaded preset name
     if hasattr(window, "debug_text") and window.debug_text:
         preset_name = preset.get("name", "<unnamed>")
         window.debug_text.append(f"Preset loaded: {preset_name}")
     
-# Splitter-Sizes aus Preset laden (falls vorhanden)
-        if 'splitter_sizes' in preset:
-            try:
-                splitter_sizes = preset['splitter_sizes']
-                if isinstance(splitter_sizes, list):
-                    window.splitter.setSizes(splitter_sizes)
-            except Exception as e:
-                print(f"Warnung: Konnte Splitter-Sizes nicht aus Preset laden: {e}")
+    # Splitter-Sizes aus Preset laden (falls vorhanden)
+    if 'splitter_sizes' in preset:
+        try:
+            splitter_sizes = preset['splitter_sizes']
+            if isinstance(splitter_sizes, list):
+                window.splitter.setSizes(splitter_sizes)
+        except Exception as e:
+            sys.stderr.write(f"Warnung: Konnte Splitter-Sizes nicht aus Preset laden: {e}\n")
