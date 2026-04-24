@@ -134,13 +134,12 @@ def apply_preset(window, preset: dict):
     if Path(llama_path).exists():
         window.exe_line.setText(llama_path)
     
-    # model_directory kommt immer noch aus config.json (load_config())
-    # Preset referenziert eventuell ein anderes Verzeichnis - nur für UI-Anzeige
     model_dir = preset.get("model_directory", str(Path.home() / "models"))
     if Path(model_dir).exists():
+        window.model_directory = model_dir  # Internes Attribakt aktualisieren
         window.model_line.setText(model_dir)
 
-    # Dropdowns neu füllen
+    # Dropdowns neu füllen (benutzt jetzt das korrekte window.model_directory)
     window.find_executables()
     window.update_model_dropdown()
 
