@@ -1470,6 +1470,13 @@ class llauncher(QMainWindow):
         """Fenster-Geometrie und Splitter-State speichern + Timer stoppen"""
         from ui_persistence import save_window_state as up_save_state
         up_save_state(self)
+        
+        # Don't wait for QThread - just detach and let Python clean up on exit.
+        # This prevents the GUI from hanging if llama.cpp doesn't respond to signals.
+        if self.runner:
+            self.runner.force_exit()
+            self.runner = None  # Clear reference so Qt can destroy it
+        
         event.accept()
 
 
