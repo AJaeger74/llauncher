@@ -136,7 +136,7 @@ def apply_preset(window, preset: dict):
     
     model_dir = preset.get("model_directory", str(Path.home() / "models"))
     if Path(model_dir).exists():
-        window.model_directory = model_dir  # Internes Attribakt aktualisieren
+        window.model_directory = model_dir  # Internes Attribut aktualisieren
         window.model_line.setText(model_dir)
 
     # Dropdowns neu füllen (benutzt jetzt das korrekte window.model_directory)
