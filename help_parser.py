@@ -127,6 +127,13 @@ def _extract_allowed_values(lines: list[str], start_idx: int) -> list[str]:
                 val = val.strip().lower()
                 if val and not val.startswith('(') and val not in allowed_values:
                     allowed_values.append(val)
+        
+        # Fortgesetzte Werte auf nachfolgenden Zeilen (wenn umbrochen ohne Label)
+        elif line.strip() and not line.startswith('(') and not allowed_values:
+            for val in line.replace(',', ' ').split():
+                val = val.strip().lower()
+                if val and not val.startswith('(') and val not in allowed_values:
+                    allowed_values.append(val)
     
    # Wenn keine Werte gefunden wurden (z.B. il_llama.cpp zeigt nur default),
     # verwende bekannte Standard-Werte
