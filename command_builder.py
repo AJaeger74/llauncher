@@ -111,6 +111,45 @@ def get_current_args(window) -> list:
     return args
 
 
+def _parse_custom_commands_text(text):
+    """Parses custom command text field content into a list of command-line arguments.
+    
+    Handles space-separated 'key value' format and bare flags.
+    Also supports '=' as separator (e.g., '--key=value') for manual entries.
+    
+    Args:
+        text: String content from custom_cmd_edit QTextEdit
+        
+    Returns:
+        list: List of command-line argument strings
+    """
+    if not text or not text.strip():
+        return []
+    
+    args = []
+    for line in text.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):  # Skip empty lines and comments
+            continue
+        
+        # Check for 'key=value' format (no spaces around '=')
+        if '=' in line:
+            parts = line.split('=', 1)
+            args.append(parts[0].strip())
+            args.append(parts[1].strip())
+        else:
+            # Space-separated: 'key value' or bare flag
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                args.append(parts[0])
+                args.append(parts[1])
+            else:
+                # Single flag (no value) - just append the key
+                args.append(line)
+    
+    return args
+
+
 def build_full_command(window, external_args: dict = None) -> str:
     """Vollständige Kommandozeile als String bauen.
     
@@ -139,19 +178,14 @@ def build_full_command(window, external_args: dict = None) -> str:
         except Exception:
             pass
     
-    # 3. Fallback: UI-Werte zusammengesetzt + externe Args
+    # 3. Fallback: UI-Werte zusammengesetzt + externe Args (aus Custom Commands Feld)
     args = get_current_args(window)
     
-    # Externe Parameter hinzufügen (nicht in APP verwaltbar)
-    if external_args or hasattr(window, 'external_args') and window.external_args:
-        ext_args = external_args or window.external_args
-        for key, value in ext_args.items():
-            args.append(key)
-            if isinstance(value, bool):
-                if value:  # Boolean flags nur anzeigen wenn True
-                    pass  # Kein Wert nach dem Flag
-            else:
-                args.append(str(value))
+    # Custom Commands Feld auslesen (benutzerdefinierte Kommandozeilen-Argumente)
+    if hasattr(window, 'custom_cmd_edit') and window.custom_cmd_edit:
+        custom_text = window.custom_cmd_edit.toPlainText()
+        custom_args = _parse_custom_commands_text(custom_text)
+        args.extend(custom_args)
     
     return " ".join(shlex.quote(arg) for arg in args)
 

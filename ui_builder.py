@@ -391,6 +391,33 @@ def build_llauncher_ui(window):
                 params_layout.addRow(label, row_widget)
             
             window.param_sliders[param_key] = slider_dict
+    
+    # Separator line for visual separation
+    separator = QFrame()
+    separator.setFrameShape(QFrame.Shape.HLine)
+    separator.setFrameShadow(QFrame.Shadow.Sunken)
+    params_layout.addRow(separator)
+    
+     # Custom Commands text field (external/unmanaged command-line arguments)
+    custom_label_text = gettext("lbl_custom_commands")
+    custom_hint_text = gettext("hint_custom_commands")
+    
+    custom_header = QLabel(f"{custom_label_text}:")
+    custom_header.setStyleSheet("font-weight: bold; margin-top: -2px;")
+    custom_header.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    
+    window.custom_cmd_edit = QTextEdit()
+    window.custom_cmd_edit.setPlaceholderText(custom_hint_text)
+    window.custom_cmd_edit.setMinimumHeight(60)
+    window.custom_cmd_edit.setFont(QFont("Monospace", 9))
+    window.custom_cmd_edit.setStyleSheet("margin-top: -2px;")
+    
+    # Live update debug output when custom commands change
+    window.custom_cmd_edit.textChanged.connect(window.on_param_changed)
+    
+    params_layout.addRow(custom_header, window.custom_cmd_edit)
+    
+    window.param_sliders['_custom_commands'] = {"edit": window.custom_cmd_edit}
 
     params_scroll.setWidget(params_widget)
     left_layout.addWidget(params_scroll)

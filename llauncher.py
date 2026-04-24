@@ -395,8 +395,9 @@ class llauncher(QMainWindow):
             self.exe_line.setText(exe_dir)
         
      # Externe Parameter anzeigen (nicht in APP verwaltet) – nur wenn es welche gibt
-        if external_args and len(external_args) > 0 and show_dialogs:
-            self._show_external_args_dialog(external_args, model_path)
+        if external_args and len(external_args) > 0:
+            # Populiere das Custom Commands Feld anstelle eines Dialogs
+            self._format_external_args_to_text(external_args)
         
         # Externe Parameter speichern für Debug-Ausgabe und Kommandozeilen-Generierung
         self.external_args = external_args
@@ -419,6 +420,26 @@ class llauncher(QMainWindow):
         from process_runner import show_external_args_dialog
         
         show_external_args_dialog(external_args, model_path, self)
+
+    def _format_external_args_to_text(self, external_args):
+        """Formatiert externe Parameter als Text für das Custom Commands Feld.
+        
+        Args:
+            external_args: Dict mit externen Parametern (key=value oder key=True)
+        """
+        if not hasattr(self, 'custom_cmd_edit'):
+            return
+        
+        lines = []
+        for key, value in external_args.items():
+            if value is True:
+                # Boolean Flags ohne Wert
+                lines.append(key)
+            else:
+                # Space-getrennt (kein Gleichheitszeichen)
+                lines.append(f"{key} {value}")
+        
+        self.custom_cmd_edit.setText('\n'.join(lines))
 
     def browse_llama_dir(self):
         dialog = QFileDialog(self, "llama.cpp Verzeichnis wählen", self.llama_cpp_path)
@@ -1020,17 +1041,15 @@ class llauncher(QMainWindow):
                 self.bench_progress_bar.setToolTip("Stopped")
         else:
             # Starten - Status zuerst auf "Lade Modell..." setzen
-            print(f"[DEBUG toggle_process] Starting process...")
             self.start_stop_btn.setText(gettext("btn_stop"))
             self.start_stop_btn.setObjectName("StartButton")
             self.status_label.setText(gettext("status_loading_model"))
             self.status_label.setStyleSheet("color: orange; font-weight: bold;")
 
-            args = self.get_current_args()
-            print(f"[DEBUG toggle_process] Args: {args}")
+            args_str = self.build_full_command()
+            args = shlex.split(args_str)
             
             if not args or "-m" not in args:
-                print(f"[DEBUG toggle_process] ERROR: No model selected!")
                 QMessageBox.warning(self, gettext("msg_no_model_selected"))
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("StopButton")

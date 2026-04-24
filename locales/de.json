@@ -196,5 +196,7 @@
   "msg_file_exists": "Datei existiert bereits unter:\n{path}\n\nÜberschreiben?",
   "msg_yes": "Ja",
   "msg_no": "Nein",
-  "msg_download_cancelled": "Download abgebrochen."
+  "msg_download_cancelled": "Download abgebrochen.",
+  "lbl_custom_commands": "Externe Befehle",
+  "hint_custom_commands": "Zusätzliche Kommandozeilen-Argumente hier eingeben (nicht in APP verwaltet)."
 }

@@ -271,6 +271,11 @@ def apply_preset(window, preset: dict):
         preset_name = preset.get("name", "<unnamed>")
         window.debug_text.append(f"Preset loaded: {preset_name}")
     
+    # Custom Commands aus Preset laden (immer setzen, bei alten Presets leeren)
+    if hasattr(window, 'custom_cmd_edit') and window.custom_cmd_edit:
+        custom_text = preset.get("custom_commands", "")
+        window.custom_cmd_edit.setText(custom_text)
+    
     # Splitter-Sizes aus Preset laden (falls vorhanden)
     if 'splitter_sizes' in preset:
         try:

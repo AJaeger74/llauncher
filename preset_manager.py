@@ -45,6 +45,12 @@ def save_active_preset(window):
     name = config.get("preset_name", "Unnamed")
     preset = {"name": name, **preset_data}
     
+    # Custom Commands aus UI-Textfeld holen (falls vorhanden)
+    if hasattr(window, 'custom_cmd_edit'):
+        custom_text = window.custom_cmd_edit.toPlainText().strip()
+        if custom_text:
+            preset["custom_commands"] = custom_text
+    
     # Use storage layer for consistent format (dict: {name: {...}, ...})
     presets = load_presets()
     presets[name] = preset
@@ -168,6 +174,12 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
                         preset["params"][param_key] = slider.value()
             except (KeyError, AttributeError, TypeError, ValueError):
                 continue
+        
+              # Custom Commands aus UI-Textfeld holen
+        if hasattr(window, 'custom_cmd_edit'):
+            custom_text = window.custom_cmd_edit.toPlainText().strip()
+            if custom_text:
+                preset["custom_commands"] = custom_text
         
         return name, preset
     

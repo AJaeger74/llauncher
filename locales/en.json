@@ -196,5 +196,7 @@
   "msg_file_exists": "File already exists at:\n{path}\n\nOverwrite?",
   "msg_yes": "Yes",
   "msg_no": "No",
-  "msg_download_cancelled": "Download cancelled."
+  "msg_download_cancelled": "Download cancelled.",
+  "lbl_custom_commands": "Custom Commands",
+  "hint_custom_commands": "Enter additional command-line arguments here (not managed by the app)."
 }
