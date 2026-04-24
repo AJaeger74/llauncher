@@ -45,6 +45,11 @@ def save_active_preset(window):
     name = config.get("preset_name", "Unnamed")
     preset = {"name": name, **preset_data}
     
+    # Immer selected_exe aus Config mitnehmen (falls vorhanden)
+    selected_exec = config.get("selected_executable") or config.get("selected_exe")
+    if selected_exec:
+        preset["selected_exe"] = selected_exec
+    
     # Custom Commands aus UI-Textfeld holen (falls vorhanden)
     if hasattr(window, 'custom_cmd_edit'):
         custom_text = window.custom_cmd_edit.toPlainText().strip()

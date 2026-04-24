@@ -494,9 +494,8 @@ class llauncher(QMainWindow):
             "selected_executable": str(exe_full_path),  # Key muss mit load_config() übereinstimmen
         })
         
-        # Dynamisch cache-type-k/v Optionen aus --help extrahieren
-        if name and '/' not in name and '\\' not in name:
-            self.update_cache_type_options(str(exe_full_path))
+        # Cache-Type Optionen immer aktualisieren
+        self.update_cache_type_options(str(exe_full_path))
     
     def update_cache_type_options(self, binary_path: str):
         """
@@ -1411,6 +1410,7 @@ class llauncher(QMainWindow):
         
         # Preset anwenden und Kommandozeile anzeigen
         apply_preset(self, preset)
+        
         preset_show_args(
             self,
             self.debug_text,
@@ -1424,6 +1424,21 @@ class llauncher(QMainWindow):
             self.mmproj_line,
             self.exe_combo,
         )
+        
+              # Cache-Type Optionen nach Preset-Anwendung aktualisieren
+        selected_exec = preset.get("selected_exe") or preset.get("selected_executable")
+        if selected_exec:
+            exe_full_path = Path(selected_exec)
+            # Wenn nicht absolut, mit llama_cpp_path kombinieren
+            if not exe_full_path.is_absolute():
+                exe_full_path = Path(self.llama_cpp_path) / exe_full_path
+            self.update_cache_type_options(str(exe_full_path))
+        elif hasattr(self, 'exe_combo'):
+            # Fallback: aktuelles exe_combo für alte Presets ohne selected_exe
+            exe_name = self.exe_combo.currentText().strip()
+            if exe_name and exe_name != "llama.cpp nicht gefunden":
+                exe_full_path = str(Path(self.llama_cpp_path) / exe_name)
+                self.update_cache_type_options(exe_full_path)
 
     # show_preset_args jetzt in preset_manager.py ausgelagert
 

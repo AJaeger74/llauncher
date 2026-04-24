@@ -17,6 +17,8 @@ Funktion: parse_cache_type_options(binary_path)
 """
 
 import subprocess
+import re
+from pathlib import Path
 from typing import Optional
 
 # Standard-Werte die in fast allen llama.cpp Builds unterstützt werden
@@ -27,7 +29,7 @@ def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
     """
     Extrahiert die allowed values für --cache-type-k und --cache-type-v
     aus llama-server --help Output.
-    
+
     Args:
         binary_path: Pfad zum llama-server Binary
         
@@ -35,6 +37,16 @@ def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
         Dict mit keys 'k' und 'v', jeweils Liste der erlaubten Cache-Typen
         Beispiel: {'k': ['f32', 'f16', 'bf16', ...], 'v': ['f32', 'f16', ...]}
     """
+    
+    # Debug-Ausgabe in UI (wenn window übergeben wird)
+    debug_path = str(binary_path)
+    
+    # ik_llama.cpp hat kein "allowed values:" Label im Help-Output
+    # → direkt Fallback-Werte verwenden, kein Parsing-Versuch
+    detected_ik = binary_path and any(x in str(binary_path).lower() for x in ["ik_llama.cpp"])
+    
+    if detected_ik:
+        return {'k': list(FALLBACK_CACHE_TYPES), 'v': list(FALLBACK_CACHE_TYPES)}
     
     try:
         # --help ausführen (mit Timeout und Fehlerbehandlung)
@@ -98,49 +110,51 @@ def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
 def _extract_allowed_values(lines: list[str], start_idx: int) -> list[str]:
     """
     Extrahiert alle 'allowed values' ab der Start-Zeile.
-    Sammelt Werte über mehrere Zeilen (wenn sie umgebrochen sind).
-    
+    Sammelt den Text zwischen 'allowed values:' und '(default:' (oder Ende),
+    dann kommaseparierte Werte aufsplittern.
+
     Args:
         lines: Alle --help Output Zeilen
         start_idx: Index der Zeile mit dem Parameter-Name
-        
+
     Returns:
         Liste der erlaubten Cache-Typen
     """
-    allowed_values = []
-    
-    # Ab Zeile nach dem Start suchen
-    for j in range(start_idx + 1, len(lines)):
-        line = lines[j]
-        
-        # Leerzeile oder neuer Abschnitt beendet die Suche
-        if not line.strip() or (line.startswith('-') and not line.startswith(' ')):
-            break
-        
-        # "allowed values:" finden und Werte extrahieren
-        if 'allowed values:' in line.lower():
-            # Nach dem ":" alles nehmen
-            values_part = line.split(':', 1)[1].strip()
-            
-            # Kommata entfernen und aufschlüsseln
-            for val in values_part.replace(',', ' ').split():
-                val = val.strip().lower()
-                if val and not val.startswith('(') and val not in allowed_values:
-                    allowed_values.append(val)
-        
-        # Fortgesetzte Werte auf nachfolgenden Zeilen (wenn umbrochen ohne Label)
-        elif line.strip() and not line.startswith('(') and not allowed_values:
-            for val in line.replace(',', ' ').split():
-                val = val.strip().lower()
-                if val and not val.startswith('(') and val not in allowed_values:
-                    allowed_values.append(val)
-    
-   # Wenn keine Werte gefunden wurden (z.B. il_llama.cpp zeigt nur default),
-    # verwende bekannte Standard-Werte
-    if not allowed_values:
+    # 1) Den zusammengehörenden Textblock suchen (max 50 Zeilen, nicht leerer Abschnitt)
+    block_lines = []
+    for j in range(start_idx + 1, min(start_idx + 51, len(lines))):
+        stripped = lines[j].strip()
+        if not stripped:
+            break  # Leerzeile → Ende des Blocks
+        block_lines.append(stripped)
+
+    full_text = ' '.join(block_lines)
+
+    # 2) Text nach "allowed values:" filtern (case-insensitive)
+    match_av = re.search(r'allowed\s+values\s*:\s*', full_text, re.IGNORECASE)
+    if not match_av:
+        # Kein "allowed values:" Label im Help-Output (z.B. ik_llama.cpp)
+        # → Fallback auf Standard-Werte
         return list(FALLBACK_CACHE_TYPES)
     
-    return allowed_values
+    full_text = full_text[match_av.end():]
+
+    # 3) Text bis "(default:" kürzen
+    idx_default = full_text.lower().find('(default:')
+    if idx_default != -1:
+        full_text = full_text[:idx_default]
+
+    # 4) Kommaseparierte Werte extrahieren
+    values = []
+    for token in full_text.replace(',', ' ').split():
+        token = token.strip().lower()
+        if token and not token.startswith('(') and token not in values:
+            values.append(token)
+
+    if not values:
+        return list(FALLBACK_CACHE_TYPES)
+
+    return values
 
 
 if __name__ == "__main__":
