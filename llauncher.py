@@ -1469,9 +1469,12 @@ class llauncher(QMainWindow):
             apply_preset(self, last_preset)
             
             # Cache-Type Optionen nach Preset-Anwendung aktualisieren
-            selected_exec = last_preset.get("selected_executable") or last_preset.get("selected_exe")
-            if selected_exec and '/' not in str(selected_exec) and '\\\\' not in str(selected_exec):
+            selected_exec = last_preset.get("selected_exe") or last_preset.get("selected_executable")
+            if selected_exec:
                 exe_full_path = Path(self.llama_cpp_path) / selected_exec
+                if not exe_full_path.exists():
+                    # Absoluter Pfad aus dem Preset (altes Format)
+                    exe_full_path = Path(selected_exec)
                 self.debug_text.append(f"=== Preset-Apply: Binary {selected_exec!r} ===")
                 self.update_cache_type_options(str(exe_full_path))
 
