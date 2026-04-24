@@ -183,7 +183,7 @@ class HTTPBenchmarkRunner(QThread):
         try:
             self.output_signal.emit(f"Loading file: {benchmark_file_path}\n")
             file_ext = Path(benchmark_file_path).suffix.lower()
-            self.output_signal.emit(f"DEBUG: file_ext={file_ext}\n")
+            self.output_signal.emit(f"DEBUG: file_ext='{file_ext}'\n")
             
             if file_ext == '.pdf':
                 context = self._extract_pdf_text(benchmark_file_path)
