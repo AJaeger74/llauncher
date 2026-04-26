@@ -18,6 +18,7 @@ Funktion: parse_cache_type_options(binary_path)
 
 import subprocess
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -87,7 +88,7 @@ def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
     except Exception as e:
         return {'k': [], 'v': []}
     
- # Parsing-Logik
+    # Parsing-Logik
     lines = help_text.split('\n')
     cache_options = {'k': [], 'v': []}
     
@@ -98,11 +99,16 @@ def parse_cache_type_options(binary_path: str) -> dict[str, list[str]]:
         # Prüfe auf --cache-type-k oder --cache-type-v Linie (mit -ctk/-ctv Abkürzung)
         if '--cache-type-k TYPE' in line or '-ctk,  --cache-type-k TYPE' in line:
             cache_options['k'] = _extract_allowed_values(lines, i)
+            sys.stderr.write(f"[DEBUG parsed cache-type-k options]: {cache_options['k']}\n")
             
         elif '--cache-type-v TYPE' in line or '-ctv,  --cache-type-v TYPE' in line:
             cache_options['v'] = _extract_allowed_values(lines, i)
+            sys.stderr.write(f"[DEBUG parsed cache-type-v options]: {cache_options['v']}\n")
         
         i += 1
+    
+    # Debug: Finde alle extrahierten Optionen
+    sys.stderr.write(f"[DEBUG parse_cache_type_options final result]: {cache_options}\n")
     
     return cache_options
 
@@ -135,6 +141,7 @@ def _extract_allowed_values(lines: list[str], start_idx: int) -> list[str]:
     if not match_av:
         # Kein "allowed values:" Label im Help-Output (z.B. ik_llama.cpp)
         # → Fallback auf Standard-Werte
+        sys.stderr.write(f"[DEBUG _extract_allowed_values: No 'allowed values' found, using fallback]\n")
         return list(FALLBACK_CACHE_TYPES)
     
     full_text = full_text[match_av.end():]
