@@ -41,6 +41,15 @@ Run test inference and save results:
 - mmproj path for vision models (saved with presets)
 - Paths saved in `~/.llauncher/config.json`
 
+◆ **Custom Commands**  
+Free-text field for external/unmanaged CLI parameters that aren't covered by the built-in sliders:
+- Enter arguments in `key value` format (one per line) or `key=value` format
+- Bare flags (no value) are also supported
+- Lines starting with `#` are treated as comments and ignored
+- Loaded automatically when "Load Process Args" detects non-managed parameters
+- Saved and restored with presets, with backward-compatibility for old presets
+- Live-updates the debug command line preview
+
 ◆ **Debug Output**  
 Full command line (1:1 as executed) and live output during runtime
 
