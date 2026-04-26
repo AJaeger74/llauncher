@@ -452,6 +452,13 @@ class llauncher(QMainWindow):
                 self.llama_cpp_path = path
                 save_config({"llama_cpp_path": path})
                 self.find_executables()
+                
+                # Cache-Type Optionen für das neue Verzeichnis aktualisieren
+                if self.exe_combo.count() > 0:
+                    selected_exe = self.exe_combo.currentText()
+                    if selected_exe and selected_exe != "llama.cpp nicht gefunden":
+                        exe_full_path = Path(self.llama_cpp_path) / selected_exe
+                        self.update_cache_type_options(str(exe_full_path))
 
     def browse_model_dir(self):
         dialog = QFileDialog(self, "Model-Verzeichnis wählen", self.model_directory)
