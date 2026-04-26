@@ -6,7 +6,6 @@ Zentralisiertes Building von llama.cpp Kommandozeilen aus UI-Parametern.
 Liefert get_current_args() und build_full_command() als freie Funktionen.
 """
 
-import shlex
 from pathlib import Path
 
 
@@ -116,6 +115,7 @@ def _parse_custom_commands_text(text):
     
     Handles space-separated 'key value' format and bare flags.
     Also supports '=' as separator (e.g., '--key=value') for manual entries.
+    Single-quoted values (e.g., '--key 'value with spaces'') are properly handled.
     
     Args:
         text: String content from custom_cmd_edit QTextEdit
@@ -135,14 +135,28 @@ def _parse_custom_commands_text(text):
         # Check for 'key=value' format (no spaces around '=')
         if '=' in line:
             parts = line.split('=', 1)
-            args.append(parts[0].strip())
-            args.append(parts[1].strip())
+            key = parts[0].strip()
+            value = parts[1].strip()
+            # Strip surrounding quotes from value
+            if value and len(value) >= 2:
+                if (value.startswith("'") and value.endswith("'")) or \
+                   (value.startswith('"') and value.endswith('"')):
+                    value = value[1:-1]
+            args.append(key)
+            args.append(value)
         else:
             # Space-separated: 'key value' or bare flag
             parts = line.split(None, 1)
             if len(parts) == 2:
-                args.append(parts[0])
-                args.append(parts[1])
+                key = parts[0]
+                value = parts[1]
+                # Strip surrounding quotes from value
+                if value and len(value) >= 2:
+                    if (value.startswith("'") and value.endswith("'")) or \
+                       (value.startswith('"') and value.endswith('"')):
+                        value = value[1:-1]
+                args.append(key)
+                args.append(value)
             else:
                 # Single flag (no value) - just append the key
                 args.append(line)
@@ -163,18 +177,18 @@ def build_full_command(window, external_args: dict = None) -> str:
         external_args: Dict von externen Parametern (nicht in APP verwaltbar)
         
     Returns:
-        str: Vollständige Kommandozeile als String
+        str: Vollständige Kommandozeile als String (ohne shlex.quote für UI-Display)
     """
     # 1. Versuche externe Runner args (für externe Prozesse)
     if hasattr(window, 'external_runner_args') and window.external_runner_args:
-        return " ".join(shlex.quote(arg) for arg in window.external_runner_args)
+        return " ".join(window.external_runner_args)
     
     # 2. Versuche ProcessRunner (für interne Prozesse)
     if hasattr(window, 'process_runner') and window.process_runner:
         try:
             real_args = window.process_runner.get_args_from_proc()
             if real_args:
-                return " ".join(shlex.quote(arg) for arg in real_args)
+                return " ".join(real_args)
         except Exception:
             pass
     
@@ -187,7 +201,7 @@ def build_full_command(window, external_args: dict = None) -> str:
         custom_args = _parse_custom_commands_text(custom_text)
         args.extend(custom_args)
     
-    return " ".join(shlex.quote(arg) for arg in args)
+    return " ".join(args)
 
 
 def on_param_changed(window) -> None:
