@@ -10,7 +10,7 @@ Zeigt ein Dialog-Fenster mit:
 
 Unterstützt:
 - Kurze Form: "owner/repo" → listet Dateien auf, User wählt eine
-- Vollständige URL: "https://huggingface.co/owner/repo/blob/main/file.gguf" → Download sofort
+|- Vollständige URL: "https://huggingface.co/owner/repo/blob/main/file.gguf" (oder …/resolve/main/…) → Download sofort
 """
 
 import json
@@ -20,7 +20,7 @@ import re
 import sys
 import ctypes
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 from datetime import datetime
 
@@ -68,7 +68,7 @@ def parse_hf_url(raw: str):
         # Expected: owner / repo / blob / main / file  OR  owner / repo / raw / main / file
         idx_blob = None
         for i, p in enumerate(parts):
-            if p in ("blob", "raw"):
+            if p in ("blob", "raw", "resolve"):
                 idx_blob = i
                 break
 
@@ -504,11 +504,23 @@ class HfDownloadDialog(QDialog):
             self.loading_label.setVisible(False)
             return
 
-        # Check if it's a full URL (contains blob or raw)
-        if "blob" in text.lower() or "raw" in text.lower():
+        # Check if it's a full file URL (blob, raw, or resolve)
+        if "blob" in text.lower() or "raw" in text.lower() or "resolve" in text.lower():
             # Full file URL – skip file list, go straight to download
             try:
                 short_id, file_path = parse_hf_url(text)
+                # Strip query string (e.g. ?download=true) from displayed URL
+                parsed_url = urlparse(text)
+                clean_url = urlunparse((
+                    parsed_url.scheme,
+                    parsed_url.netloc,
+                    parsed_url.path,
+                    "", "", "",
+                ))
+                self.url_edit.setText(clean_url)
+                # Pre-populate combo so user can see the resolved filename
+                self.file_combo.clear()
+                self.file_combo.addItem(file_path, file_path)
                 self.file_combo.setEnabled(False)
                 self.download_btn.setEnabled(True)
                 self.status_label.setText(f"{short_id}/{file_path}")
