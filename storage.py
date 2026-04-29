@@ -142,16 +142,40 @@ def apply_preset(window, preset: dict):
     # Dropdowns neu füllen (benutzt jetzt das korrekte window.model_directory)
     window.find_executables()
     window.update_model_dropdown()
-
+    
+  # KV Cache Type-Dropdowns neu parsen (BEVOR params angewendet werden!)
+    # window.llama_cpp_path ist ab Zeile 131 gesetzt
+    # model_combo Signale blockieren damit on_model_selected() update_cache_type_options()
+    # NICHT dazwischenfunkt und die Comboboxen überschreibt
+    model_signals_blocked = False
+    if hasattr(window, 'model_combo'):
+        window.model_combo.blockSignals(True)
+        model_signals_blocked = True
+    
+    preset_cache_values = {}
+    preset_params = preset.get("params", {})
+    for cache_key in ("--cache-type-k", "--cache-type-v"):
+        if cache_key in preset_params and preset_params[cache_key]:
+            # Normalisiere den Key auf "cache-type-k" / "cache-type-v" für update_cache_type_options
+            norm_key = cache_key.lstrip("-").replace("-", "-")
+            preset_cache_values[norm_key] = preset_params[cache_key]
+    
+    if hasattr(window, 'update_cache_type_options') and callable(window.update_cache_type_options):
+        window.update_cache_type_options(str(Path(window.llama_cpp_path).resolve()), preset_cache_values if preset_cache_values else None)
+    
     # Executable auswählen (voller Pfad oder nur Name)
     selected_exe = preset.get("selected_exe")
     if selected_exe:
         exe_name = Path(selected_exe).name
         idx = window.exe_combo.findText(exe_name)
         if idx >= 0:
-            window.exe_combo.setCurrentIndex(idx)
+            window.exe_combo.blockSignals(True)
+            try:
+                window.exe_combo.setCurrentIndex(idx)
+            finally:
+                window.exe_combo.blockSignals(False)
 
-     # Modell auswählen (voller Pfad)
+    # Modell auswählen (voller Pfad)
     selected_model = preset.get("selected_model")
     if selected_model and Path(selected_model).exists():
         model_name = Path(selected_model).name
@@ -284,3 +308,7 @@ def apply_preset(window, preset: dict):
                 window.splitter.setSizes(splitter_sizes)
         except Exception as e:
             sys.stderr.write(f"Warnung: Konnte Splitter-Sizes nicht aus Preset laden: {e}\n")
+    
+    # model_combo Signale wieder freischalten (muss am Ende von apply_preset sein)
+    if model_signals_blocked and hasattr(window, 'model_combo'):
+        window.model_combo.blockSignals(False)

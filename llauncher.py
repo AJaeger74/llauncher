@@ -504,13 +504,17 @@ class llauncher(QMainWindow):
         # Cache-Type Optionen immer aktualisieren
         self.update_cache_type_options(str(exe_full_path))
     
-    def update_cache_type_options(self, binary_path: str):
+    def update_cache_type_options(self, binary_path: str, preset_values: dict = None):
         """
         Extrahiert dynamisch die allowed values für cache-type-k und cache-type-v
         aus llama-server --help und aktualisiert die ComboBoxen.
         
+        preset_values kann cache-type-k/v Werte enthalten, die als Extras in die
+        ComboBoxen aufgenommen werden (wenn sie nicht in --help Optionen sind).
+        
         Args:
             binary_path: Pfad zum llama-server Binary
+            preset_values: Dict mit optional 'cache-type-k' und 'cache-type-v' Keys
         """
         if not Path(binary_path).exists():
             return
@@ -520,33 +524,60 @@ class llauncher(QMainWindow):
             
             # Cache-Type K ComboBox aktualisieren
             if '--cache-type-k' in self.param_sliders and 'combo' in self.param_sliders['--cache-type-k']:
-                combo_k = self.param_sliders['--cache-type-k']['combo']  # War 'widget', ist aber 'combo'
-                current_text = combo_k.currentText()
+                combo_k = self.param_sliders['--cache-type-k']['combo']
+                preset_k = (preset_values or {}).get('cache-type-k')
+                
+                # Alten Wert VOR dem Leeren speichern
+                saved_k = preset_k if preset_k else combo_k.currentText()
+                sys.stderr.write(f"[DEBUG update_cache_type_options K] preset_k={preset_k!r}, saved_k={saved_k!r}, current_idx={combo_k.currentIndex()}, options_count={len(options.get('k', []))}\n")
                 
                 # ComboBox leeren und mit neuen Optionen füllen
                 combo_k.clear()
                 for opt in options.get('k', ['f16']):  # Fallback auf f16 wenn nichts gefunden
                     combo_k.addItem(opt)
                 
-                # Alte Auswahl wiederherstellen falls noch vorhanden
-                if current_text in options.get('k', []):
-                    idx = combo_k.findText(current_text)
+                # Preset-Wert als Extra hinzufügen falls nicht in --help Optionen
+                if preset_k and preset_k not in options.get('k', []):
+                    combo_k.addItem(preset_k)
+                
+                # Auswahl wiederherstellen: zuerst preset value, dann alter Text
+                if preset_k:
+                    idx = combo_k.findText(preset_k)
                     if idx >= 0:
                         combo_k.setCurrentIndex(idx)
+                        sys.stderr.write(f"[DEBUG update_cache_type_options K] SET idx={idx}={preset_k}\n")
+                    else:
+                        sys.stderr.write(f"[DEBUG update_cache_type_options K] preset_k NOT FOUND: {preset_k!r}\n")
+                else:
+                    idx = combo_k.findText(saved_k)
+                    if idx >= 0:
+                        combo_k.setCurrentIndex(idx)
+                        sys.stderr.write(f"[DEBUG update_cache_type_options K] restored idx={idx}={saved_k!r}\n")
             
             # Cache-Type V ComboBox aktualisieren
             if '--cache-type-v' in self.param_sliders and 'combo' in self.param_sliders['--cache-type-v']:
-                combo_v = self.param_sliders['--cache-type-v']['combo']  # War 'widget', ist aber 'combo'
-                current_text = combo_v.currentText()
+                combo_v = self.param_sliders['--cache-type-v']['combo']
+                preset_v = (preset_values or {}).get('cache-type-v')
+                
+                # Alten Wert VOR dem Leeren speichern
+                saved_v = preset_v if preset_v else combo_v.currentText()
                 
                 # ComboBox leeren und mit neuen Optionen füllen
                 combo_v.clear()
                 for opt in options.get('v', ['f16']):  # Fallback auf f16 wenn nichts gefunden
                     combo_v.addItem(opt)
                 
-                # Alte Auswahl wiederherstellen falls noch vorhanden
-                if current_text in options.get('v', []):
-                    idx = combo_v.findText(current_text)
+                # Preset-Wert als Extra hinzufügen falls nicht in --help Optionen
+                if preset_v and preset_v not in options.get('v', []):
+                    combo_v.addItem(preset_v)
+                
+                # Auswahl wiederherstellen: zuerst preset value, dann alter Text
+                if preset_v:
+                    idx = combo_v.findText(preset_v)
+                    if idx >= 0:
+                        combo_v.setCurrentIndex(idx)
+                else:
+                    idx = combo_v.findText(saved_v)
                     if idx >= 0:
                         combo_v.setCurrentIndex(idx)
                         
@@ -1066,6 +1097,9 @@ class llauncher(QMainWindow):
             def on_process_finished(exit_code):
                 print(f"[DEBUG on_process_finished] Exit code: {exit_code}")
                 if exit_code != 0:
+                    sys.stderr.write(f"[llauncher] Process exited with code {exit_code}\n")
+                    sys.stderr.write(f"[llauncher] Command: {args_str}\n\n")
+                    sys.stderr.flush()
                     self.status_label.setText(gettext("status_failed"))
                     self.status_label.setStyleSheet("color: red; font-weight: bold;")
                     # Button zurücksetzen auf "Start"
