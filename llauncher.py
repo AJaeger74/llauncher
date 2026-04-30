@@ -1501,7 +1501,7 @@ class llauncher(QMainWindow):
 
             if model_dir and Path(model_dir).exists():
                 self.model_directory = model_dir
-                self.debug_text.append(f"ℹ model_directory aus config.json geladen: {model_dir}")
+                self.debug_text.append(t("msg_model_dir_loaded", model_dir=model_dir))
                 self.model_line.setText(model_dir)
             if selected_exec:
                 # Extrahiere nur den Dateinamen aus dem vollen Pfad für den Vergleich

@@ -186,6 +186,7 @@
   "placeholder_hf_url_repo": "e.g. mudler/Carnice-Qwen3.6-MoE-35B-A3B-APEX-GGUF",
   "lbl_hf_files": "Files in repository:",
   "btn_download_file": "Download",
+  "msg_model_dir_loaded": "Config loaded - model directory: {model_dir}",
   "msg_downloading": "Downloading...",
   "msg_download_complete": "Download complete: {path}",
   "msg_download_error": "Download error: {error}",
