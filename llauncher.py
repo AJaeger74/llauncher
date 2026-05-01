@@ -368,13 +368,21 @@ class llauncher(QMainWindow):
             model_dir = os.path.dirname(model_path)
             model_name = os.path.basename(model_path)
             
-            # Setze "Modelle"-Feld (Verzeichnis)
+            # Setze "Modelle"-Feld (Verzeichnis) und internes Attribut
             if hasattr(self, 'model_line'):
                 self.model_line.setText(model_dir)
             
-            # Setze "Modell (.gguf)"-ComboBox auf den Dateinamen
+            # Modell-Verzeichnis aktualisieren und ComboBox neu laden
+            if hasattr(self, 'model_directory'):
+                self.model_directory = model_dir
+            if model_dir:
+                save_config({"model_directory": model_dir})
+            
+            # ComboBox neu füllen mit Modellen aus neuem Verzeichnis
             if hasattr(self, 'model_combo'):
-                # Suche nach model_name im UserRole (nicht im Display-Text mit Größenangabe!)
+                self.update_model_dropdown()
+                
+                # Jetzt nach model_name im UserRole suchen
                 found_index = -1
                 for i in range(self.model_combo.count()):
                     user_data = self.model_combo.itemData(i, role=Qt.ItemDataRole.UserRole)
@@ -385,14 +393,21 @@ class llauncher(QMainWindow):
                 if found_index >= 0:
                     self.model_combo.setCurrentIndex(found_index)
                 else:
-                    # Falls Datei nicht in ComboBox ist, direkt den Dateinamen setzen (ohne Größe)
+                    # Falls Datei nicht in ComboBox ist, direkt den Dateinamen setzen
                     self.model_combo.setCurrentText(model_name)
+                
+                # Internes selected_model setzen (wird von get_current_args() benötigt)
+                self.selected_model = model_path
         
          # Exe-Pfad setzen (falls vorhanden) - nur Verzeichnis ohne Filename
         if exe_path and hasattr(self, 'exe_line'):
             import os
             exe_dir = os.path.dirname(exe_path)
             self.exe_line.setText(exe_dir)
+            # llama_cpp_path aktualisieren, damit nächster Start das richtige Binary lädt
+            if hasattr(self, 'llama_cpp_path'):
+                self.llama_cpp_path = exe_dir
+                save_config({"llama_cpp_path": exe_dir})
         
      # Externe Parameter anzeigen (nicht in APP verwaltet) – nur wenn es welche gibt
         if external_args and len(external_args) > 0:
