@@ -494,13 +494,16 @@ class llauncher(QMainWindow):
             self.exe_combo.addItem("llama.cpp nicht gefunden")
             return
 
-        executables = []
-        for f in exe_dir.iterdir():
-            if f.is_file() and (f.name == "main" or f.name == "llama-server"):
-                executables.append(f.name)
+        executables = set()
+        # Check both root and build/bin/ subdirectories
+        for search_dir in [exe_dir, exe_dir / "build" / "bin"]:
+            if search_dir.exists():
+                for f in search_dir.iterdir():
+                    if f.is_file() and f.name in ("main", "llama-server", "llama-cli"):
+                        executables.add(f.name)
 
         self.exe_combo.clear()
-        for name in sorted(set(executables)):
+        for name in sorted(executables):
             self.exe_combo.addItem(name)
 
     def on_exe_changed(self, name: str):
@@ -510,6 +513,11 @@ class llauncher(QMainWindow):
         
         # Volle Pfad speichern
         exe_full_path = Path(self.llama_cpp_path) / name
+        
+        # Check if binary exists in build/bin/ subdirectory
+        build_bin = Path(self.llama_cpp_path) / "build" / "bin" / name
+        if build_bin.exists():
+            exe_full_path = build_bin
         
         save_config({
             "llama_cpp_path": self.llama_cpp_path,
