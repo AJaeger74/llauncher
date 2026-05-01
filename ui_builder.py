@@ -479,9 +479,11 @@ def build_llauncher_ui(window):
 
     header_row.addStretch()
 
-    window.debug_autofollow_checkbox = QCheckBox(gettext("lbl_autofollow"))
+    window.debug_autofollow_label = QLabel(gettext("lbl_autofollow"))
+    window.debug_autofollow_checkbox = QCheckBox()
     window.debug_autofollow_checkbox.setCheckable(True)
     window.debug_autofollow_checkbox.setChecked(True)
+    header_row.addWidget(window.debug_autofollow_label)
     header_row.addWidget(window.debug_autofollow_checkbox)
 
     debug_layout.addLayout(header_row)
