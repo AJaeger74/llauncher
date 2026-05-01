@@ -71,7 +71,14 @@ def get_current_args(window) -> list:
             
             text_edit = slider["edit"]
             value = text_edit.text()
-            if value and value != config["default"]:
+            
+            # --slot-save-path IMMER hinzufügen (auch wenn Default), damit llama.cpp
+            # den Wert explizit setzen kann (nicht nur wenn != default)
+            if param_key == "--slot-save-path":
+                if value:
+                    args.append(param_key)
+                    args.append(value)
+            elif value and value != config["default"]:
                 args.append(param_key)
                 args.append(value)
         

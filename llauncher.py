@@ -1147,6 +1147,22 @@ class llauncher(QMainWindow):
                 
                 self.debug_text.append(line)
             
+            # Pre-flight: --slot-save-path Verzeichnis prüfen und erstellen
+            slot_path = None
+            if "--slot-save-path" in args:
+                idx = args.index("--slot-save-path")
+                if idx + 1 < len(args):
+                    slot_path = args[idx + 1]
+            
+            if slot_path:
+                slot_dir = Path(slot_path)
+                if not slot_dir.exists():
+                    try:
+                        slot_dir.mkdir(parents=True, exist_ok=True)
+                        sys.stderr.write(f"[llauncher] Created slot-save directory: {slot_path}\n")
+                    except OSError as e:
+                        sys.stderr.write(f"[llauncher] WARNING: Could not create slot-save directory {slot_path}: {e}\n")
+            
             # Prozess starten
             workdir = str(Path(self.llama_cpp_path))
             self.runner = ProcessRunner(args, workdir)
