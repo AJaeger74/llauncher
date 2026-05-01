@@ -81,6 +81,27 @@ from PyQt6.QtWidgets import (
     QCheckBox,
 )
 
+from PyQt6.QtWidgets import QScrollBar
+
+
+class AutoFollowTextEdit(QTextEdit):
+    """QTextEdit that auto-scrolls to bottom when autofollow checkbox is checked."""
+
+    def append(self, text: str) -> None:
+        super().append(text)
+        self._check_autofollow()
+
+    def insertPlainText(self, text: str) -> None:
+        super().insertPlainText(text)
+        self._check_autofollow()
+
+    def _check_autofollow(self) -> None:
+        """Scroll to bottom if autofollow checkbox is checked."""
+        if hasattr(self, '_autofollow_checkbox') and self._autofollow_checkbox.isChecked():
+            scrollbar = self.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
+
 from gguf_utils import get_cpu_count
 from storage import load_config, apply_preset, load_benchmarks
 from gpu_monitor import GPUMonitor, update_gpu_display
@@ -448,13 +469,29 @@ def build_llauncher_ui(window):
     """)
     debug_layout.addWidget(window.bench_progress_bar)
     
+    # ========== HEADER ROW: Debug Output label + Autofollow checkbox ==========
+    header_row = QHBoxLayout()
+    header_row.setContentsMargins(0, 0, 0, 4)
+
     debug_label = QLabel(gettext("lbl_debug_output"))
     debug_label.setStyleSheet("font-weight: bold;")
-    
-    window.debug_text = QTextEdit()
+    header_row.addWidget(debug_label)
+
+    header_row.addStretch()
+
+    window.debug_autofollow_checkbox = QCheckBox(gettext("lbl_autofollow"))
+    window.debug_autofollow_checkbox.setCheckable(True)
+    window.debug_autofollow_checkbox.setChecked(True)
+    header_row.addWidget(window.debug_autofollow_checkbox)
+
+    debug_layout.addLayout(header_row)
+
+    # ========== DEBUG TEXT EDIT (auto-scrolls when autofollow is on) ==========
+    window.debug_text = AutoFollowTextEdit()
     window.debug_text.setReadOnly(True)
     window.debug_text.setFont(QFont("Monospace", 9))
     window.debug_text.setMinimumWidth(500)
+    window.debug_text._autofollow_checkbox = window.debug_autofollow_checkbox
     # Prevent cropping of long debug output
     try:
         window.debug_text.setMaximumBlockCount(15000)
@@ -465,8 +502,7 @@ def build_llauncher_ui(window):
 
     copy_btn = QPushButton(gettext("btn_copy"))
     copy_btn.clicked.connect(window.copy_debug)
-    
-    debug_layout.addWidget(debug_label)
+
     debug_layout.addWidget(window.debug_text, stretch=1)
     debug_layout.addWidget(copy_btn)
     

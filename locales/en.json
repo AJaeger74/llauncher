@@ -199,5 +199,6 @@
   "msg_no": "No",
   "msg_download_cancelled": "Download cancelled.",
   "lbl_custom_commands": "Custom Commands",
-  "hint_custom_commands": "Enter additional command-line arguments here (not managed by the app)."
+  "hint_custom_commands": "Enter additional command-line arguments here (not managed by the app).",
+  "lbl_autofollow": "Autofollow"
 }
