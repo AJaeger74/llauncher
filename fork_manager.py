@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6.QtWidgets import (
@@ -238,6 +239,17 @@ def _extract_fork_name(url: str, entries: dict) -> str:
     return repo_name
 
 
+def _ask_question(parent, title, msg):
+    """Ask a Yes/No question with translated button labels."""
+    d = QMessageBox(parent)
+    d.setWindowTitle(title)
+    d.setText(msg)
+    yes_btn = d.addButton(gettext("msg_yes"), QMessageBox.ButtonRole.YesRole)
+    d.addButton(gettext("msg_no"), QMessageBox.ButtonRole.NoRole)
+    d.exec()
+    return d.clickedButton() == yes_btn
+
+
 class ForkManagerDialog(QDialog):
     """Dialog for cloning, building, and switching llama.cpp forks."""
 
@@ -248,6 +260,7 @@ class ForkManagerDialog(QDialog):
         self.repo_url = None
         self.clone_thread = None
         self.build_thread = None
+        self._pull_thread = None      # keep reference so it survives _do_pull
 
         # State carried through the workflow
         self._fork_dir = None         # full path to cloned fork directory
@@ -447,16 +460,13 @@ class ForkManagerDialog(QDialog):
         if os.path.isdir(self._fork_dir):
             # Check if it's a git repo
             if _is_git_repo(self._fork_dir):
-                reply = QMessageBox.question(
+                reply = _ask_question(
                     self, gettext("fork_result_title"),
-                    gettext("msg_dir_exists_git"),
-                    QMessageBox.StandardButton.Yes |
-                    QMessageBox.StandardButton.No |
-                    QMessageBox.StandardButton.Cancel
+                    gettext("msg_dir_exists_git")
                 )
-                if reply == QMessageBox.StandardButton.Yes:
+                if reply:
                     self._do_pull()
-                elif reply == QMessageBox.StandardButton.No:
+                else:
                     # Delete and re-clone
                     try:
                         shutil.rmtree(self._fork_dir)
@@ -466,13 +476,11 @@ class ForkManagerDialog(QDialog):
                                              str(e))
                 # Cancel = skip
             else:
-                reply = QMessageBox.question(
+                reply = _ask_question(
                     self, gettext("fork_result_title"),
-                    gettext("msg_dir_exists_no_git"),
-                    QMessageBox.StandardButton.Yes |
-                    QMessageBox.StandardButton.No
+                    gettext("msg_dir_exists_no_git")
                 )
-                if reply == QMessageBox.StandardButton.Yes:
+                if reply:
                     try:
                         shutil.rmtree(self._fork_dir)
                         self._do_clone(url, self._fork_dir, branch)
@@ -483,20 +491,58 @@ class ForkManagerDialog(QDialog):
             self._do_clone(url, self._fork_dir, branch)
 
     def _do_clone(self, url, target_path, branch):
+        # Clean up any previous clone thread
+        if self.clone_thread and self.clone_thread.isRunning():
+            self.clone_thread.terminate()
+            self.clone_thread.wait(3000)
+
         self.clone_thread = GitCloneWorker(url, target_path, branch)
         self.clone_thread.output_signal.connect(lambda line: self._dump_to_debug(f"[FORK] {line}"))
         self.clone_thread.finished_signal.connect(self._on_clone_finished)
         self.clone_thread.start()
 
     def _do_pull(self):
+        # Clean up any previous pull thread
+        if self._pull_thread and self._pull_thread.isRunning():
+            self._pull_thread.cancel()
+            self._pull_thread.terminate()
+            self._pull_thread.wait(3000)
+
         self._dump_to_debug("[FORK] " + gettext("msg_pulling"))
         self.build_btn.setEnabled(False)
-        pull_worker = GitPullWorker(self._fork_dir)
-        pull_worker.output_signal.connect(
+        self._pull_thread = GitPullWorker(self._fork_dir)
+        self._pull_thread.output_signal.connect(
             lambda line: self._dump_to_debug(f"[PULL] {line}")
         )
-        pull_worker.finished_signal.connect(self._on_pull_finished)
-        pull_worker.start()
+        self._pull_thread.finished_signal.connect(self._on_pull_finished)
+        self._pull_thread.start()
+
+    def closeEvent(self, event):
+        """Clean up background threads before closing the dialog."""
+        # Terminate pull thread if still running
+        if self._pull_thread and self._pull_thread.isRunning():
+            self._pull_thread.cancel()
+            self._pull_thread.terminate()
+            self._pull_thread.wait(3000)
+        # Terminate clone thread if still running
+        if self.clone_thread and self.clone_thread.isRunning():
+            self.clone_thread.terminate()
+            self.clone_thread.wait(3000)
+        # Terminate build thread if still running
+        if self.build_thread and self.build_thread.isRunning():
+            self._build_cancelled = True
+            self.build_thread.cancel()
+            self.build_thread.terminate()
+            self.build_thread.wait(3000)
+            # Clean up build dir
+            if self._fork_dir:
+                build_path = Path(self._fork_dir) / "build"
+                if build_path.exists():
+                    try:
+                        shutil.rmtree(build_path)
+                    except Exception:
+                        pass
+        event.accept()
 
     def _on_pull_finished(self, returncode):
         self.build_btn.setEnabled(True)
@@ -541,12 +587,11 @@ class ForkManagerDialog(QDialog):
     # ---- Build logic ----
 
     def _ask_build(self):
-        reply = QMessageBox.question(
+        reply = _ask_question(
             self, gettext("fork_result_title"),
-            gettext("msg_build_now"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            gettext("msg_build_now")
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply:
             self._show_build_group()
             self._build_command = self._get_or_ask_build_command()
             if self._build_command:
@@ -625,7 +670,15 @@ class ForkManagerDialog(QDialog):
                                 gettext("msg_no_directory_selected"))
             return
 
+        # Clean up any previous build thread before starting a new one
+        if self.build_thread and self.build_thread.isRunning():
+            self._build_cancelled = True
+            self.build_thread.cancel()
+            self.build_thread.terminate()
+            self.build_thread.wait(3000)
+
         self._build_cancelled = False
+        self._build_start_time = time.time()
         self.build_btn.setEnabled(False)
         self.build_cancel_btn.setEnabled(True)
         self.build_status_label.setText(gettext("lbl_building"))
@@ -637,26 +690,33 @@ class ForkManagerDialog(QDialog):
         self.build_thread.start()
 
     def _on_build_output(self, line: str):
-        """Stream build output to the QTextEdit, highlighting errors."""
+        """Stream build output to the dialog QTextEdit and parent debug area."""
         error_patterns = ["error", "fatal", "failed", "undefined", "cannot"]
         is_error = any(p in line.lower() for p in error_patterns)
 
-        # Use HTML for color in QTextEdit (append adds as rich text)
+        # Dialog QTextEdit with HTML color for errors
         if is_error:
             self.build_text.append(f'<span style="color: #ff6b6b;">{line}</span>')
         else:
             self.build_text.append(line)
 
-        # Scroll to bottom
+        # Scroll dialog text to bottom
         self.build_text.verticalScrollBar().setValue(
             self.build_text.verticalScrollBar().maximum()
         )
+
+        # Also pipe to parent's debug area
+        self._dump_to_debug(f"[BUILD] {line}")
 
     def _on_build_finished(self, returncode: int, summary: str):
         self.build_thread = None
         self.build_btn.setEnabled(True)
         self.build_cancel_btn.setEnabled(False)
         self.build_status_label.setText(summary)
+
+        elapsed = ""
+        if hasattr(self, '_build_start_time'):
+            elapsed = self._format_elapsed(time.time() - self._build_start_time)
 
         if returncode == 0:
             # Clean up build/ directory
@@ -668,23 +728,27 @@ class ForkManagerDialog(QDialog):
                     pass
 
             # Ask about switching to this fork
-            reply = QMessageBox.question(
+            reply = _ask_question(
                 self, gettext("fork_result_title"),
-                gettext("msg_switch_fork"),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                gettext("msg_switch_fork")
             )
-            if reply == QMessageBox.StandardButton.Yes:
+            if reply:
                 self._switch_to_fork()
+                # Close fork dialog and show elapsed time
+                self.close()
+                self._show_build_completed(elapsed)
             else:
                 self._dump_to_debug("[FORK] " + gettext("msg_build_complete"))
+                # Close fork dialog and show elapsed time
+                self.close()
+                self._show_build_completed(elapsed)
         else:
             self._dump_to_debug("[FORK] " + summary)
-            reply = QMessageBox.question(
+            reply = _ask_question(
                 self, gettext("fork_result_title"),
-                summary + "\n\n" + gettext("msg_build_retry"),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                summary + "\n\n" + gettext("msg_build_retry")
             )
-            if reply == QMessageBox.StandardButton.Yes:
+            if reply:
                 self._start_build()
 
     def _cancel_build(self):
@@ -702,6 +766,23 @@ class ForkManagerDialog(QDialog):
         self.build_btn.setEnabled(True)
         self.build_cancel_btn.setEnabled(False)
 
+    # ---- Elapsed time helpers ----
+
+    def _format_elapsed(self, seconds: float) -> str:
+        """Format seconds as hh:mm:ss."""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+    def _show_build_completed(self, elapsed: str):
+        """Show build completion dialog with elapsed time and close the fork dialog."""
+        msg = gettext("msg_build_completed").format(elapsed=elapsed)
+        QMessageBox.information(
+            self, gettext("fork_result_title"),
+            msg
+        )
+
     # ---- Switch to fork ----
 
     def _switch_to_fork(self):
@@ -709,6 +790,10 @@ class ForkManagerDialog(QDialog):
         # Update llama_cpp_path to point to the fork directory
         if self.parent() and hasattr(self.parent(), 'llama_cpp_path'):
             self.parent().llama_cpp_path = self._fork_dir
+
+        # Update the parent's llama.cpp directory field
+        if self.parent() and hasattr(self.parent(), 'exe_line'):
+            self.parent().exe_line.setText(self._fork_dir)
 
         # Refresh executables (now checks build/bin/)
         if self.parent() and hasattr(self.parent(), 'find_executables'):
