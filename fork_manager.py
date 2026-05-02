@@ -656,13 +656,12 @@ class ForkManagerDialog(QDialog):
     def _get_or_ask_build_command(self) -> str:
         entries = _load_fork_entries()
         saved_cmd = ""
+        import sys
         if self._fork_name in entries and entries[self._fork_name].get("build"):
             saved_cmd = entries[self._fork_name]["build"]
-            import sys
             sys.stderr.write(f"[FORK] Loaded build command for '{self._fork_name}' from ~/.llauncher/llama.json\n")
             sys.stderr.flush()
         else:
-            import sys
             sys.stderr.write(f"[FORK] could not load command for '{self._fork_name}' from ~/.llauncher/llama.json\n")
             sys.stderr.flush()
 
