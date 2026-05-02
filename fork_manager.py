@@ -178,6 +178,7 @@ class BuildWorker(QThread):
         self._cancelled = False
 
     def run(self):
+        import sys
         try:
             self._process = subprocess.Popen(
                 ["bash", "-c", self.command],
@@ -196,12 +197,18 @@ class BuildWorker(QThread):
                 if line:
                     self.output_signal.emit(line.strip())
             returncode = self._process.wait() if self._process else 1
+            sys.stderr.write(f"[FORK] BUILD_WORKER: process exited with returncode={returncode}\n")
+            sys.stderr.flush()
             if returncode == 0:
                 summary = gettext("msg_build_complete")
             else:
                 summary = gettext("msg_build_failed").format(code=returncode)
+            sys.stderr.write(f"[FORK] BUILD_WORKER: emitting finished_signal({returncode}, {summary!r})\n")
+            sys.stderr.flush()
             self.finished_signal.emit(returncode, summary)
         except Exception as e:
+            sys.stderr.write(f"[FORK] BUILD_WORKER: exception {e!r}\n")
+            sys.stderr.flush()
             self.finished_signal.emit(-1, str(e))
 
     def cancel(self):
@@ -519,17 +526,28 @@ class ForkManagerDialog(QDialog):
 
     def closeEvent(self, event):
         """Clean up background threads before closing the dialog."""
+        import sys
+        sys.stderr.write(f"[FORK] CLOSE: _pull_thread={self._pull_thread}, clone_thread={self.clone_thread}, build_thread={self.build_thread}\n")
+        sys.stderr.flush()
         # Terminate pull thread if still running
         if self._pull_thread and self._pull_thread.isRunning():
+            sys.stderr.write("[FORK] CLOSE: terminating _pull_thread\n")
+            sys.stderr.flush()
             self._pull_thread.cancel()
             self._pull_thread.terminate()
             self._pull_thread.wait(3000)
+        self._pull_thread = None
         # Terminate clone thread if still running
         if self.clone_thread and self.clone_thread.isRunning():
+            sys.stderr.write("[FORK] CLOSE: terminating clone_thread\n")
+            sys.stderr.flush()
             self.clone_thread.terminate()
             self.clone_thread.wait(3000)
+        self.clone_thread = None
         # Terminate build thread if still running
         if self.build_thread and self.build_thread.isRunning():
+            sys.stderr.write("[FORK] CLOSE: terminating build_thread\n")
+            sys.stderr.flush()
             self._build_cancelled = True
             self.build_thread.cancel()
             self.build_thread.terminate()
@@ -542,9 +560,16 @@ class ForkManagerDialog(QDialog):
                         shutil.rmtree(build_path)
                     except Exception:
                         pass
+        self.build_thread = None
+        sys.stderr.write("[FORK] CLOSE: done\n")
+        sys.stderr.flush()
         event.accept()
 
     def _on_pull_finished(self, returncode):
+        import sys
+        sys.stderr.write(f"[FORK] PULL EXIT: returncode={returncode}\n")
+        sys.stderr.flush()
+        self._pull_thread = None
         self.build_btn.setEnabled(True)
         if returncode == 0:
             self._dump_to_debug("[FORK] " + gettext("msg_pull_complete"))
@@ -554,6 +579,10 @@ class ForkManagerDialog(QDialog):
             self._ask_build()  # Still ask, user can build anyway
 
     def _on_clone_finished(self, returncode: int, combined_output: str):
+        import sys
+        sys.stderr.write(f"[FORK] CLONE EXIT: returncode={returncode}\n")
+        sys.stderr.flush()
+        self.clone_thread = None
         clone_btn = self.findChild(QPushButton, "btn_clone_repo")
         if clone_btn:
             clone_btn.setEnabled(True)
@@ -709,7 +738,12 @@ class ForkManagerDialog(QDialog):
         self._dump_to_debug(f"[BUILD] {line}")
 
     def _on_build_finished(self, returncode: int, summary: str):
+        import sys
+        sys.stderr.write(f"[FORK] BUILD EXIT: returncode={returncode} summary={summary!r}\n")
+        sys.stderr.flush()
         self.build_thread = None
+        sys.stderr.write(f"[FORK] BUILD: build_thread set to None\n")
+        sys.stderr.flush()
         self.build_btn.setEnabled(True)
         self.build_cancel_btn.setEnabled(False)
         self.build_status_label.setText(summary)
@@ -734,12 +768,14 @@ class ForkManagerDialog(QDialog):
             )
             if reply:
                 self._switch_to_fork()
-                # Close fork dialog and show elapsed time
+                sys.stderr.write(f"[FORK] BUILD: about to close() - build_thread={self.build_thread}\n")
+                sys.stderr.flush()
                 self.close()
                 self._show_build_completed(elapsed)
             else:
                 self._dump_to_debug("[FORK] " + gettext("msg_build_complete"))
-                # Close fork dialog and show elapsed time
+                sys.stderr.write(f"[FORK] BUILD: about to close() - build_thread={self.build_thread}\n")
+                sys.stderr.flush()
                 self.close()
                 self._show_build_completed(elapsed)
         else:
