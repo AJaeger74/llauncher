@@ -571,20 +571,32 @@ class ForkManagerDialog(QDialog):
         import sys
         sys.stderr.write(f"[FORK] PULL EXIT: returncode={returncode}\n")
         sys.stderr.flush()
-        self._pull_thread = None
+        # Wait for thread to fully stop before destroying the object
+        if self._pull_thread:
+            self._pull_thread.wait(5000)
+            self._pull_thread = None
         self.build_btn.setEnabled(True)
+        # Set fork_name from URL if not already set (e.g. after app restart)
+        if not self._fork_name and self.repo_url:
+            entries = _load_fork_entries()
+            self._fork_name = _extract_fork_name(self.repo_url, entries)
+            sys.stderr.write(f"[FORK] PULL: resolved fork_name='{self._fork_name}' from repo_url\n")
+            sys.stderr.flush()
         if returncode == 0:
             self._dump_to_debug("[FORK] " + gettext("msg_pull_complete"))
             self._ask_build()
         else:
             self._dump_to_debug("[FORK] Pull failed (exit {})".format(returncode))
-            self._ask_build()  # Still ask, user can build anyway
+            self._ask_build()
 
     def _on_clone_finished(self, returncode: int, combined_output: str):
         import sys
         sys.stderr.write(f"[FORK] CLONE EXIT: returncode={returncode}\n")
         sys.stderr.flush()
-        self.clone_thread = None
+        # Wait for thread to fully stop before destroying the object
+        if self.clone_thread:
+            self.clone_thread.wait(5000)
+            self.clone_thread = None
         clone_btn = self.findChild(QPushButton, "btn_clone_repo")
         if clone_btn:
             clone_btn.setEnabled(True)
@@ -618,6 +630,9 @@ class ForkManagerDialog(QDialog):
     # ---- Build logic ----
 
     def _ask_build(self):
+        import sys
+        sys.stderr.write(f"[FORK] _ask_build called: _fork_name='{self._fork_name}', repo_url='{self.repo_url}', _fork_dir='{self._fork_dir}'\n")
+        sys.stderr.flush()
         reply = _ask_question(
             self, gettext("fork_result_title"),
             gettext("msg_build_now")
@@ -640,10 +655,17 @@ class ForkManagerDialog(QDialog):
 
     def _get_or_ask_build_command(self) -> str:
         entries = _load_fork_entries()
+        saved_cmd = ""
         if self._fork_name in entries and entries[self._fork_name].get("build"):
-            return entries[self._fork_name]["build"]
+            saved_cmd = entries[self._fork_name]["build"]
+            import sys
+            sys.stderr.write(f"[FORK] Loaded build command for '{self._fork_name}' from ~/.llauncher/llama.json\n")
+            sys.stderr.flush()
+        else:
+            import sys
+            sys.stderr.write(f"[FORK] could not load command for '{self._fork_name}' from ~/.llauncher/llama.json\n")
+            sys.stderr.flush()
 
-        # No existing build command - ask user
         default_cmd = gettext("msg_default_build_cmd")
         dialog = QDialog(self)
         dialog.setWindowTitle(gettext("lbl_building"))
@@ -661,7 +683,7 @@ class ForkManagerDialog(QDialog):
         mono.setFamily("Monospace")
         mono.setPointSize(9)
         text_edit.setFont(mono)
-        text_edit.setPlainText(default_cmd)
+        text_edit.setPlainText(saved_cmd if saved_cmd else default_cmd)
         layout.addWidget(text_edit)
 
         btn_layout = QHBoxLayout()
