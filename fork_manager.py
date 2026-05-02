@@ -180,6 +180,8 @@ class BuildWorker(QThread):
     def run(self):
         import sys
         try:
+            print(f"[FORK-DEBUG] BUILD_WORKER: pwd={self.workdir}", file=sys.stderr)
+            print(f"[FORK-DEBUG] BUILD_WORKER: command={self.command}", file=sys.stderr)
             self._process = subprocess.Popen(
                 ["bash", "-c", self.command],
                 cwd=self.workdir,
@@ -752,15 +754,15 @@ class ForkManagerDialog(QDialog):
         if hasattr(self, '_build_start_time'):
             elapsed = self._format_elapsed(time.time() - self._build_start_time)
 
-        if returncode == 0:
-            # Clean up build/ directory
-            build_path = Path(self._fork_dir) / "build"
-            if build_path.exists():
-                try:
-                    shutil.rmtree(build_path)
-                except Exception:
-                    pass
+        # Clean up build/ directory only on failure or cancellation
+        build_path = Path(self._fork_dir) / "build"
+        if returncode != 0 and build_path.exists():
+            try:
+                shutil.rmtree(build_path)
+            except Exception:
+                pass
 
+        if returncode == 0:
             # Ask about switching to this fork
             reply = _ask_question(
                 self, gettext("fork_result_title"),
@@ -823,41 +825,59 @@ class ForkManagerDialog(QDialog):
 
     def _switch_to_fork(self):
         """Update the parent window to use this fork's binary."""
+        import sys
+        print(f"[FORK-DEBUG] === SWITCH START === fork_dir={self._fork_dir}", file=sys.stderr)
         # Update llama_cpp_path to point to the fork directory
         if self.parent() and hasattr(self.parent(), 'llama_cpp_path'):
             self.parent().llama_cpp_path = self._fork_dir
+            print(f"[FORK-DEBUG] llama_cpp_path -> {self.parent().llama_cpp_path}", file=sys.stderr)
 
         # Update the parent's llama.cpp directory field
         if self.parent() and hasattr(self.parent(), 'exe_line'):
             self.parent().exe_line.setText(self._fork_dir)
+            print(f"[FORK-DEBUG] exe_line nach Zeile 832 -> {self.parent().exe_line.text()}", file=sys.stderr)
 
         # Refresh executables (now checks build/bin/)
         if self.parent() and hasattr(self.parent(), 'find_executables'):
             self.parent().find_executables()
+            print(f"[FORK-DEBUG] exe_line nach find_executables -> {self.parent().exe_line.text()}", file=sys.stderr)
 
         # Auto-select llama-server if available
         if self.parent() and hasattr(self.parent(), 'exe_combo'):
             combo = self.parent().exe_combo
+            print(f"[FORK-DEBUG] exe_combo count vor clear: {combo.count()}", file=sys.stderr)
             combo.clear()
             exe_dir = Path(self._fork_dir)
-            for d in [exe_dir, exe_dir / "build" / "bin"]:
+            for d in [exe_dir, exe_dir / "build", exe_dir / "build" / "bin"]:
                 if d.exists():
-                    for f in sorted(d.iterdir()):
-                        if f.is_file() and f.name in ("main", "llama-server", "llama-cli"):
-                            combo.addItem(f.name)
+                    try:
+                        items = sorted(list(d.iterdir()))
+                        print(f"[FORK-DEBUG] Verzeichnis {d}: {len(items)} Einträge", file=sys.stderr)
+                        for f in items:
+                            if f.is_file() and f.name == "llama-server":
+                                combo.addItem(f.name)
+                                print(f"[FORK-DEBUG] Hinzugefügt: {f.name} aus {d}", file=sys.stderr)
+                    except Exception as e:
+                        print(f"[FORK-DEBUG] Fehler bei {d}: {type(e).__name__}: {e}", file=sys.stderr)
 
-            # Select llama-server first, or fall back to first available
-            idx = combo.findText("llama-server")
-            if idx < 0:
-                idx = combo.findText("main")
+            # Select build/bin/llama-server (last occurrence = build/bin, not root)
+            idx = -1
+            for i in range(combo.count() - 1, -1, -1):
+                if combo.itemText(i) == "llama-server":
+                    idx = i
+                    break
+            print(f"[FORK-DEBUG] Gefundener Index für llama-server: {idx}", file=sys.stderr)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
+                print(f"[FORK-DEBUG] setCurrentIndex({idx}) aufgerufen", file=sys.stderr)
 
             # Update cache-type options for the new binary
             if self.parent() and hasattr(self.parent(), 'update_cache_type_options'):
                 exe_name = combo.currentText()
                 if exe_name:
                     binary_path = str(Path(self._fork_dir) / "build" / "bin" / exe_name)
+                    if not Path(binary_path).exists():
+                        binary_path = str(Path(self._fork_dir) / "build" / exe_name)
                     if not Path(binary_path).exists():
                         binary_path = str(Path(self._fork_dir) / exe_name)
                     self.parent().update_cache_type_options(binary_path)
@@ -868,6 +888,8 @@ class ForkManagerDialog(QDialog):
                 if selected:
                     exe_full_path = str(Path(self._fork_dir) / "build" / "bin" / selected)
                     if not Path(exe_full_path).exists():
+                        exe_full_path = str(Path(self._fork_dir) / "build" / selected)
+                    if not Path(exe_full_path).exists():
                         exe_full_path = str(Path(self._fork_dir) / selected)
                     from storage import save_config
                     save_config({
@@ -875,6 +897,8 @@ class ForkManagerDialog(QDialog):
                         "selected_executable": exe_full_path,
                     })
                     self.parent().exe_line.setText(exe_full_path)
+                    print(f"[FORK-DEBUG] exe_line nach save_config -> {self.parent().exe_line.text()}", file=sys.stderr)
+                    print(f"[FORK-DEBUG] selected_executable in config -> {exe_full_path}", file=sys.stderr)
 
         self._dump_to_debug(
             f"[FORK] Switched to {self._fork_name} -> {self._fork_dir}"

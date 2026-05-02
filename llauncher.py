@@ -473,6 +473,10 @@ class llauncher(QMainWindow):
                     selected_exe = self.exe_combo.currentText()
                     if selected_exe and selected_exe != "llama.cpp nicht gefunden":
                         exe_full_path = Path(self.llama_cpp_path) / selected_exe
+                        if not exe_full_path.exists():
+                            exe_full_path = Path(self.llama_cpp_path) / "build" / selected_exe
+                        if not exe_full_path.exists():
+                            exe_full_path = Path(self.llama_cpp_path) / "build" / "bin" / selected_exe
                         self.update_cache_type_options(str(exe_full_path))
 
     def browse_model_dir(self):
@@ -494,13 +498,38 @@ class llauncher(QMainWindow):
             self.exe_combo.addItem("llama.cpp nicht gefunden")
             return
 
+        import sys
+        print(f"[EXE-DEBUG] find_executables: exe_dir={exe_dir}", file=sys.stderr)
+        
+        # Show build directory structure
+        build_dir = exe_dir / "build"
+        if build_dir.exists():
+            print(f"[EXE-DEBUG] === Build directory found: {build_dir} ===", file=sys.stderr)
+            try:
+                build_files = sorted([f.name for f in build_dir.iterdir() if f.is_file()])
+                print(f"[EXE-DEBUG]   Build dir files ({len(build_files)}): {build_files[:20]}{'...' if len(build_files) > 20 else ''}", file=sys.stderr)
+                build_bin = build_dir / "bin"
+                if build_bin.exists():
+                    build_bin_files = sorted([f.name for f in build_bin.iterdir() if f.is_file()])
+                    print(f"[EXE-DEBUG]   Build/bin files ({len(build_bin_files)}): {build_bin_files}", file=sys.stderr)
+                else:
+                    print(f"[EXE-DEBUG]   Build/bin does NOT exist", file=sys.stderr)
+            except PermissionError:
+                print(f"[EXE-DEBUG]   Permission denied: {build_dir}", file=sys.stderr)
+        else:
+            print(f"[EXE-DEBUG] === No build directory at {build_dir} ===", file=sys.stderr)
+        
         executables = set()
-        # Check both root and build/bin/ subdirectories
-        for search_dir in [exe_dir, exe_dir / "build" / "bin"]:
-            if search_dir.exists():
-                for f in search_dir.iterdir():
-                    if f.is_file() and f.name in ("main", "llama-server", "llama-cli"):
-                        executables.add(f.name)
+        # Check root, build/, and build/bin/ subdirectories
+        for search_dir in [exe_dir, exe_dir / "build", exe_dir / "build" / "bin"]:
+            print(f"[EXE-DEBUG]   checking {search_dir} exists={search_dir.exists()} is_dir={search_dir.is_dir()}", file=sys.stderr)
+            if search_dir.exists() and search_dir.is_dir():
+                try:
+                    for f in search_dir.iterdir():
+                        if f.is_file() and f.name == "llama-server":
+                            executables.add(f.name)
+                except PermissionError:
+                    print(f"[EXE-DEBUG] Keine Leserechte: {search_dir}", file=sys.stderr)
 
         self.exe_combo.clear()
         for name in sorted(executables):
@@ -511,13 +540,30 @@ class llauncher(QMainWindow):
         if not name or name == "":
             return
         
-        # Volle Pfad speichern
-        exe_full_path = Path(self.llama_cpp_path) / name
+        import sys
+        # exe_line ist die autoritative Quelle (von _switch_to_fork oder browse_llama_dir gesetzt)
+        exe_full_path = None
+        if hasattr(self, 'exe_line') and self.exe_line.text():
+            candidate = Path(self.exe_line.text())
+            if candidate.exists() and candidate.is_file():
+                exe_full_path = candidate
+                print(f"[EXE-CHANGE] exe_line ist Datei: {exe_full_path}", file=sys.stderr)
+            else:
+                print(f"[EXE-CHANGE] exe_line ist kein File: {candidate} (exists={candidate.exists()}, is_file={candidate.is_file()})", file=sys.stderr)
         
-        # Check if binary exists in build/bin/ subdirectory
-        build_bin = Path(self.llama_cpp_path) / "build" / "bin" / name
-        if build_bin.exists():
-            exe_full_path = build_bin
+        if exe_full_path is None:
+            # Fallback: konstruiere Pfad aus llama_cpp_path
+            exe_full_path = Path(self.llama_cpp_path) / name
+            print(f"[EXE-CHANGE] Fallback: {exe_full_path}", file=sys.stderr)
+            # Check build/, then build/bin/
+            build_dir = Path(self.llama_cpp_path) / "build" / name
+            build_bin = Path(self.llama_cpp_path) / "build" / "bin" / name
+            if build_dir.exists():
+                exe_full_path = build_dir
+                print(f"[EXE-CHANGE] build/ existiert: {exe_full_path}", file=sys.stderr)
+            elif build_bin.exists():
+                exe_full_path = build_bin
+                print(f"[EXE-CHANGE] build/bin/ existiert: {exe_full_path}", file=sys.stderr)
         
         save_config({
             "llama_cpp_path": self.llama_cpp_path,

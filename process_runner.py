@@ -147,7 +147,7 @@ class ProcessRunner(QThread):
 
 
 def find_llama_processes():
-    """Findet alle laufenden llama-server / llama-cli Prozesse."""
+    """Findet alle laufenden llama-server Prozesse."""
     try:
         out = subprocess.check_output(
             ["pgrep", "-f", "llama"],
