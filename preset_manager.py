@@ -239,7 +239,7 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
     else:
         exe_name = exe_combo.currentText()
         if exe_name != "llama.cpp nicht gefunden":
-            exe_path = str(Path(llama_cpp_path) / exe_name)
+            exe_path = str(Path(llama_cpp_path) / "build" / "bin" / exe_name)
         else:
             exe_path = ""
     

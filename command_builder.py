@@ -18,12 +18,8 @@ def get_current_args(window) -> list:
     Returns:
         list: Kommandozeilen-Parameter als String-Liste
     """
-    from PyQt6.QtCore import Qt
-    args = [str(Path(window.llama_cpp_path) / window.exe_combo.currentText())]
-    # Prefer full path stored in combo box user data (set by find_executables)
-    user_path = window.exe_combo.itemData(window.exe_combo.currentIndex(), role=Qt.ItemDataRole.UserRole)
-    if user_path:
-        args[0] = user_path
+    exe_name = window.exe_combo.currentText()
+    args = [str(Path(window.llama_cpp_path) / "build" / "bin" / exe_name)]
     
     # Modell-Pfad (nur einmal!)
     if window.selected_model:
