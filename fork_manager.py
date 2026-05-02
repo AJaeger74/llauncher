@@ -741,6 +741,9 @@ class ForkManagerDialog(QDialog):
 
     def _on_build_finished(self, returncode: int, summary: str):
         import sys
+        # Ensure thread has fully stopped before dropping reference
+        if self.build_thread:
+            self.build_thread.wait(5000)
         sys.stderr.write(f"[FORK] BUILD EXIT: returncode={returncode} summary={summary!r}\n")
         sys.stderr.flush()
         self.build_thread = None
