@@ -224,5 +224,6 @@
   "lbl_building": "Building",
   "status_cancelled": "Cancelled",
   "msg_build_retry": "Rebuild?",
+  "msg_build_completed": "Build completed, elapsed time: {elapsed}",
   "msg_clone_complete": "Clone complete. {fork_name}\nTarget: {path}"
 }
