@@ -27,6 +27,9 @@ Each parameter has a slider (integer) or float slider with edit field:
 ◆ **Save & Load Presets**  
 Save current configuration via dialog, restore via dialog.  
 Saved to: `~/.llauncher/presets.json`
+NEW: auto-append of build/bin for llama.cpp directory
+
+Clean up your presets with `sed -i 's|/build/bin||g' ~/.llauncher/presets.json`
 
 ◆ **Benchmarking**  
 Run test inference and save results:
