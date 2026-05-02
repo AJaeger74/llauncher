@@ -533,7 +533,14 @@ class llauncher(QMainWindow):
 
         self.exe_combo.clear()
         for name in sorted(executables):
-            self.exe_combo.addItem(name)
+            # Find full path in search order (root, build/, build/bin/)
+            for search_dir in [exe_dir, exe_dir / "build", exe_dir / "build" / "bin"]:
+                exe_path = search_dir / name
+                if exe_path.exists():
+                    self.exe_combo.addItem(name, str(exe_path))
+                    break
+            else:
+                self.exe_combo.addItem(name)
 
     def on_exe_changed(self, name: str):
         # Guard: Signal kann mit leerem String feuern beim ersten Mal
