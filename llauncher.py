@@ -4,6 +4,7 @@ llauncher – GUI für llama.cpp
 Ein Mischpult-Style Launcher zur Steuerung von llama.cpp mit Presets, Benchmarking und GPU-Monitoring.
 """
 
+import argparse
 import json
 import os
 import re
@@ -119,7 +120,7 @@ class llauncher(QMainWindow):
     PRESETS_FILE = CONFIG_DIR / "presets.json"
     BENCHMARKS_FILE = CONFIG_DIR / "benchmarks.json"
 
-    def __init__(self):
+    def __init__(self, preset_name: str = None):
         super().__init__()
         self.llama_cpp_path = str(Path.home() / "llama.cpp")
         self.model_directory = str(Path.home() / "models")
@@ -131,6 +132,7 @@ class llauncher(QMainWindow):
         self.external_args: Optional[dict] = None  # Externe Parameter vom laufenden Prozess
         self.external_runner_args: Optional[list] = None  # Echte Prozess-Args (für build_full_command)
         self.external_runner_pid: Optional[int] = None
+        self._preset_name = preset_name  # CLI preset (wird nach UI-Setup angewendet)
         
         # Theme
         self.light_theme = False
@@ -142,6 +144,16 @@ class llauncher(QMainWindow):
  
         build_llauncher_ui(self)
         setup_timers_and_load(self)
+        
+        # CLI-Preset anwenden (wenn angegeben)
+        if self._preset_name:
+            from storage import load_preset_by_name
+            preset = load_preset_by_name(self._preset_name)
+            if preset:
+                apply_preset(self, preset)
+                self.debug_text.append(t("msg_preset_loaded_cli", name=self._preset_name))
+            else:
+                self.debug_text.append(t("msg_preset_not_found_cli", name=self._preset_name))
         
         # Fenster-Geometrie und Splitter-State laden (nach UI-Setup)
         self.restore_geometry()
@@ -1678,12 +1690,17 @@ class llauncher(QMainWindow):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="llauncher – PyQt6 GUI für llama.cpp")
+    parser.add_argument("--preset", type=str, default=None,
+                        help="Name eines Presets aus presets.json, das beim Start automatisch geladen wird")
+    args = parser.parse_args()
+    
     # Initialize i18n before creating any widgets
     from i18n import I18nManager
     
     i18n = I18nManager.get_instance()
     
-   # Auto-detect language if missing and write it to config
+    # Auto-detect language if missing and write it to config
     from i18n_util import ensure_language, DEFAULT_LANG
     lang_code = ensure_language()
     print(f"[i18n] Config has 'language': {lang_code}")
@@ -1695,10 +1712,13 @@ if __name__ == "__main__":
     print(f"[i18n] Active language: {lang_code}")
     print(f"[i18n] Available languages: {i18n.get_available_languages()}")
     
+    if args.preset:
+        print(f"[preset] Loading preset: {args.preset}")
+    
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    window = llauncher()
+    window = llauncher(preset_name=args.preset)
     window.show()
 
     sys.exit(app.exec())

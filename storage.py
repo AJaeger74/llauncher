@@ -132,6 +132,22 @@ def load_presets() -> dict:
         return {}
 
 
+def load_preset_by_name(name: str) -> Optional[dict]:
+    """Einzelnes Preset nach Namen laden.
+    
+    Args:
+        name: Name des Presets (case-sensitive, muss exakt matchen)
+    
+    Returns:
+        Preset-Dict wenn gefunden, None sonst
+    """
+    if not name:
+        return None
+    
+    presets = load_presets()
+    return presets.get(name)
+
+
 # ────────────────────────────────────────────────────────────────
 # Benchmarks (benchmarks.json)
 # ────────────────────────────────────────────────────────────────
