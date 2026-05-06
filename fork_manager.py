@@ -170,10 +170,11 @@ class BuildWorker(QThread):
     finished_signal = pyqtSignal(int, str)
     cancelled_signal = pyqtSignal()
 
-    def __init__(self, command: str, workdir: str):
+    def __init__(self, command: str, workdir: str, build_env: dict = None):
         super().__init__()
         self.command = command
         self.workdir = workdir
+        self.build_env = build_env or {}
         self._process = None
         self._cancelled = False
 
@@ -182,6 +183,16 @@ class BuildWorker(QThread):
         try:
             print(f"[FORK-DEBUG] BUILD_WORKER: pwd={self.workdir}", file=sys.stderr)
             print(f"[FORK-DEBUG] BUILD_WORKER: command={self.command}", file=sys.stderr)
+            # Merge user build_env into os.environ (copy first, then update)
+            env = dict(os.environ)
+            if self.build_env:
+                env.update(self.build_env)
+
+            # Debug output: show merged build env vars for CC, CXX, CUDAHOSTCXX
+            for key in ("CC", "CXX", "CUDAHOSTCXX"):
+                val = env.get(key, "(not set)")
+                self.output_signal.emit(f"[BUILD_ENV] {key}={val}")
+
             self._process = subprocess.Popen(
                 ["bash", "-c", self.command],
                 cwd=self.workdir,
@@ -189,6 +200,7 @@ class BuildWorker(QThread):
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                env=env,
             )
             while self._process.poll() is None:
                 if self._cancelled:
@@ -736,7 +748,11 @@ class ForkManagerDialog(QDialog):
         self.build_status_label.setText(gettext("lbl_building"))
         self.build_text.clear()
 
-        self.build_thread = BuildWorker(self._build_command, self._fork_dir)
+        from storage import load_build_env
+
+        build_env = load_build_env()
+
+        self.build_thread = BuildWorker(self._build_command, self._fork_dir, build_env)
         self.build_thread.output_signal.connect(self._on_build_output)
         self.build_thread.finished_signal.connect(self._on_build_finished)
         self.build_thread.start()

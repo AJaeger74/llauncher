@@ -25,6 +25,31 @@ def ensure_config_dir():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _default_build_env() -> dict:
+    """Standard-Build-Environment-Vars fuer neue Configs."""
+    return {
+        "CC": "/usr/bin/gcc-12",
+        "CXX": "/usr/bin/g++-12",
+        "CUDAHOSTCXX": "/usr/bin/g++-12",
+    }
+
+
+def ensure_default_keys(config: dict) -> dict:
+    """Fügt fehlende Default-Keys zur Config hinzu und speichert sie.
+
+    Gibt die Config zurück (identisch oder erweitert).
+    """
+    if "build_env" not in config:
+        config["build_env"] = _default_build_env()
+        try:
+            ensure_config_dir()
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except (OSError, IOError):
+            pass  # Kann nicht schreiben - kein Crash
+    return config
+
+
 # ────────────────────────────────────────────────────────────────
 # Config (config.json)
 # ────────────────────────────────────────────────────────────────
@@ -45,12 +70,27 @@ def save_config(config_updates: dict) -> None:
 
 
 def load_config() -> dict:
-    """Config aus config.json laden, leeres Dict wenn nicht vorhanden."""
+    """Config aus config.json laden, leeres Dict wenn nicht vorhanden.
+    Fuegt automatisch fehlende Default-Keys hinzu und persistiert sie.
+    """
     if not CONFIG_FILE.exists():
-        return {}
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+        config = {}
+    else:
+        with open(CONFIG_FILE, "r") as f:
+            config = json.load(f)
+    return ensure_default_keys(config)
 
+
+def load_build_env() -> dict:
+    """Lade build environment vars aus config.json.
+    
+    Fuegt automatisch den build_env-Key hinzu, falls er fehlt.
+    """
+    config = load_config()
+    build_env = config.get("build_env", {})
+    if isinstance(build_env, dict):
+        return build_env
+    return {}
 
 # ────────────────────────────────────────────────────────────────
 # Presets (presets.json)
