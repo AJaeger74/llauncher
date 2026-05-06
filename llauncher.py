@@ -402,12 +402,18 @@ class llauncher(QMainWindow):
          # Exe-Pfad setzen (falls vorhanden) - nur Verzeichnis ohne Filename
         if exe_path and hasattr(self, 'exe_line'):
             import os
-            exe_dir = os.path.dirname(exe_path)
-            self.exe_line.setText(exe_dir)
+            norm = exe_path
+            while norm.endswith('/llama-server'):
+                norm = os.path.dirname(norm)
+            if 'build/bin' in norm:
+                norm = norm.split('build/bin')[0].rstrip('/')
+            if 'build/' in norm:
+                norm = norm.split('build/')[0].rstrip('/')
+            self.exe_line.setText(norm)
             # llama_cpp_path aktualisieren, damit nächster Start das richtige Binary lädt
             if hasattr(self, 'llama_cpp_path'):
-                self.llama_cpp_path = exe_dir
-                save_config({"llama_cpp_path": exe_dir})
+                self.llama_cpp_path = norm
+                save_config({"llama_cpp_path": norm})
         
      # Externe Parameter anzeigen (nicht in APP verwaltet) – nur wenn es welche gibt
         if external_args and len(external_args) > 0:

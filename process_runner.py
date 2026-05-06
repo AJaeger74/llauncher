@@ -353,7 +353,16 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
         return [], None, None, False
 
     if exe_path and hasattr(window, 'exe_line'):
-        window.exe_line.setText(exe_path)
+        # exe_line zeigt nur Basis-Verzeichnis (ohne build/bin/llama-server)
+        import os
+        norm = exe_path
+        while norm.endswith('/llama-server'):
+            norm = os.path.dirname(norm)
+        if 'build/bin' in norm:
+            norm = norm.split('build/bin')[0].rstrip('/')
+        if 'build/' in norm:
+            norm = norm.split('build/')[0].rstrip('/')
+        window.exe_line.setText(norm)
 
     if model_path:
         if hasattr(window, 'model_line'):

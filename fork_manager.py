@@ -936,7 +936,7 @@ class ForkManagerDialog(QDialog):
                         "llama_cpp_path": self._fork_dir,
                         "selected_executable": exe_full_path,
                     })
-                    self.parent().exe_line.setText(exe_full_path)
+                    self.parent().exe_line.setText(self._fork_dir)
                     print(f"[FORK-DEBUG] exe_line nach save_config -> {self.parent().exe_line.text()}", file=sys.stderr)
                     print(f"[FORK-DEBUG] selected_executable in config -> {exe_full_path}", file=sys.stderr)
 
