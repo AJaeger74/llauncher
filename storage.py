@@ -21,7 +21,7 @@ BENCHMARKS_FILE = CONFIG_DIR / "benchmarks.json"
 
 
 def ensure_config_dir():
-    """Stellt sicher, dass das Konfigurationsverzeichnis existiert."""
+    """Stellt sicher dass das Konfigurationsverzeichnis existiert."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -84,7 +84,7 @@ def load_config() -> dict:
 def load_build_env() -> dict:
     """Lade build environment vars aus config.json.
     
-    Fuegt automatisch den build_env-Key hinzu, falls er fehlt.
+    Fuegt automatisch den build_env-Key hinzu falls er fehlt.
     """
     config = load_config()
     build_env = config.get("build_env", {})
@@ -183,7 +183,12 @@ def apply_preset(window, preset: dict):
     window.find_executables()
     window.update_model_dropdown()
     
-  # KV Cache Type-Dropdowns neu parsen (BEVOR params angewendet werden!)
+    # Preset -c Wert auslesen (für Slider-Maximum-Berechnung)
+    preset_params = preset.get("params", {})
+    preset_c_value = preset_params.get("-c")
+    preset_c = int(preset_c_value) if preset_c_value is not None else None
+
+    # KV Cache Type-Dropdowns neu parsen (BEVOR params angewendet werden!)
     # window.llama_cpp_path ist ab Zeile 131 gesetzt
     # model_combo Signale blockieren damit on_model_selected() update_cache_type_options()
     # NICHT dazwischenfunkt und die Comboboxen überschreibt
@@ -191,18 +196,17 @@ def apply_preset(window, preset: dict):
     if hasattr(window, 'model_combo'):
         window.model_combo.blockSignals(True)
         model_signals_blocked = True
-    
+
     preset_cache_values = {}
-    preset_params = preset.get("params", {})
     for cache_key in ("--cache-type-k", "--cache-type-v"):
         if cache_key in preset_params and preset_params[cache_key]:
             # Normalisiere den Key auf "cache-type-k" / "cache-type-v" für update_cache_type_options
             norm_key = cache_key.lstrip("-").replace("-", "-")
             preset_cache_values[norm_key] = preset_params[cache_key]
-    
+
     if hasattr(window, 'update_cache_type_options') and callable(window.update_cache_type_options):
         window.update_cache_type_options(str(Path(window.llama_cpp_path).resolve()), preset_cache_values if preset_cache_values else None)
-    
+
     # Executable auswählen (voller Pfad oder nur Name)
     selected_exe = preset.get("selected_exe")
     if selected_exe:
@@ -219,21 +223,26 @@ def apply_preset(window, preset: dict):
     selected_model = preset.get("selected_model")
     if selected_model and Path(selected_model).exists():
         model_name = Path(selected_model).name
-        
+
         # Find by UserRole (clean filename), not display text (which includes size)
         idx = -1
         for i in range(window.model_combo.count()):
             if window.model_combo.itemData(i, role=Qt.ItemDataRole.UserRole) == model_name:
                 idx = i
                 break
-        
+
         if idx >= 0:
             # GGUF-Kontextlänge lesen und Slider-Maximum VOR dem Parameter-Loop setzen
             # (verhindert dass Qt den Wert clampt wenn setValue() aufgerufen wird)
             ctx_length = read_gguf_context_length(selected_model)
+            # Wenn Preset ein höheres -c definiert als GGUF-Maximum, Slider-Max auf Preset-Wert heben
             if ctx_length and ctx_length > 0 and "-c" in window.param_sliders:
+                effective_max = max(ctx_length, preset_c) if preset_c else ctx_length
+            else:
+                effective_max = None
+            if effective_max:
                 slider_data = window.param_sliders["-c"]
-                slider_data["slider"].setMaximum(ctx_length)
+                slider_data["slider"].setMaximum(effective_max)
             
             window.model_combo.blockSignals(True)
             try:
@@ -258,13 +267,15 @@ def apply_preset(window, preset: dict):
                 slider = slider_data["slider"] if isinstance(slider_data, dict) else slider_data
                 edit = slider_data["edit"] if isinstance(slider_data, dict) else None
                 
+                # Gleiche Logik: Slider-Max auf max(GGUF-Max, Preset-c) heben
+                effective_max = max(ctx_length, preset_c) if preset_c else ctx_length
                 old_max = slider.maximum()
-                sys.stderr.write(f"[preset] ctx_size slider: maximum {old_max} → {ctx_length}\n")
-                slider.setMaximum(ctx_length)
+                sys.stderr.write(f"[preset] ctx_size slider: maximum {old_max} → {effective_max}\n")
+                slider.setMaximum(effective_max)
 
                 # Edit-Widget Breite aktualisieren für neue maximale Zahl
                 if edit:
-                    max_width = len(str(ctx_length)) * 9 + 15
+                    max_width = len(str(effective_max)) * 9 + 15
                     edit.setMinimumWidth(max_width)
                     edit.setMaximumWidth(max_width)
 
@@ -301,7 +312,7 @@ def apply_preset(window, preset: dict):
             slider_data = window.param_sliders[param_key]
             if isinstance(slider_data, dict):
                 slider = slider_data["slider"]
-                # Sonderfall: -ngl mit String "all" → Edit auf "all", Slider auf 0
+                # Sonderfall: -ngl mit String "all" -> Edit auf "all", Slider auf 0
                 if param_key == "-ngl" and isinstance(value, str) and value == "all":
                     slider.setValue(0)
                     slider_data["edit"].setText("all")
@@ -314,7 +325,7 @@ def apply_preset(window, preset: dict):
                 slider_data.setValue(int(value))
                 sys.stderr.write(f"[preset] {param_key} slider: setValue {old_val} → {int(value)}\n")
 
-        # Sonderfall: -ngl mit "all" Checkbox → Edit auf "all", Slider = 0 (unwichtig)
+        # Sonderfall: -ngl mit "all" Checkbox -> Edit auf "all", Slider = 0 (unwichtig)
         if param_key == "-ngl":
             ngl_all_value = preset.get("params", {}).get("-ngl") == "all" or preset.get("ngl_all", False)
             has_checkbox = hasattr(window, "ngl_all_checkbox")
