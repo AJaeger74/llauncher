@@ -152,6 +152,16 @@ class llauncher(QMainWindow):
        # Prüfen ob bereits ein llama-server läuft (vom User gestartet)
         self.check_existing_process()
     
+    def keyPressEvent(self, event):
+        """c → aktuelle Kommandozeile ins Debug-Fenster."""
+        if event.key() == Qt.Key.Key_C:
+            if hasattr(self, 'debug_text'):
+                try:
+                    self.debug_text.append(build_full_command(self))
+                except Exception as e:
+                    self.debug_text.append(f"Fehler: {e}")
+        super().keyPressEvent(event)
+    
     def apply_theme(self, use_light: bool):
         """Apply theme stylesheet based on use_light flag."""
         from ui_builder import DARK_THEME, LIGHT_THEME
