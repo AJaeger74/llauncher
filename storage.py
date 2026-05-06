@@ -188,7 +188,7 @@ def apply_preset(window, preset: dict):
     preset_c_value = preset_params.get("-c")
     preset_c = int(preset_c_value) if preset_c_value is not None else None
 
-    # KV Cache Type-Dropdowns neu parsen (BEVOR params angewendet werden!)
+     # KV Cache Type-Dropdowns neu parsen (BEVOR params angewendet werden!)
     # window.llama_cpp_path ist ab Zeile 131 gesetzt
     # model_combo Signale blockieren damit on_model_selected() update_cache_type_options()
     # NICHT dazwischenfunkt und die Comboboxen überschreibt
@@ -203,9 +203,9 @@ def apply_preset(window, preset: dict):
             # Normalisiere den Key auf "cache-type-k" / "cache-type-v" für update_cache_type_options
             norm_key = cache_key.lstrip("-").replace("-", "-")
             preset_cache_values[norm_key] = preset_params[cache_key]
-
-    if hasattr(window, 'update_cache_type_options') and callable(window.update_cache_type_options):
-        window.update_cache_type_options(str(Path(window.llama_cpp_path).resolve()), preset_cache_values if preset_cache_values else None)
+    # WICHTIG: update_cache_type_options() wird HINTER dem Executable-Select aufgerufen,
+    # weil der erste Aufruf mit nur dem llama_cpp_path-Verzeichnis (kein Binary) scheitert.
+    # Der zweite Aufruf (nach Zeile ~220) macht das Parsing mit dem echten Executable-Pfad.
 
     # Executable auswählen (voller Pfad oder nur Name)
     selected_exe = preset.get("selected_exe")
@@ -218,6 +218,17 @@ def apply_preset(window, preset: dict):
                 window.exe_combo.setCurrentIndex(idx)
             finally:
                 window.exe_combo.blockSignals(False)
+    
+    # Nach dem Executable-Select: vollen Binary-Pfad konstruieren und cache-type --help parsen
+    if selected_exe:
+        exe_name = Path(selected_exe).name
+        full_exe = Path(window.llama_cpp_path) / exe_name
+        if not full_exe.exists():
+            full_exe = Path(window.llama_cpp_path) / "build" / exe_name
+        if not full_exe.exists():
+            full_exe = Path(window.llama_cpp_path) / "build" / "bin" / exe_name
+        if full_exe.exists() and hasattr(window, 'update_cache_type_options'):
+            window.update_cache_type_options(str(full_exe.resolve()), preset_cache_values if preset_cache_values else None)
 
     # Modell auswählen (voller Pfad)
     selected_model = preset.get("selected_model")
