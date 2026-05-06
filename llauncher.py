@@ -153,11 +153,19 @@ class llauncher(QMainWindow):
         self.check_existing_process()
     
     def keyPressEvent(self, event):
-        """c → aktuelle Kommandozeile ins Debug-Fenster."""
+        """c → aktuelle Kommandozeile basierend auf GUI-Einstellungen ins Debug-Fenster."""
         if event.key() == Qt.Key.Key_C:
             if hasattr(self, 'debug_text'):
                 try:
-                    self.debug_text.append(build_full_command(self))
+                    from command_builder import get_current_args
+                    args = get_current_args(self)
+                    # Custom Commands anhängen
+                    if hasattr(self, 'custom_cmd_edit') and self.custom_cmd_edit:
+                        from command_builder import _parse_custom_commands_text
+                        custom_text = self.custom_cmd_edit.toPlainText()
+                        custom_args = _parse_custom_commands_text(custom_text)
+                        args.extend(custom_args)
+                    self.debug_text.append(" ".join(args))
                 except Exception as e:
                     self.debug_text.append(f"Fehler: {e}")
         super().keyPressEvent(event)
