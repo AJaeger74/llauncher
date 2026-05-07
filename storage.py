@@ -236,15 +236,33 @@ def apply_preset(window, preset: dict):
                 window.exe_combo.blockSignals(False)
     
     # Nach dem Executable-Select: vollen Binary-Pfad konstruieren und cache-type --help parsen
+    # WICHTIG: Muss nach find_executables() erfolgen (Zeile 199), damit exe_combo populated ist
+    full_exe = None
+
+    # 1. Versuche selected_exe aus dem Preset (voller Pfad)
     if selected_exe:
-        exe_name = Path(selected_exe).name
-        full_exe = Path(window.llama_cpp_path) / exe_name
+        full_exe = Path(selected_exe)
         if not full_exe.exists():
-            full_exe = Path(window.llama_cpp_path) / "build" / exe_name
-        if not full_exe.exists():
-            full_exe = Path(window.llama_cpp_path) / "build" / "bin" / exe_name
-        if full_exe.exists() and hasattr(window, 'update_cache_type_options'):
-            window.update_cache_type_options(str(full_exe.resolve()), preset_cache_values if preset_cache_values else None)
+            exe_name = full_exe.name
+            full_exe = Path(window.llama_cpp_path) / exe_name
+            if not full_exe.exists():
+                full_exe = Path(window.llama_cpp_path) / "build" / exe_name
+            if not full_exe.exists():
+                full_exe = Path(window.llama_cpp_path) / "build" / "bin" / exe_name
+
+    # 2. Fallback: selected_exe nicht im Preset ODER Pfad-Auflösung fehlgeschlagen → exe_combo verwenden
+    if full_exe is None or not full_exe.exists():
+        if hasattr(window, 'exe_combo') and window.exe_combo.count() > 0:
+            selected_name = window.exe_combo.currentText()
+            if selected_name and selected_name != "llama.cpp nicht gefunden":
+                full_exe = Path(window.llama_cpp_path) / selected_name
+                if not full_exe.exists():
+                    full_exe = Path(window.llama_cpp_path) / "build" / selected_name
+                if not full_exe.exists():
+                    full_exe = Path(window.llama_cpp_path) / "build" / "bin" / selected_name
+
+    if full_exe is not None and full_exe.exists() and hasattr(window, 'update_cache_type_options'):
+        window.update_cache_type_options(str(full_exe.resolve()), preset_cache_values if preset_cache_values else None)
 
     # Modell auswählen (voller Pfad)
     selected_model = preset.get("selected_model")
