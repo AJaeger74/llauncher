@@ -31,7 +31,8 @@
   "lbl_preset_name": "Preset-Name:",
   "dialog_save_preset_title": "Preset speichern",
   "dialog_overwrite_confirm": "{name} existiert bereits. Überschreiben?",
-  "dialog_no_preset_name": "Bitte Namen eingeben.",
+  "dialog_no_preset_name": "Bitte geben Sie einen Namen ein.",
+  "dialog_no_preset_name_title": "Kein Name",
   "dialog_no_presets_found": "Keine Presets gefunden.",
   "msg_preset_saved": "Preset '{name}' gespeichert!",
   "msg_export_success": "Benchmark-Ergebnisse exportiert nach {path}",
@@ -63,6 +64,7 @@
   "dialog_external_args_title": "Externe Parameter",
   "msg_external_args": "Externe Parameter (nicht in APP verwaltet):",
   "btn_close": "Schließen",
+  "lbl_no_presets_placeholder": "(keine vorhanden)",
   "msg_no_presets_title": "Keine Presets",
   "msg_no_presets_found": "Keine gespeicherten Presets gefunden.",
   "dialog_rating_title": "Benchmark Ergebnisse",
@@ -225,7 +227,7 @@
   "status_cancelled": "Abgebrochen",
   "msg_build_retry": "Neu bauen?",
   "msg_build_completed": "Build abgeschlossen, verstrichene Zeit: {elapsed}",
- "msg_clone_complete": "Clone erfolgreich. {fork_name}\nZiel: {path}",
+  "msg_clone_complete": "Clone erfolgreich. {fork_name}\nZiel: {path}",
   "msg_preset_loaded_cli": "Preset '{name}' per CLI geladen",
   "msg_preset_not_found_cli": "Preset '{name}' nicht gefunden (ignoriere)"
 }
