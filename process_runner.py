@@ -498,6 +498,17 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                             print(f"[DEBUG] Set float_slider {actual_key} to {value}")
                             continue
 
+    # After all parameters are applied, re-parse --help for cache-type options
+    # so the dropdowns are populated with all available values for the running binary
+    if exe_path and hasattr(window, 'update_cache_type_options'):
+        preset_cache = {}
+        if '--cache-type-k' in managed_args:
+            preset_cache['cache-type-k'] = managed_args['--cache-type-k']
+        if '--cache-type-v' in managed_args:
+            preset_cache['cache-type-v'] = managed_args['--cache-type-v']
+        if preset_cache:
+            window.update_cache_type_options(str(exe_path), preset_cache)
+
     # After processing all parameters, build normalized_args with unmapped params
     for key, value in external_args.items():
         # Check if this parameter or its mapped form was managed
