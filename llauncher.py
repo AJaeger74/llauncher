@@ -547,7 +547,7 @@ class llauncher(QMainWindow):
                 build_bin = build_dir / "bin"
                 if build_bin.exists():
                     build_bin_files = sorted([f.name for f in build_bin.iterdir() if f.is_file()])
-                    print(f"[EXE-DEBUG]   Build/bin files ({len(build_bin_files)}): {build_bin_files}", file=sys.stderr)
+                    print(f"[EXE-DEBUG]   Build/bin files ({len(build_bin_files)})", file=sys.stderr)
                 else:
                     print(f"[EXE-DEBUG]   Build/bin does NOT exist", file=sys.stderr)
             except PermissionError:
