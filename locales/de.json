@@ -188,6 +188,7 @@
   "placeholder_hf_url_repo": "z.B. mudler/Carnice-Qwen3.6-MoE-35B-A3B-APEX-GGUF",
   "lbl_hf_files": "Dateien im Repository:",
   "btn_download_file": "Herunterladen",
+  "lbl_target_dir": "Zielverzeichnis:",
   "msg_model_dir_loaded": "Konfiguration geladen - Modellverzeichnis: {model_dir}",
   "msg_downloading": "Wird heruntergeladen...",
   "msg_download_complete": "Download abgeschlossen: {path}",

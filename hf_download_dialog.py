@@ -434,6 +434,14 @@ class HfDownloadDialog(QDialog):
 
         self.file_combo.currentIndexChanged.connect(self._on_file_selected)
 
+        # --- Target directory display ---
+        target_dir_label = QLabel(gettext("lbl_target_dir"))
+        self.target_dir_label = QLabel("")
+        self.target_dir_label.setStyleSheet("color: #4fc3f7; font-size: 9pt;")
+        self.target_dir_label.setWordWrap(True)
+        layout.addWidget(target_dir_label)
+        layout.addWidget(self.target_dir_label)
+
         # --- Progress row ---
         progress_layout = QHBoxLayout()
         self.progress_bar = QProgressBar()
@@ -502,6 +510,7 @@ class HfDownloadDialog(QDialog):
             self.download_btn.setEnabled(False)
             self.status_label.setText("")
             self.loading_label.setVisible(False)
+            self.target_dir_label.setText("")
             return
 
         # Check if it's a full file URL (blob, raw, or resolve)
@@ -518,6 +527,8 @@ class HfDownloadDialog(QDialog):
                     "", "", "",
                 ))
                 self.url_edit.setText(clean_url)
+                # Show target directory for full URL too
+                self._update_target_dir_label(short_id)
                 # Pre-populate combo so user can see the resolved filename
                 self.file_combo.clear()
                 self.file_combo.addItem(file_path, file_path)
@@ -534,6 +545,9 @@ class HfDownloadDialog(QDialog):
                 self._current_short_id = short_id
                 self.status_label.setText("")
                 self.loading_label.setVisible(True)
+
+                # Show target directory early, so user knows where the file will go
+                self._update_target_dir_label(short_id)
 
                 # Start a one-shot timer that fires after 500ms of inactivity
                 from PyQt6.QtCore import QTimer
@@ -617,6 +631,20 @@ class HfDownloadDialog(QDialog):
         """Enable download button when a file is selected."""
         self.download_btn.setEnabled(True)
 
+    def _update_target_dir_label(self, short_id: str):
+        """Compute and display the target directory for a given short_id.
+
+        Called whenever the short_id becomes known (URL entered, repo loaded).
+        Shows the absolute path where the file will be downloaded.
+        """
+        try:
+            model_dir = self._get_model_directory()
+            repo_subdir = short_id.replace("/", "_")
+            target_dir = os.path.join(model_dir, repo_subdir)
+            self.target_dir_label.setText(target_dir)
+        except Exception:
+            self.target_dir_label.setText("")
+
     def _get_model_directory(self) -> str:
         """Get the model directory from config or default to ~/.models."""
         try:
@@ -679,6 +707,9 @@ class HfDownloadDialog(QDialog):
 
         file_name = os.path.basename(file_path)  # Extract just the filename
         dst_path = Path(target_dir) / file_name
+
+        # Show target directory in the dialog before download starts
+        self.target_dir_label.setText(target_dir)
 
         # Check if file already exists — ask for overwrite
         if dst_path.exists():
