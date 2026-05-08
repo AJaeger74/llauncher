@@ -86,18 +86,27 @@ def get_current_args(window) -> list:
         else:
             # Integer-Slider
             if isinstance(slider, dict):
-                # Priorität: Wert aus dem Edit-Feld lesen, falls vorhanden
+                # Direkt vom Slider-Widget lesen – das Edit-Feld kann veraltet sein
+                # aufgrund von Signal-Timing (textChanged → handler → setValue → valueChanged
+                # → sync_from_slider), wo get_current_args() das Edit liest BEVOR sync
+                # vom slider.valueChanged-Sync den Text aktualisiert hat.
                 edit_widget = slider.get("edit")
                 slider_widget = slider.get("slider")
                 
-                if edit_widget:
-                    try:
-                        value = int(edit_widget.text())
-                    except ValueError:
-                        # Fallback auf Slider-Widget, falls Edit leer/ungültig
-                        value = slider_widget.value() if slider_widget else 0
-                elif slider_widget:
-                    value = slider_widget.value()
+                if slider_widget:
+                    raw_value = slider_widget.value()
+                    multiplier = config.get("multiplier", 1.0)
+                    # Durch Multiplikator teilen für user-facing value
+                    if multiplier > 1.0:
+                        value = raw_value // int(multiplier)
+                    else:
+                        value = raw_value
+                    # Edit-Feld mit Slider-Wert syncen (Display-Update als Side-Effect)
+                    if edit_widget:
+                        if multiplier > 1.0:
+                            edit_widget.setText(f"{value:.2f}")
+                        else:
+                            edit_widget.setText(str(value))
                 else:
                     value = 0
             else:
