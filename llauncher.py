@@ -405,8 +405,7 @@ class llauncher(QMainWindow):
             # Modell-Verzeichnis aktualisieren und ComboBox neu laden
             if hasattr(self, 'model_directory'):
                 self.model_directory = model_dir
-            if model_dir:
-                save_config({"model_directory": model_dir})
+ 
             
             # ComboBox neu füllen mit Modellen aus neuem Verzeichnis
             if hasattr(self, 'model_combo'):
