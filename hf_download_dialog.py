@@ -603,17 +603,22 @@ class HfDownloadDialog(QDialog):
 
         # Populate combo box with "filename (size)" entries — sorted by size desc
         self._file_list = gguf_files
+        self.file_combo.blockSignals(True)
         self.file_combo.clear()
         for f in gguf_files:
             size_str = human_size(f["size_bytes"])
             entry = f"{f['filename']} ({size_str})"
             self.file_combo.addItem(entry, f["filename"])
+        self.file_combo.blockSignals(False)
 
         self.file_combo.setEnabled(True)
         self.download_btn.setEnabled(False)
 
         # Auto-select the largest .gguf file
+        self.file_combo.blockSignals(True)
         self.file_combo.setCurrentIndex(0)
+        self.file_combo.blockSignals(False)
+        self._on_file_selected()
 
     def _on_files_error(self, error_msg: str):
         """Handle error from the file fetch worker."""
