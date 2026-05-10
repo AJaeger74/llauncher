@@ -112,8 +112,15 @@ def get_current_args(window) -> list:
             else:
                 value = slider.value()
             
+            # -c (context_size): IMMER zum Kommando hinzufügen – der Default
+            # ist das Modell's context_length (ctx_length), nicht 4096.
+            # Der Wert auf dem Slider ist die gewählte Kontextgröße.
+            if param_key == "-c":
+                args.append(param_key)
+                args.append(str(value))
+            
             # Sonderfall: -ngl mit "all" Checkbox
-            if param_key == "-ngl":
+            elif param_key == "-ngl":
                 if hasattr(window, "ngl_all_checkbox") and window.ngl_all_checkbox.isChecked():
                     args.append(param_key)
                     args.append("all")
