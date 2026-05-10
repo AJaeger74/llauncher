@@ -446,7 +446,12 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                         print(f"[DEBUG] Set -ngl to 'all', checkbox checked")
                     else:
                         try:
-                            slider.setValue(int(value))
+                            int_value = int(value)
+                            # Maximum ggf. anheben, damit Qt den Wert beim setValue nicht clamped
+                            current_max = slider.maximum()
+                            if int_value > current_max:
+                                slider.setMaximum(int_value)
+                            slider.setValue(int_value)
                             edit.setText(value)
                             print(f"[DEBUG] Successfully set {actual_key} to {value}")
                         except ValueError as e:
