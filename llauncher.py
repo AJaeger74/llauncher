@@ -901,7 +901,6 @@ class llauncher(QMainWindow):
                 self.update_cache_type_options(binary_path)
         
         save_config({
-            "model_directory": self.model_directory,
             "selected_model": str(model_path),
         })
 
