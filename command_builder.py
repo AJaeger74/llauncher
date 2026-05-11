@@ -237,6 +237,10 @@ def on_param_changed(window) -> None:
     Args:
         window: llauncher main window instance
     """
+    # Guard: Überspringen wenn cache-type Optionen gerade aktualisiert werden
+    if getattr(window, '_updating_cache_type', False):
+        return
+    
     # Prüfen ob param_sliders initialisiert ist (kann None sein während init_ui)
     if not hasattr(window, 'param_sliders') or window.param_sliders is None:
         return
@@ -280,5 +284,13 @@ def on_param_changed(window) -> None:
     except Exception:
         pass
     
-    command = build_full_command(window)
-    window.debug_text.append(command)
+    # Command direkt aus UI-Werten bauen — ohne laufenden Prozess zu berücksichtigen
+    args = get_current_args(window)
+    
+    # Custom Commands Feld auslesen
+    if hasattr(window, 'custom_cmd_edit') and window.custom_cmd_edit:
+        custom_text = window.custom_cmd_edit.toPlainText()
+        custom_args = _parse_custom_commands_text(custom_text)
+        args.extend(custom_args)
+    
+    window.debug_text.append(" ".join(args))

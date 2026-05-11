@@ -165,22 +165,32 @@ class llauncher(QMainWindow):
         self.check_existing_process()
     
     def keyPressEvent(self, event):
-        """c → aktuelle Kommandozeile basierend auf GUI-Einstellungen ins Debug-Fenster."""
+        """c → Kommandozeile basierend auf aktuellen GUI-Einstellungen (was beim nächsten Start verwendet wird)."""
         if event.key() == Qt.Key.Key_C:
             if hasattr(self, 'debug_text'):
                 try:
-                    from command_builder import get_current_args
-                    args = get_current_args(self)
-                    # Custom Commands anhängen
-                    if hasattr(self, 'custom_cmd_edit') and self.custom_cmd_edit:
-                        from command_builder import _parse_custom_commands_text
-                        custom_text = self.custom_cmd_edit.toPlainText()
-                        custom_args = _parse_custom_commands_text(custom_text)
-                        args.extend(custom_args)
-                    self.debug_text.append(" ".join(args))
+                    # Baue den Command direkt aus UI-Werten, ignoriere laufenden Prozess
+                    command = self._build_ui_command()
+                    self.debug_text.append(command)
                 except Exception as e:
                     self.debug_text.append(f"Fehler: {e}")
         super().keyPressEvent(event)
+    
+    def _build_ui_command(self) -> str:
+        """Baut den Command direkt aus UI-Werten — ohne laufenden Prozess zu berücksichtigen.
+        
+        Dies ist der Command, der beim nächsten Modell-Start verwendet wird.
+        """
+        from command_builder import get_current_args, _parse_custom_commands_text
+        args = get_current_args(self)
+        
+        # Custom Commands Feld auslesen
+        if hasattr(self, 'custom_cmd_edit') and self.custom_cmd_edit:
+            custom_text = self.custom_cmd_edit.toPlainText()
+            custom_args = _parse_custom_commands_text(custom_text)
+            args.extend(custom_args)
+        
+        return " ".join(args)
     
     def apply_theme(self, use_light: bool):
         """Apply theme stylesheet based on use_light flag."""
@@ -625,75 +635,62 @@ class llauncher(QMainWindow):
         
         Args:
             binary_path: Pfad zum llama-server Binary
-            preset_values: Dict mit optional 'cache-type-k' und 'cache-type-v' Keys
+            preset_values: Dict mit optional 'cache-type-k' and 'cache-type-v' Keys
         """
         if not Path(binary_path).exists():
             return
         
+        # Guard-Flag: verhindert dass on_param_changed während des Refreshs feuert
+        self._updating_cache_type = True
         try:
             options = parse_cache_type_options(binary_path)
             
+            # BEIDE Combos gleichzeitig blockieren, bevor irgendeine Änderung passiert
+            combo_k = self.param_sliders.get('--cache-type-k', {}).get('combo')
+            combo_v = self.param_sliders.get('--cache-type-v', {}).get('combo')
+            if combo_k:
+                combo_k.blockSignals(True)
+            if combo_v:
+                combo_v.blockSignals(True)
+            
             # Cache-Type K ComboBox aktualisieren
-            if '--cache-type-k' in self.param_sliders and 'combo' in self.param_sliders['--cache-type-k']:
-                combo_k = self.param_sliders['--cache-type-k']['combo']
-                preset_k = (preset_values or {}).get('cache-type-k')
-                
-                # Alten Wert VOR dem Leeren speichern
-                saved_k = preset_k if preset_k else combo_k.currentText()
-                sys.stderr.write(f"[DEBUG update_cache_type_options K] preset_k={preset_k!r}, saved_k={saved_k!r}, current_idx={combo_k.currentIndex()}, options_count={len(options.get('k', []))}\n")
-                
-                # ComboBox leeren und mit neuen Optionen füllen
+            if combo_k:
+                saved_k = combo_k.currentText()
                 combo_k.clear()
-                for opt in options.get('k', ['f16']):  # Fallback auf f16 wenn nichts gefunden
+                for opt in options.get('k', ['f16']):
                     combo_k.addItem(opt)
-                
-                # Preset-Wert als Extra hinzufügen falls nicht in --help Optionen
-                if preset_k and preset_k not in options.get('k', []):
-                    combo_k.addItem(preset_k)
-                
-                # Auswahl wiederherstellen: zuerst preset value, dann alter Text
-                if preset_k:
-                    idx = combo_k.findText(preset_k)
-                    if idx >= 0:
-                        combo_k.setCurrentIndex(idx)
-                        sys.stderr.write(f"[DEBUG update_cache_type_options K] SET idx={idx}={preset_k}\n")
-                    else:
-                        sys.stderr.write(f"[DEBUG update_cache_type_options K] preset_k NOT FOUND: {preset_k!r}\n")
+                if saved_k and saved_k not in options.get('k', []):
+                    combo_k.addItem(saved_k)
+                idx = combo_k.findText(saved_k)
+                if idx >= 0:
+                    combo_k.setCurrentIndex(idx)
                 else:
-                    idx = combo_k.findText(saved_k)
-                    if idx >= 0:
-                        combo_k.setCurrentIndex(idx)
-                        sys.stderr.write(f"[DEBUG update_cache_type_options K] restored idx={idx}={saved_k!r}\n")
+                    combo_k.setCurrentIndex(0)
             
             # Cache-Type V ComboBox aktualisieren
-            if '--cache-type-v' in self.param_sliders and 'combo' in self.param_sliders['--cache-type-v']:
-                combo_v = self.param_sliders['--cache-type-v']['combo']
-                preset_v = (preset_values or {}).get('cache-type-v')
-                
-                # Alten Wert VOR dem Leeren speichern
-                saved_v = preset_v if preset_v else combo_v.currentText()
-                
-                # ComboBox leeren und mit neuen Optionen füllen
+            if combo_v:
+                saved_v = combo_v.currentText()
                 combo_v.clear()
-                for opt in options.get('v', ['f16']):  # Fallback auf f16 wenn nichts gefunden
+                for opt in options.get('v', ['f16']):
                     combo_v.addItem(opt)
-                
-                # Preset-Wert als Extra hinzufügen falls nicht in --help Optionen
-                if preset_v and preset_v not in options.get('v', []):
-                    combo_v.addItem(preset_v)
-                
-                # Auswahl wiederherstellen: zuerst preset value, dann alter Text
-                if preset_v:
-                    idx = combo_v.findText(preset_v)
-                    if idx >= 0:
-                        combo_v.setCurrentIndex(idx)
+                if saved_v and saved_v not in options.get('v', []):
+                    combo_v.addItem(saved_v)
+                idx = combo_v.findText(saved_v)
+                if idx >= 0:
+                    combo_v.setCurrentIndex(idx)
                 else:
-                    idx = combo_v.findText(saved_v)
-                    if idx >= 0:
-                        combo_v.setCurrentIndex(idx)
+                    combo_v.setCurrentIndex(0)
+                    
+            # Signale NACHDEM beide Combos vollständig restauriert sind
+            if combo_k:
+                combo_k.blockSignals(False)
+            if combo_v:
+                combo_v.blockSignals(False)
                         
         except Exception as e:
             self.debug_text.append(f"Warnung: Konnte cache-type Optionen nicht laden ({e})")
+        finally:
+            self._updating_cache_type = False
     
     def browse_path(self, line_edit: QLineEdit, start_dir: str):
         dialog = QFileDialog(self, "Pfad wählen", start_dir)
