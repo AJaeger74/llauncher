@@ -231,35 +231,54 @@ def build_full_command(window, external_args: dict = None) -> str:
 def on_param_changed(window) -> None:
     """Debug-Output live aktualisieren wenn sich ein Parameter ändert.
     
+    KV-Cache-Werte und Kommandozeile werden als einzige Zeilen ausgegeben
+    (keine Historie, alte Inhalte werden überschrieben).
+    
     Args:
         window: llauncher main window instance
     """
-    try:
-        # Prüfen ob param_sliders initialisiert ist (kann None sein während init_ui)
-        if not hasattr(window, 'param_sliders') or window.param_sliders is None:
+    # Prüfen ob param_sliders initialisiert ist (kann None sein während init_ui)
+    if not hasattr(window, 'param_sliders') or window.param_sliders is None:
+        return
+    
+    # Alle Sliders müssen existieren und initialisiert sein
+    for param_key in window.PARAM_DEFINITIONS.keys():
+        if param_key not in window.param_sliders:
+            continue
+        slider = window.param_sliders[param_key]
+        config = window.PARAM_DEFINITIONS[param_key]
+        
+        try:
+            if config.get("type") == "float_slider":
+                if "edit" not in slider or not slider["edit"]:
+                    return
+            elif config.get("type") in ("text_input", "path_input"):
+                if "edit" not in slider or not slider["edit"]:
+                    return
+            elif config.get("type") == "slider":
+                if isinstance(slider, dict) and "slider" not in slider:
+                    return
+            # combo, text_input (path_input handled above), file_input: keine extra Prüfung
+        except (KeyError, AttributeError):
             return
-        
-        # Alle Sliders müssen existieren und initialisiert sein
-        for param_key in window.PARAM_DEFINITIONS.keys():
-            if param_key not in window.param_sliders:
-                continue
-            slider = window.param_sliders[param_key]
-            config = window.PARAM_DEFINITIONS[param_key]
-            
-            try:
-                if config.get("type") == "float_slider":
-                    if "edit" not in slider or not slider["edit"]:
-                        return
-                elif config.get("type") in ("text_input", "path_input"):
-                    if "edit" not in slider or not slider["edit"]:
-                        return
-                else:
-                    if isinstance(slider, dict) and "slider" not in slider:
-                        return
-            except (KeyError, AttributeError):
-                return
-        
-        command = build_full_command(window)
-        window.debug_text.setText(command)
-    except Exception as e:
-        window.debug_text.setText(f"Fehler beim Aktualisieren: {e}")
+    
+    # KV-Cache-Werte lesen
+    cache_type_k = ""
+    cache_type_v = ""
+    for combo_key in ("--cache-type-k", "--cache-type-v"):
+        if combo_key in window.param_sliders and "combo" in window.param_sliders[combo_key]:
+            val = window.param_sliders[combo_key]["combo"].currentText()
+            if combo_key == "--cache-type-k":
+                cache_type_k = val
+            else:
+                cache_type_v = val
+    
+    # Debug-Feld leeren und neue KV-Zeile + Kommando schreiben
+    try:
+        window.debug_text.clear()
+        window.debug_text.append(f"KV-K: {cache_type_k} | KV-V: {cache_type_v}")
+    except Exception:
+        pass
+    
+    command = build_full_command(window)
+    window.debug_text.append(command)
