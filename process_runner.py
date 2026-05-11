@@ -63,6 +63,11 @@ class ProcessRunner(QThread):
         except Exception as e:
             self.output_signal.emit(f"ERROR: {e}")
             self.finished_signal.emit(-1)
+        finally:
+            # Garantiert dass QThread-EventLoop gestoppt wird, bevor
+            # run() zurückkehrt und das QThread-Objekt zerstört wird.
+            # Verhindert "QThread: Destroyed while thread is still running"
+            self.quit()
 
     def get_pid(self):
         """PID des laufenden Prozesses zurueckgeben"""

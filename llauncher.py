@@ -1213,6 +1213,12 @@ class llauncher(QMainWindow):
                     # Stale process args löschen — sonst liefert build_full_command()
                     # beim nächsten Start weiterhin die alte Prozess-Kommandozeile
                     self.external_runner_args = None
+                    # Signale trennen VOR runner=None, damit kein Signal-Handler
+                    # mehr auf das ProcessRunner-Objekt zugreift (verhindert
+                    # "QThread: Destroyed while thread is still running")
+                    if hasattr(self, 'runner') and self.runner:
+                        self.runner.finished_signal.disconnect()
+                        self.runner.output_signal.disconnect()
                     if hasattr(self, 'runner') and self.runner:
                         self.runner = None
             
