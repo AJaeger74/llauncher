@@ -1210,6 +1210,9 @@ class llauncher(QMainWindow):
                     # Wichtig: PID auf None setzen damit nächster Klick neu starten kann
                     if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
                         self.external_runner_pid = None
+                    # Stale process args löschen — sonst liefert build_full_command()
+                    # beim nächsten Start weiterhin die alte Prozess-Kommandozeile
+                    self.external_runner_args = None
                     if hasattr(self, 'runner') and self.runner:
                         self.runner = None
             
