@@ -155,7 +155,7 @@ def find_llama_processes():
     """Findet alle laufenden llama-server Prozesse."""
     try:
         out = subprocess.check_output(
-            ["pgrep", "-f", "llama"],
+            ["pgrep", "-f", "llama-server"],
             text=True,
             stderr=subprocess.DEVNULL,
         )
