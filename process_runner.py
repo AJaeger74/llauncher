@@ -390,6 +390,17 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
             else:
                 window.model_combo.setCurrentText(model_name)
 
+    # Cache-Type Optionen VOR dem Parameter-Loop laden, damit die Comboboxen
+    # die vollständigen Optionen haben, wenn die Werte angewendet werden
+    if exe_path and hasattr(window, 'update_cache_type_options'):
+        preset_cache = {}
+        if '--cache-type-k' in external_args:
+            preset_cache['cache-type-k'] = external_args['--cache-type-k']
+        if '--cache-type-v' in external_args:
+            preset_cache['cache-type-v'] = external_args['--cache-type-v']
+        if preset_cache:
+            window.update_cache_type_options(str(exe_path), preset_cache)
+
     managed_args = {}
     normalized_args = {}
 
@@ -507,17 +518,6 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                             managed_args[actual_key] = value
                             print(f"[DEBUG] Set float_slider {actual_key} to {value}")
                             continue
-
-    # After all parameters are applied, re-parse --help for cache-type options
-    # so the dropdowns are populated with all available values for the running binary
-    if exe_path and hasattr(window, 'update_cache_type_options'):
-        preset_cache = {}
-        if '--cache-type-k' in managed_args:
-            preset_cache['cache-type-k'] = managed_args['--cache-type-k']
-        if '--cache-type-v' in managed_args:
-            preset_cache['cache-type-v'] = managed_args['--cache-type-v']
-        if preset_cache:
-            window.update_cache_type_options(str(exe_path), preset_cache)
 
     # After processing all parameters, build normalized_args with unmapped params
     for key, value in external_args.items():
