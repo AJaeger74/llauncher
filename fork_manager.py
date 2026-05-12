@@ -488,14 +488,11 @@ class ForkManagerDialog(QDialog):
                 if reply:
                     self._do_pull()
                 else:
-                    # Delete and re-clone
-                    try:
-                        shutil.rmtree(self._fork_dir)
-                        self._do_clone(url, self._fork_dir, branch)
-                    except Exception as e:
-                        QMessageBox.critical(self, gettext("fork_result_title"),
-                                             str(e))
-                # Cancel = skip
+                    # Declined pull -> keep existing repo and build intact
+                    if clone_btn:
+                        clone_btn.setEnabled(True)
+                        clone_btn.setText(gettext("btn_clone_repo"))
+                    self._ask_build()
             else:
                 reply = _ask_question(
                     self, gettext("fork_result_title"),
