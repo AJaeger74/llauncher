@@ -432,6 +432,7 @@ def build_llauncher_ui(window):
     window.custom_cmd_edit.setMinimumHeight(60)
     window.custom_cmd_edit.setFont(QFont("Monospace", 9))
     window.custom_cmd_edit.setStyleSheet("margin-top: -2px;")
+    window.custom_cmd_edit.setAcceptRichText(False)
     
     # Live update debug output when custom commands change
     window.custom_cmd_edit.textChanged.connect(window.on_param_changed)
