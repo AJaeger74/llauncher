@@ -635,7 +635,7 @@ def build_llauncher_ui(window):
     # Nur Doppelklick auf Qualitätsspalte erlaubt zum Editieren
     window.bench_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
 
-    # Fixe Spaltenbreiten: Datum, Preload/Gen metrisch schmal, Qualität, Kommandozeile streckt sich
+    # Fixe Spaltenbreiten: Datum, Preload/Gen metrisch schmal, Qualität, Kommandozeile ResizeToContents (Scrollbar wenn zu lang)
     window.bench_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -644,7 +644,7 @@ def build_llauncher_ui(window):
     window.bench_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
     window.bench_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-    window.bench_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+    window.bench_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
     window.bench_table.setColumnWidth(0, 150)  # Datum/Zeit fix
     window.bench_table.setColumnWidth(1, 90)   # Preload Time fix (z.B. "320ms")
     window.bench_table.setColumnWidth(2, 90)   # Preload Tokens fix (z.B. "16")
@@ -653,7 +653,30 @@ def build_llauncher_ui(window):
     window.bench_table.setColumnWidth(5, 90)   # Generation Tokens fix (z.B. "240")
     window.bench_table.setColumnWidth(6, 90)   # Generation TPS fix (z.B. "200.0")
     window.bench_table.setColumnWidth(7, 90)   # Qualität fix (Sehr gut / Gut / Mittel / Schlecht)
-    
+
+    # Smooth pixel-by-pixel horizontal scrolling for command column
+    class PixelScrollBar(QScrollBar):
+        """QScrollBar that moves 1 pixel per mouse pixel during drag."""
+
+        def mouseMoveEvent(self, event):
+            if event.buttons() & Qt.MouseButton.LeftButton:
+                # Simple ratio: mouse X / total width -> scroll position
+                width = self.width()
+                max_val = self.maximum()
+                if width > 0 and max_val > 0:
+                    ratio = max(0.0, min(1.0, event.pos().x() / width))
+                    self.setValue(int(ratio * max_val))
+            super().mouseMoveEvent(event)
+
+    # Replace the default horizontal scrollbar
+    old_scroll = window.bench_table.horizontalScrollBar()
+    old_value = old_scroll.value() if old_scroll else 0
+    new_scroll = PixelScrollBar()
+    window.bench_table.setHorizontalScrollBar(new_scroll)
+    new_scroll.setSingleStep(1)
+    new_scroll.setTracking(True)
+    new_scroll.setValue(old_value)
+
     # Kontextmenü für Rechtsklick aktivieren
     window.bench_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.bench_table.customContextMenuRequested.connect(window.show_bench_context_menu)

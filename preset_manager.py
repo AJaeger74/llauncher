@@ -615,6 +615,10 @@ def ask_quality_and_save_benchmark(window, debug_text, status_label,
     # Kommandozeile: read-only (col 8)
     cmd_item = QTableWidgetItem(full_command)
     cmd_item.setFlags(cmd_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    cmd_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     window.bench_table.setItem(row, 8, cmd_item)
+    
+    # Resize to fit the longest command; triggers horizontal scrollbar when it exceeds the window
+    window.bench_table.resizeColumnToContents(8)
     
     return benchmark_entry
