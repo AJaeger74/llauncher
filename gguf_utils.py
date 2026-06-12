@@ -195,6 +195,41 @@ def read_gguf_tensor_count(path: str) -> int:
         return 0
 
 
+# Architekturen die von llama.cpp unterstützt werden (llama.cpp/src/llama-arch.cpp)
+KNOWN_LLAMA_ARCHITECTURES = {
+    "llama", "mamba", "gpt-neox", "stablelm", "stablelm2", "phi", "phi-3", "phi3",
+    "gpt-2", "bert", "qwen2", "qwen2_moe", "qwen2_vl", "gptj", "starcoder2",
+    "command-r", "command-r-plus", "internlm2", "internlm", "minicpm", "minicpm3",
+    "chatglm", "dbrx", "deepseek-v2", "deepseek-v3", "xverse", "falcon", "falcon2",
+    "smollm", "olmo", "olmo2", "arctic", "gemma", "gemma2", "gemma3", "gemma3n",
+    "jamba", "jetmoe", "bloom", "mpt", "persimmon", "exaone3", "granite",
+    "granite-dbrx", "grok-1", "grok1", "olmoe", "openelm", "owltow", "platypus2",
+    "telechat", "textgen", "whisper", "t5", "bart", "bart2",
+    "nemotron", "nemotron_h_moe", "nemotron_hpu_moe", "pwm",
+    "ernie", "ernievision", "deepseek-vl", "molmo", "pangu",
+    "baichuan", "qwen", "qwen1_5", "xglm", "refact", "smaug",
+    "griffin", "baidu",
+}
+
+
+def check_model_architecture(arch: str) -> str | None:
+    """Prüft ob eine GGUF-Architektur von llama.cpp unterstützt wird.
+
+    Args:
+        arch: Architektur-String aus GGUF-Metadaten (z.B. 'llama', 'gemma2')
+
+    Returns:
+        Fehlermeldung als String wenn Architektur nicht unterstützt, None wenn OK.
+    """
+    if not arch or arch == "unknown":
+        return None
+
+    if arch in KNOWN_LLAMA_ARCHITECTURES:
+        return None
+
+    return arch
+
+
 def get_model_info(path: str) -> Dict[str, Any]:
     """Extract model info from GGUF file."""
     try:

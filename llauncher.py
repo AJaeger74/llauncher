@@ -1213,6 +1213,28 @@ class llauncher(QMainWindow):
                     # Stale process args löschen — sonst liefert build_full_command()
                     # beim nächsten Start weiterhin die alte Prozess-Kommandozeile
                     self.external_runner_args = None
+                    
+                    # Model-load error: Zeige Warnung und setze Modell zurück
+                    if getattr(self, '_model_load_error', False):
+                        try:
+                            # Versuche Architektur aus GGUF zu lesen
+                            from gguf_utils import get_model_info as gguf_get_model_info
+                            model_path = self.selected_model
+                            if model_path:
+                                arch = (gguf_get_model_info(model_path).get('arch') or 'unknown').strip('\x00 ')
+                                arch_msg = gettext("msg_arch_unsupported").format(arch=arch)
+                            else:
+                                arch_msg = gettext("msg_model_load_failed")
+                        except Exception:
+                            arch_msg = gettext("msg_model_load_failed")
+                        
+                        QMessageBox.warning(
+                            self,
+                            gettext("msg_model_load_failed_title"),
+                            arch_msg,
+                        )
+                        self.debug_text.append(f"\u26d4 {arch_msg}")
+                    
                     # Signale trennen VOR runner=None, damit kein Signal-Handler
                     # mehr auf das ProcessRunner-Objekt zugreift (verhindert
                     # "QThread: Destroyed while thread is still running")
@@ -1228,6 +1250,9 @@ class llauncher(QMainWindow):
             # Initialize idle state flag
             if not hasattr(self, '_was_idle'):
                 self._was_idle = False
+
+            # Model-load error detection flag
+            self._model_load_error = False
             
             def on_output(line):
                 # Parse progress from llama.cpp output: "prompt processing progress, n_tokens = 52544, batch.n_tokens = 32, progress = 0.999125"
@@ -1255,6 +1280,10 @@ class llauncher(QMainWindow):
                     self.status_label.setText(gettext("status_running"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")
                     self._was_idle = False
+                
+                # Model-load error detection: "error loading model" / "failed to load model"
+                if "error loading model" in line or "failed to load model" in line:
+                    self._model_load_error = True
                 
                 self.debug_text.append(line)
             

@@ -179,7 +179,7 @@ def apply_preset(window, preset: dict):
         window: llauncher Instanz
         preset: Dict mit Preset-Daten (llama_cpp_path, params, etc.)
     """
-    from gguf_utils import read_gguf_context_length
+    from gguf_utils import read_gguf_context_length, check_model_architecture, get_model_info as gguf_get_model_info
     
     # Pfade setzen (volle Pfade!)
     llama_path = preset.get("llama_cpp_path", str(Path.home() / "llama.cpp"))
@@ -266,6 +266,7 @@ def apply_preset(window, preset: dict):
 
     # Modell auswählen (voller Pfad)
     selected_model = preset.get("selected_model")
+    sys.stderr.write(f"[preset] selected_model from preset dict: {selected_model}\n")
     if selected_model and Path(selected_model).exists():
         model_name = Path(selected_model).name
 
@@ -288,13 +289,35 @@ def apply_preset(window, preset: dict):
             if effective_max:
                 slider_data = window.param_sliders["-c"]
                 slider_data["slider"].setMaximum(effective_max)
-            
-            window.model_combo.blockSignals(True)
-            try:
-                window.model_combo.setCurrentIndex(idx)
-                window.selected_model = selected_model
-            finally:
-                window.model_combo.blockSignals(False)
+
+            window.model_combo.setCurrentIndex(idx)
+        else:
+            # Modell nicht im Dropdown gefunden — trotzdem selected_model setzen und warnen
+            if hasattr(window, "debug_text") and window.debug_text:
+                window.debug_text.append(f"  ⚠️ Modell '{model_name}' nicht im Dropdown gefunden")
+
+        # Architektur-Prüfung: IMMER durchführen (auch wenn Modell nicht im Dropdown war)
+        try:
+            model_info = gguf_get_model_info(selected_model)
+            arch = (model_info.get('arch') or 'unknown').strip('\x00 ')
+            sys.stderr.write(f"[preset arch check] path={selected_model} arch='{arch}' info_keys={list(model_info.keys())}\n")
+            unsupported_arch = check_model_architecture(arch)
+            if unsupported_arch:
+                from i18n import I18nManager
+                gettext = I18nManager.get_instance().gettext
+                from PyQt6.QtWidgets import QMessageBox
+                arch_msg = gettext("msg_arch_unsupported").format(arch=unsupported_arch)
+                if hasattr(window, "debug_text") and window.debug_text:
+                    window.debug_text.append(f"  ⛔ {arch_msg}")
+                QMessageBox.warning(
+                    window,
+                    gettext("msg_arch_unsupported_title"),
+                    arch_msg,
+                )
+        except Exception as e:
+            sys.stderr.write(f"[preset arch check] ERROR: {e}\n")
+            if hasattr(window, "debug_text") and window.debug_text:
+                window.debug_text.append(f"  ⚠️ Architektur-Check fehlgeschlagen: {e}")
 
     # mmproj setzen (voller Pfad! - immer setzen, nicht nur wenn existiert!)
     mmproj_path = preset.get("mmproj_path", "")
@@ -408,3 +431,9 @@ def apply_preset(window, preset: dict):
     # model_combo Signale wieder freischalten (muss am Ende von apply_preset sein)
     if model_signals_blocked and hasattr(window, 'model_combo'):
         window.model_combo.blockSignals(False)
+        # Aktiviere on_model_selected_from_index explizit, damit window.selected_model
+        # den korrekten Pfad aus dem Preset bekommt (blockSignals(False) löst activated
+        # nicht immer aus)
+        current_idx = window.model_combo.currentIndex()
+        if current_idx >= 0:
+            window.on_model_selected_from_index(current_idx)
