@@ -180,7 +180,10 @@ def apply_preset(window, preset: dict):
         preset: Dict mit Preset-Daten (llama_cpp_path, params, etc.)
     """
     from gguf_utils import read_gguf_context_length, check_model_architecture, get_model_info as gguf_get_model_info
-    
+
+    # Flag: verhindern dass on_model_selected() den Context-Size Slider überschreibt
+    window.loading_preset = True
+
     # Pfade setzen (volle Pfade!)
     llama_path = preset.get("llama_cpp_path", str(Path.home() / "llama.cpp"))
     
@@ -437,3 +440,6 @@ def apply_preset(window, preset: dict):
         current_idx = window.model_combo.currentIndex()
         if current_idx >= 0:
             window.on_model_selected_from_index(current_idx)
+
+    # Flag zurücksetzen – on_model_selected() darf ab jetzt wieder normal arbeiten
+    window.loading_preset = False

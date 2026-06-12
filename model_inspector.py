@@ -161,8 +161,8 @@ def on_model_selected(window, model_name: str) -> None:
             # Set slider maximum (no hard cap, but realistic limit)
             slider.setMaximum(ctx_length)
 
-            # Set default value - BUT only if we're not loading from a running process!
-            if not getattr(window, 'loading_running_args', False):
+            # Set default value - BUT only if we're not loading from a preset or running process!
+            if not getattr(window, 'loading_running_args', False) and not getattr(window, 'loading_preset', False):
                 slider.setValue(ctx_length)
 
             # Update edit widget width for new max number
