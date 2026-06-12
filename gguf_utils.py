@@ -207,7 +207,7 @@ KNOWN_LLAMA_ARCHITECTURES = {
     "telechat", "textgen", "whisper", "t5", "bart", "bart2",
     "nemotron", "nemotron_h_moe", "nemotron_hpu_moe", "pwm",
     "ernie", "ernievision", "deepseek-vl", "molmo", "pangu",
-    "baichuan", "qwen", "qwen1_5", "qwen35", "xglm", "refact", "smaug",
+    "baichuan", "qwen", "qwen1_5", "qwen35", "qwen35moe", "xglm", "refact", "smaug",
     "griffin", "baidu",
 }
 
