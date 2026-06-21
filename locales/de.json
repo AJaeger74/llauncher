@@ -205,6 +205,7 @@
   "msg_yes": "Ja",
   "msg_no": "Nein",
   "msg_download_cancelled": "Download abgebrochen.",
+  "msg_insufficient_space": "Nicht ausreichend Festplattenspeicher für den Download.\n\nErforderlich: {required}\nVerfügbar: {available}\n\nBitte Speicher freigeben und erneut versuchen.",
   "lbl_custom_commands": "Externe Befehle",
   "hint_custom_commands": "Zusätzliche Kommandozeilen-Argumente hier eingeben (nicht in APP verwaltet).",
   "lbl_autofollow": "Autofollow",

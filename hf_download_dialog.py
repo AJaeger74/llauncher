@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import ctypes
 from pathlib import Path
@@ -665,9 +666,63 @@ class HfDownloadDialog(QDialog):
         # Fallback to default
         return str(Path.home() / "models")
 
+    def _get_file_size(self, short_id: str, file_path: str) -> int | None:
+        """Get the file size in bytes for a given HF file.
+
+        Tries the local file list first (from Tree API), falls back to a HEAD
+        request against the resolve endpoint.
+
+        Returns the size in bytes or None if the size could not be determined.
+        """
+        # Fast path: file list already loaded from Tree API
+        for f in self._file_list:
+            if f["filename"] == file_path:
+                size = f.get("size_bytes", 0)
+                if size > 0:
+                    return size
+
+        # Slow path: HEAD request against resolve URL
+        resolve_url = f"{HUB_BASE}/{short_id}/resolve/main/{file_path}"
+        try:
+            req = Request(resolve_url, method="HEAD")
+            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                cl = resp.headers.get("Content-Length")
+                if cl is not None:
+                    return int(cl)
+        except Exception:
+            pass
+
+        return None
+
+    def _check_disk_space(self, target_dir: str, needed_bytes: int) -> bool:
+        """Check if there's enough free disk space in the target directory.
+
+        Returns True if OK, False if insufficient space (shows error dialog).
+        """
+        try:
+            usage = shutil.disk_usage(target_dir)
+        except Exception:
+            # If we can't determine disk usage (e.g. permission issue),
+            # let the download proceed – the OS will surface the error.
+            return True
+
+        if usage.free < needed_bytes:
+            available = human_size(usage.free)
+            required = human_size(needed_bytes)
+            QMessageBox.critical(
+                self,
+                gettext("hf_dl_dialog_title"),
+                gettext("msg_insufficient_space").format(
+                    available=available, required=required
+                ),
+            )
+            return False
+
+        return True
+
     def _start_download(self):
         """Start the background download."""
-        
+
         self.download_btn.setEnabled(False)
         # Reset progress bar at start (will be updated by worker signals)
         self.progress_bar.setValue(0)
@@ -715,6 +770,13 @@ class HfDownloadDialog(QDialog):
 
         # Show target directory in the dialog before download starts
         self.target_dir_label.setText(target_dir)
+
+        # --- Disk space check -----------------------------------------
+        file_size = self._get_file_size(short_id, file_path)
+        if file_size is not None:
+            if not self._check_disk_space(target_dir, file_size):
+                self.download_btn.setEnabled(True)
+                return
 
         # Check if file already exists — ask for overwrite
         if dst_path.exists():
