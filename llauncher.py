@@ -1195,6 +1195,62 @@ class llauncher(QMainWindow):
                 self.status_label.setText("")
                 return
             
+            # Crash-Dialog mit 5s Auto-Restart Timer
+            class _CrashRestartDialog(QDialog):
+                """Modal dialog: ask user to restart crashed process, auto-restart after 5s."""
+                def __init__(self, parent, exit_code):
+                    super().__init__(parent)
+                    self.setWindowTitle(gettext("dialog_crash_title"))
+                    self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+                    self.restart_requested = False
+                    self._timeout = 5
+                    self._remaining = self._timeout
+
+                    layout = QVBoxLayout(self)
+                    layout.setSpacing(10)
+
+                    msg = gettext("msg_process_crashed").format(code=exit_code)
+                    label = QLabel(msg)
+                    label.setWordWrap(True)
+                    layout.addWidget(label)
+
+                    self.timer_label = QLabel(gettext("msg_restart_countdown").format(seconds=self._remaining))
+                    self.timer_label.setStyleSheet("color: #FF9800; font-weight: bold;")
+                    layout.addWidget(self.timer_label)
+
+                    btn_layout = QHBoxLayout()
+                    self.restart_btn = QPushButton(gettext("btn_restart"))
+                    self.restart_btn.clicked.connect(self._on_restart)
+                    btn_layout.addWidget(self.restart_btn)
+                    cancel_btn = QPushButton(gettext("btn_cancel"))
+                    cancel_btn.clicked.connect(self._on_cancel)
+                    btn_layout.addWidget(cancel_btn)
+                    layout.addLayout(btn_layout)
+
+                    self.setMinimumWidth(420)
+                    self._timer = QTimer(self)
+                    self._timer.timeout.connect(self._tick)
+                    self._timer.start(1000)
+
+                def _tick(self):
+                    self._remaining -= 1
+                    if self._remaining <= 0:
+                        self._timer.stop()
+                        self.restart_requested = True
+                        self.accept()
+                    else:
+                        self.timer_label.setText(gettext("msg_restart_countdown").format(seconds=self._remaining))
+
+                def _on_restart(self):
+                    self._timer.stop()
+                    self.restart_requested = True
+                    self.accept()
+
+                def _on_cancel(self):
+                    self._timer.stop()
+                    self.restart_requested = False
+                    self.reject()
+
             # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
             def on_process_finished(exit_code):
                 print(f"[DEBUG on_process_finished] Exit code: {exit_code}")
@@ -1202,18 +1258,7 @@ class llauncher(QMainWindow):
                     sys.stderr.write(f"[llauncher] Process exited with code {exit_code}\n")
                     sys.stderr.write(f"[llauncher] Command: {args_str}\n\n")
                     sys.stderr.flush()
-                    self.status_label.setText(gettext("status_failed"))
-                    self.status_label.setStyleSheet("color: red; font-weight: bold;")
-                    # Button zurücksetzen auf "Start"
-                    self.start_stop_btn.setText(gettext("btn_start"))
-                    self.start_stop_btn.setObjectName("")
-                    # Wichtig: PID auf None setzen damit nächster Klick neu starten kann
-                    if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
-                        self.external_runner_pid = None
-                    # Stale process args löschen — sonst liefert build_full_command()
-                    # beim nächsten Start weiterhin die alte Prozess-Kommandozeile
-                    self.external_runner_args = None
-                    
+
                     # Model-load error: Zeige Warnung und setze Modell zurück
                     if getattr(self, '_model_load_error', False):
                         try:
@@ -1243,6 +1288,22 @@ class llauncher(QMainWindow):
                         self.runner.output_signal.disconnect()
                     if hasattr(self, 'runner') and self.runner:
                         self.runner = None
+
+                    # Nicht-Modell-Load Fehler: Crash-Dialog mit Auto-Restart
+                    if not getattr(self, '_model_load_error', False):
+                        self.status_label.setText(gettext("status_failed"))
+                        self.status_label.setStyleSheet("color: red; font-weight: bold;")
+                        self.start_stop_btn.setText(gettext("btn_start"))
+                        self.start_stop_btn.setObjectName("")
+                        if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
+                            self.external_runner_pid = None
+                        self.external_runner_args = None
+
+                        dialog = _CrashRestartDialog(self, exit_code)
+                        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.restart_requested:
+                            # Prozess neu starten
+                            self.debug_text.append(f"\u26a1 Restarting process after crash...")
+                            self.toggle_process()
             
             # Output überwachen für "all slots are idle" Signal
            # Output überwachen für "all slots are idle" Signal
