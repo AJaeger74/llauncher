@@ -1336,6 +1336,15 @@ class llauncher(QMainWindow):
                         self.bench_progress_bar.setValue(100)
                         self.bench_progress_bar.setToolTip("")
                 
+                # Server is ready: "listening on http://..." means model is loaded and idle
+                elif "listening on http://" in line and not getattr(self, 'benchmark_running', False):
+                    self.status_label.setText(gettext("status_idle"))
+                    self.status_label.setStyleSheet("color: green; font-weight: bold;")
+                    self._was_idle = True
+                    if hasattr(self, 'bench_progress_bar'):
+                        self.bench_progress_bar.setValue(100)
+                        self.bench_progress_bar.setToolTip("")
+                
                 # Any output after idle means we're active again
                 elif line.strip() and getattr(self, '_was_idle', False):
                     self.status_label.setText(gettext("status_running"))
