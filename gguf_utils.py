@@ -201,7 +201,7 @@ KNOWN_LLAMA_ARCHITECTURES = {
     "gpt-2", "bert", "qwen2", "qwen2_moe", "qwen2_vl", "gptj", "starcoder2",
     "command-r", "command-r-plus", "internlm2", "internlm", "minicpm", "minicpm3",
     "chatglm", "dbrx", "deepseek-v2", "deepseek-v3", "xverse", "falcon", "falcon2",
-    "smollm", "olmo", "olmo2", "arctic", "gemma", "gemma2", "gemma3", "gemma3n",
+    "smollm", "olmo", "olmo2", "arctic", "gemma", "gemma2", "gemma3", "gemma3n", "gemma4",
     "jamba", "jetmoe", "bloom", "mpt", "persimmon", "exaone3", "granite",
     "granite-dbrx", "grok-1", "grok1", "olmoe", "openelm", "owltow", "platypus2",
     "telechat", "textgen", "whisper", "t5", "bart", "bart2",
