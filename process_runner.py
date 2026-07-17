@@ -469,6 +469,10 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                                 slider.setMaximum(int_value)
                             slider.setValue(int_value)
                             edit.setText(value)
+                            # Edit-Widget Breite anpassen für den neuen Wert
+                            max_width = len(str(int_value)) * 9 + 15
+                            edit.setMinimumWidth(max_width)
+                            edit.setMaximumWidth(max_width)
                             print(f"[DEBUG] Successfully set {actual_key} to {value}")
                         except ValueError as e:
                             print(f"[DEBUG] ValueError setting {actual_key}: {e}")
