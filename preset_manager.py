@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
 )
-from PyQt6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QPen
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QPainter
 from PyQt6.QtCore import QDate, QTime, Qt
 from i18n import I18nManager
 gettext = I18nManager.get_instance().gettext
@@ -488,24 +488,8 @@ class BenchmarkRatingDialog(QDialog):
         pm = QPixmap(size, size)
         pm.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pm)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Draw trophy shape using simple paths
-        c = QColor("#FFD700")
-        painter.setPen(QColor("#DAA520"))
-        painter.setBrush(c)
-        # Cup body
-        painter.drawEllipse(int(size * 0.15), int(size * 0.2), int(size * 0.7), int(size * 0.4))
-        # Stem
-        painter.drawRect(int(size * 0.42), int(size * 0.58), int(size * 0.16), int(size * 0.22))
-        # Base
-        painter.drawRect(int(size * 0.2), int(size * 0.78), int(size * 0.6), int(size * 0.1))
-        # Handle left
-        painter.setBrush(Qt.GlobalColor.transparent)
-        painter.setPen(QColor("#DAA520"))
-        painter.setPen(QPen(QColor("#DAA520"), 2))
-        painter.drawArc(int(size * 0.02), int(size * 0.2), int(size * 0.15), int(size * 0.3), 0, -90 * 16)
-        # Handle right
-        painter.drawArc(int(size * 0.83), int(size * 0.2), int(size * 0.15), int(size * 0.3), 0, 90 * 16)
+        painter.setFont(QFont("Sans", 22))
+        painter.drawText(pm.rect(), int(Qt.AlignmentFlag.AlignCenter), "\U0001F3C6")
         painter.end()
         return QIcon(pm)
     
