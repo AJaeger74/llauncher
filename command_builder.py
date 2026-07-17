@@ -158,12 +158,19 @@ def _parse_custom_commands_text(text):
         
         # If line starts with a flag (- or --) and contains '=', keep as single arg
         # (--param=value must stay as one token for subprocess, not split into two)
-        if '=' in line and (line.startswith('-') or line.startswith('--')):
+        if '=' in line and line.startswith('-'):
             # Strip surrounding quotes from the whole line if present
             if len(line) >= 2:
                 if (line.startswith("'") and line.endswith("'")) or \
                    (line.startswith('"') and line.endswith('"')):
                     line = line[1:-1]
+            # Strip quotes around the value portion (e.g., --jinja="value with spaces")
+            eq_idx = line.index('=')
+            value_part = line[eq_idx + 1:]
+            if len(value_part) >= 2:
+                if (value_part.startswith("'") and value_part.endswith("'")) or \
+                   (value_part.startswith('"') and value_part.endswith('"')):
+                    line = line[:eq_idx + 1] + value_part[1:-1]
             args.append(line)
         else:
             # Space-separated: 'key value' or bare flag
