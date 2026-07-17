@@ -184,6 +184,10 @@ def apply_preset(window, preset: dict):
     # Flag: verhindern dass on_model_selected() den Context-Size Slider überschreibt
     window.loading_preset = True
 
+    # mmproj-Feld leeren VOR dem Preset-Load, damit kein alter Wert persistiert
+    if hasattr(window, 'mmproj_line'):
+        window.mmproj_line.setText("")
+
     # Pfade setzen (volle Pfade!)
     llama_path = preset.get("llama_cpp_path", str(Path.home() / "llama.cpp"))
     
