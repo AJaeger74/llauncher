@@ -166,6 +166,9 @@ def on_model_selected(window, model_name: str) -> None:
                 slider.setValue(ctx_length)
 
             # Update edit widget width for new max number
-            max_width = len(str(ctx_length)) * 9 + 15
-            edit.setMinimumWidth(max_width)
-            edit.setMaximumWidth(max_width)
+            # Skip if loading preset — apply_preset() already sets the correct width
+            # (based on effective_max which may exceed ctx_length)
+            if not getattr(window, 'loading_preset', False) and not getattr(window, 'loading_running_args', False):
+                max_width = len(str(ctx_length)) * 9 + 15
+                edit.setMinimumWidth(max_width)
+                edit.setMaximumWidth(max_width)
