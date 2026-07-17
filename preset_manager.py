@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
 )
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QPen
 from PyQt6.QtCore import QDate, QTime, Qt
 from i18n import I18nManager
 gettext = I18nManager.get_instance().gettext
@@ -349,6 +349,7 @@ class BenchmarkRatingDialog(QDialog):
                  gen_time=None, gen_tokens=None, gen_tps=None):
         super().__init__(window)
         self.setWindowTitle(gettext("dialog_rating_title"))
+        self.setWindowIcon(self._trophy_icon())
         self.setModal(True)
         self.setMinimumSize(480, 380)
         
@@ -480,6 +481,33 @@ class BenchmarkRatingDialog(QDialog):
         if seconds < 1:
             return f"{seconds*1000:.0f}ms"
         return f"{seconds:.2f}s"
+
+    def _trophy_icon(self):
+        """Generate a trophy emoji window icon."""
+        size = 32
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Draw trophy shape using simple paths
+        c = QColor("#FFD700")
+        painter.setPen(QColor("#DAA520"))
+        painter.setBrush(c)
+        # Cup body
+        painter.drawEllipse(int(size * 0.15), int(size * 0.2), int(size * 0.7), int(size * 0.4))
+        # Stem
+        painter.drawRect(int(size * 0.42), int(size * 0.58), int(size * 0.16), int(size * 0.22))
+        # Base
+        painter.drawRect(int(size * 0.2), int(size * 0.78), int(size * 0.6), int(size * 0.1))
+        # Handle left
+        painter.setBrush(Qt.GlobalColor.transparent)
+        painter.setPen(QColor("#DAA520"))
+        painter.setPen(QPen(QColor("#DAA520"), 2))
+        painter.drawArc(int(size * 0.02), int(size * 0.2), int(size * 0.15), int(size * 0.3), 0, -90 * 16)
+        # Handle right
+        painter.drawArc(int(size * 0.83), int(size * 0.2), int(size * 0.15), int(size * 0.3), 0, 90 * 16)
+        painter.end()
+        return QIcon(pm)
     
     def get_quality(self):
         return self.quality_edit.text().strip()

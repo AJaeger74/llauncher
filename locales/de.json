@@ -70,7 +70,7 @@
   "lbl_no_presets_placeholder": "(keine vorhanden)",
   "msg_no_presets_title": "Keine Presets",
   "msg_no_presets_found": "Keine gespeicherten Presets gefunden.",
-  "dialog_rating_title": "Benchmark Ergebnisse",
+  "dialog_rating_title": "llauncher Benchmark Auswertung",
   "dialog_quality_title": "Qualität bewerten",
   "msg_benchmark_complete": "Benchmark abgeschlossen:\nTPS: {tps:.2f}\nTokens: {token_count}",
   "msg_benchmark_complete_title": "Benchmark Ergebnisse",
