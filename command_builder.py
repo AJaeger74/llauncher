@@ -138,7 +138,7 @@ def _parse_custom_commands_text(text):
     """Parses custom command text field content into a list of command-line arguments.
     
     Handles space-separated 'key value' format and bare flags.
-    Also supports '=' as separator (e.g., '--key=value') for manual entries.
+    Lines starting with '-' that contain '=' are kept as-is (--flag=value as single arg).
     Single-quoted values (e.g., '--key 'value with spaces'') are properly handled.
     
     Args:
@@ -156,18 +156,15 @@ def _parse_custom_commands_text(text):
         if not line or line.startswith('#'):  # Skip empty lines and comments
             continue
         
-        # Check for 'key=value' format (no spaces around '=')
-        if '=' in line:
-            parts = line.split('=', 1)
-            key = parts[0].strip()
-            value = parts[1].strip()
-            # Strip surrounding quotes from value
-            if value and len(value) >= 2:
-                if (value.startswith("'") and value.endswith("'")) or \
-                   (value.startswith('"') and value.endswith('"')):
-                    value = value[1:-1]
-            args.append(key)
-            args.append(value)
+        # If line starts with a flag (- or --) and contains '=', keep as single arg
+        # (--param=value must stay as one token for subprocess, not split into two)
+        if '=' in line and (line.startswith('-') or line.startswith('--')):
+            # Strip surrounding quotes from the whole line if present
+            if len(line) >= 2:
+                if (line.startswith("'") and line.endswith("'")) or \
+                   (line.startswith('"') and line.endswith('"')):
+                    line = line[1:-1]
+            args.append(line)
         else:
             # Space-separated: 'key value' or bare flag
             parts = line.split(None, 1)
