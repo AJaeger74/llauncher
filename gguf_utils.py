@@ -5,6 +5,7 @@ llauncher – GGUF Utilities
 
 import os
 import struct
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -41,6 +42,84 @@ def _read_string_content(data: bytes, start: int, max_len: int = 256) -> tuple[s
         return data[start:end].decode('utf-8'), end
     except:
         return data[start:end].decode('latin-1'), end
+
+
+def read_gguf_integer(path: str, key_name: str, min_val: int = 0, max_val: int = 10000000) -> Optional[int]:
+    """Read an integer value from GGUF by key name.
+    
+    Supports uint32, uint64, int32. Validates the parsed value is within [min_val, max_val].
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read(50 * 1024)
+        
+        if len(data) < 8 or data[0:4] != b"GGUF":
+            return None
+        
+        idx = data.find(key_name.encode('utf-8'))
+        if idx == -1:
+            return None
+        
+        key_end = idx + len(key_name)
+        
+        # Try uint64 (type 3 in GGUF)
+        if key_end + 12 <= len(data):
+            type_byte = data[key_end:key_end+1][0]
+            if type_byte == 3:
+                val = struct.unpack('<Q', data[key_end+4:key_end+12])[0]
+                if min_val <= val <= max_val:
+                    return val
+            else:
+                # Try raw uint64 without type check
+                val = struct.unpack('<Q', data[key_end+4:key_end+12])[0]
+                if min_val <= val <= max_val:
+                    return val
+        
+        # Try uint32 (type 2)
+        if key_end + 8 <= len(data):
+            val = struct.unpack('<I', data[key_end+4:key_end+8])[0]
+            if min_val <= val <= max_val:
+                return val
+            
+            # Try int32 (type 6)
+            val = struct.unpack('<i', data[key_end+4:key_end+8])[0]
+            if min_val <= val <= max_val:
+                return val
+        
+        return None
+    except Exception:
+        return None
+
+
+def read_gguf_float(path: str, key_name: str) -> Optional[float]:
+    """Read a float32 value from GGUF by key name."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(50 * 1024)
+        
+        if len(data) < 8 or data[0:4] != b"GGUF":
+            return None
+        
+        idx = data.find(key_name.encode('utf-8'))
+        if idx == -1:
+            return None
+        
+        key_end = idx + len(key_name)
+        
+        # Try float32 (type 1)
+        if key_end + 8 <= len(data):
+            type_byte = data[key_end:key_end+1][0]
+            if type_byte == 1:
+                return struct.unpack('<f', data[key_end+4:key_end+8])[0]
+            else:
+                # Try raw float32
+                val = struct.unpack('<f', data[key_end+4:key_end+8])[0]
+                if 0 < val < 1e10:
+                    return val
+        
+        return None
+    except Exception:
+        return None
 
 
 def read_gguf_context_length(path: str) -> Optional[int]:
@@ -251,7 +330,38 @@ def get_model_info(path: str) -> Dict[str, Any]:
     ctx_len = read_gguf_context_length(path)
     tensor_count = read_gguf_tensor_count(path)
     
-    return {
+    # Architecture-specific prefix for metadata keys
+    # Try both the arch-specific prefix and generic fallbacks
+    block_count = (
+        read_gguf_integer(path, f"{arch}.block_count", min_val=1, max_val=500) or
+        read_gguf_integer(path, "block_count", min_val=1, max_val=500)
+    )
+    embedding_length = (
+        read_gguf_integer(path, f"{arch}.embedding_length", min_val=1, max_val=3000000) or
+        read_gguf_integer(path, "embedding_length", min_val=1, max_val=3000000)
+    )
+    
+    # Attention parameters for VRAM calculation
+    head_count = (
+        read_gguf_integer(path, f"{arch}.attention.head_count", min_val=1, max_val=500) or
+        read_gguf_integer(path, "attention.head_count", min_val=1, max_val=500)
+    )
+    key_head_count = (
+        read_gguf_integer(path, f"{arch}.attention.key_head_count", min_val=1, max_val=500) or
+        read_gguf_integer(path, "attention.key_head_count", min_val=1, max_val=500)
+    )
+    # For GQA: key_head_count < head_count; for MHA: key_head_count == head_count
+    # Fallback: assume MHA (key_head_count == head_count), default to 1 if unknown
+    if key_head_count is None:
+        key_head_count = head_count if head_count is not None else 1
+    
+    # Feed-forward dimension (for expert/MoE models)
+    ff_length = (
+        read_gguf_integer(path, f"{arch}.feed_forward_length", min_val=1, max_val=10000000) or
+        read_gguf_integer(path, "feed_forward_length", min_val=1, max_val=10000000)
+    )
+    
+    result = {
         "filename": Path(path).name,
         "arch": arch,
         "name": name,
@@ -259,4 +369,136 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "file_size": stat.st_size,
         "version": version,
         "tensor_count": tensor_count,
+        "block_count": block_count,
+        "embedding_length": embedding_length,
+        "head_count": head_count,
+        "key_head_count": key_head_count,
+        "ff_length": ff_length,
+    }
+    
+    # Remove None values for cleaner output
+    return {k: v for k, v in result.items() if v is not None}
+
+
+def read_gpu_vram() -> Optional[Dict[str, int]]:
+    """Query nvidia-smi for GPU VRAM info.
+    
+    Returns dict with total_mb, used_mb, free_mb or None if GPU not available.
+    """
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total,memory.used", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        
+        values = [v.strip() for v in result.stdout.strip().split(",")]
+        total_mb = int(values[0])
+        used_mb = int(values[1])
+        return {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "free_mb": total_mb - used_mb,
+        }
+    except Exception:
+        return None
+
+
+# KV cache type sizes in bytes per element
+KV_CACHE_TYPE_SIZES = {
+    "f32": 4,
+    "f16": 2,
+    "bf16": 2,
+    "q8_0": 1,
+    "q4_0": 0.5,
+    "q4_1": 0.5,
+    "iq4_nl": 0.5,
+    "q5_0": 0.625,
+    "q5_1": 0.625,
+}
+
+
+def estimate_vram(
+    model_info: Dict[str, Any],
+    ngl: int = 0,
+    ctx_size: int = 4096,
+    np_slots: int = 1,
+    cache_type_k: str = "f16",
+    cache_type_v: str = "f16",
+) -> Dict[str, Any]:
+    """Estimate VRAM usage for a model given the current parameters.
+    
+    Args:
+        model_info: Output of get_model_info() — needs file_size, block_count,
+                    embedding_length, head_count, key_head_count.
+        ngl: Number of GPU layers (0 = CPU-only, -1 = all layers).
+        ctx_size: Context size in tokens.
+        np_slots: Number of parallel slots (default 1, -1 treated as 1).
+        cache_type_k: KV cache type for keys (e.g. "f16", "q4_0").
+        cache_type_v: KV cache type for values.
+    
+    Returns dict with:
+        model_vram_mb: Estimated model weight VRAM in MB
+        cache_vram_mb: Estimated KV cache VRAM in MB
+        total_vram_mb: Total estimated VRAM in MB
+        fit_status: "fit", "partial", or "nofit"
+    """
+    file_size = model_info.get("file_size", 0)
+    block_count = model_info.get("block_count")
+    embedding_length = model_info.get("embedding_length")
+    head_count = model_info.get("head_count")
+    key_head_count = model_info.get("key_head_count") or head_count
+    
+    if np_slots < 0 or np_slots == 0:
+        np_slots = 1
+    
+    # Model weights VRAM estimation:
+    # The file size on disk is the quantized size. When loaded into VRAM,
+    # llama.cpp keeps the quantized format — so file_size is a good lower bound.
+    # However, the actual GPU memory includes the quantized data plus workspace.
+    # For a rough estimate: file_size * 1.05 (5% overhead for quant format metadata)
+    model_vram_bytes = file_size * 1.05 if file_size > 0 else 0
+    
+    # If ngl == 0, model stays on CPU — no model weights in VRAM
+    if ngl <= 0:
+        model_vram_bytes = 0
+    elif ngl < 0:
+        # ngl == -1 means "all layers" — treat as full model
+        pass  # model_vram_bytes stays as calculated
+    
+    # KV Cache estimation:
+    # Each token in context needs: n_kv_heads * (head_dim) * 2 (K + V) * dtype_size bytes
+    # head_dim = embedding_length / head_count
+    if embedding_length and head_count:
+        head_dim = embedding_length // head_count
+        bytes_per_token_per_head = head_dim
+        
+        cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16 = 2
+        cache_bytes_v = KV_CACHE_TYPE_SIZES.get(cache_type_v, 2)
+        
+        # KV cache per slot: ctx * key_heads * head_dim * (bytes_k + bytes_v)
+        kv_cache_per_slot = ctx_size * key_head_count * bytes_per_token_per_head * (cache_bytes_k + cache_bytes_v)
+        
+        # Also account for RoPE embeddings (usually small, ~ctx * embedding_length * 1 byte)
+        rope_per_slot = ctx_size * embedding_length * 1
+        
+        total_cache_bytes = (kv_cache_per_slot + rope_per_slot) * np_slots
+    else:
+        # Fallback: estimate ~2 bytes per token per dimension (f16)
+        # Very rough: file_size / (block_count + 1) gives ~bytes per layer
+        # Cache ≈ ctx * embedding_length * 2 (K+V) * 2 (f16) * slots
+        if embedding_length:
+            total_cache_bytes = ctx_size * embedding_length * 4 * np_slots
+        else:
+            total_cache_bytes = 0
+    
+    model_vram_mb = model_vram_bytes / (1024 * 1024)
+    cache_vram_mb = total_cache_bytes / (1024 * 1024)
+    total_vram_mb = model_vram_mb + cache_vram_mb
+    
+    return {
+        "model_vram_mb": round(model_vram_mb, 1),
+        "cache_vram_mb": round(cache_vram_mb, 1),
+        "total_vram_mb": round(total_vram_mb, 1),
     }

@@ -280,21 +280,109 @@ def on_param_changed(window) -> None:
                 cache_type_k = val
             else:
                 cache_type_v = val
-    
+
     # Debug-Feld leeren und neue KV-Zeile + Kommando schreiben
     try:
         window.debug_text.clear()
         window.debug_text.append(f"KV-K: {cache_type_k} | KV-V: {cache_type_v}")
     except Exception:
         pass
-    
+
     # Command direkt aus UI-Werten bauen — ohne laufenden Prozess zu berücksichtigen
     args = get_current_args(window)
-    
+
     # Custom Commands Feld auslesen
     if hasattr(window, 'custom_cmd_edit') and window.custom_cmd_edit:
         custom_text = window.custom_cmd_edit.toPlainText()
         custom_args = _parse_custom_commands_text(custom_text)
         args.extend(custom_args)
-    
+
     window.debug_text.append(" ".join(args))
+
+
+# The following _append_vram_estimate function was replaced by live GPU stats in
+# window.update_gpu_display(). Kept for reference but no longer called.
+
+
+def _append_vram_estimate(window) -> None:
+    """Append a compact VRAM estimation line to debug output.
+
+    Uses the cached _model_info dict set by llauncher.on_model_selected().
+    """
+    info = getattr(window, '_model_info', None)
+    if not info or not info.get('file_size'):
+        return
+
+    try:
+        from gguf_utils import read_gpu_vram, estimate_vram
+    except ImportError:
+        return
+
+    # Read current params
+    param_sliders = getattr(window, 'param_sliders', {})
+    if not param_sliders:
+        return
+
+    ctx_size = 4096
+    c_slider = param_sliders.get("-c", {})
+    if c_slider:
+        s = c_slider.get("slider")
+        if s:
+            ctx_size = s.value()
+
+    ngl = 0
+    ngl_slider = param_sliders.get("-ngl", {})
+    if ngl_slider:
+        s = ngl_slider.get("slider")
+        if s:
+            ngl = s.value()
+        if hasattr(window, "ngl_all_checkbox") and window.ngl_all_checkbox.isChecked():
+            ngl = -1
+
+    np_slots = 1
+    np_slider = param_sliders.get("-np", {})
+    if np_slider:
+        s = np_slider.get("slider")
+        if s:
+            np_slots = s.value()
+
+    k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
+    cache_type_k = k_combo.currentText() if k_combo else "f16"
+    v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
+    cache_type_v = v_combo.currentText() if v_combo else "f16"
+
+    if ngl <= 0:
+        return  # CPU mode — no VRAM needed
+
+    try:
+        vram = estimate_vram(
+            model_info=info,
+            ngl=ngl,
+            ctx_size=ctx_size,
+            np_slots=np_slots,
+            cache_type_k=cache_type_k,
+            cache_type_v=cache_type_v,
+        )
+        total_mb = vram["total_vram_mb"]
+        model_mb = vram["model_vram_mb"]
+        cache_mb = vram["cache_vram_mb"]
+        total_gb = total_mb / 1024
+
+        gpu = read_gpu_vram()
+        if gpu:
+            free_mb = gpu["free_mb"]
+            if total_mb <= free_mb:
+                status = "✓"  # fits
+            elif total_mb <= gpu["total_mb"]:
+                status = "⚠"  # partial
+            else:
+                status = "✗"  # no fit
+            vram_line = f"VRAM: {total_gb:.2f} GB (model {model_mb:.0f} MB + cache {cache_mb:.1f} MB) | GPU free: {free_mb} MB {status}"
+        else:
+            vram_line = f"VRAM: {total_gb:.2f} GB (model {model_mb:.0f} MB + cache {cache_mb:.1f} MB) | GPU query unavailable"
+
+        ngl_display = "all" if ngl < 0 else str(ngl)
+        vram_line += f" [ngl={ngl_display}, ctx={ctx_size}, slots={np_slots}]"
+        window.debug_text.append(vram_line)
+    except Exception:
+        pass  # Silent fail — don't break debug output

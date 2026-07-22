@@ -742,7 +742,7 @@ def build_llauncher_ui(window):
 
     # ========== GPU-MONITOR SOFORT STARTEN ==========
     window.gpu_monitor = GPUMonitor()
-    window.gpu_monitor.gpu_update.connect(lambda data: update_gpu_display(window.stats_label, data))
+    window.gpu_monitor.gpu_update.connect(lambda data: window.update_gpu_display(data))
     window.gpu_monitor.start()
 
 

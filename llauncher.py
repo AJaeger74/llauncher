@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 # Importiere GGUF-Utilities aus separater Datei
-from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size, read_gguf_tensor_count
+from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size, read_gguf_tensor_count, read_gpu_vram, estimate_vram
 from help_parser import parse_cache_type_options
 from storage import (
     load_config, save_config, load_presets, save_presets,
@@ -866,6 +866,15 @@ class llauncher(QMainWindow):
                     self.debug_text.append(f"  {t('debug_block_count')}      {info['block_count']}")
                 
                 self.debug_text.append("─" * 60)
+
+                # Cache model info on window for live VRAM updates in on_param_changed()
+                self._model_info = info
+
+                # VRAM estimation
+                self._display_vram_estimate(info)
+
+                self.debug_text.append("")
+                self.debug_text.append("─" * 60)
             except Exception as e:
                 self.debug_text.append(f"⚠️ {t('msg_model_info_read_error', error=e)}")
         
@@ -900,6 +909,160 @@ class llauncher(QMainWindow):
         save_config({
             "selected_model": str(model_path),
         })
+
+    def _get_vram_estimate_gb(self) -> float:
+        """Return estimated VRAM usage in GB based on current model + params."""
+        info = getattr(self, '_model_info', None)
+        if not info or not info.get('file_size'):
+            return 0.0
+        param_sliders = getattr(self, 'param_sliders', None)
+        if not param_sliders:
+            return 0.0
+
+        ctx_size = 4096
+        c_slider = param_sliders.get("-c", {})
+        if c_slider:
+            s = c_slider.get("slider")
+            if s:
+                ctx_size = s.value()
+
+        ngl = 0
+        ngl_slider = param_sliders.get("-ngl", {})
+        if ngl_slider:
+            s = ngl_slider.get("slider")
+            if s:
+                ngl = s.value()
+            if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
+                ngl = -1
+
+        if ngl <= 0:
+            return 0.0  # CPU mode
+
+        np_slots = 1
+        np_slider = param_sliders.get("-np", {})
+        if np_slider:
+            s = np_slider.get("slider")
+            if s:
+                np_slots = s.value()
+
+        k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
+        cache_type_k = k_combo.currentText() if k_combo else "f16"
+        v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
+        cache_type_v = v_combo.currentText() if v_combo else "f16"
+
+        try:
+            vram = estimate_vram(
+                model_info=info, ngl=ngl, ctx_size=ctx_size,
+                np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
+            )
+            return vram["total_vram_mb"] / 1024
+        except Exception:
+            return 0.0
+
+    def update_gpu_display(self, data: dict) -> None:
+        """Update the GPU stats label with current data + VRAM estimation."""
+        power_str = f"{data.get('power_draw', 0.0):.1f}W" if data.get("power_draw") else "--W"
+        total_gb = data["total_mb"] / 1024
+        used_gb = data["used_mb"] / 1024
+        estimated_gb = self._get_vram_estimate_gb()
+
+        if estimated_gb > 0:
+            # Show estimated vs available: estimate/total | used/free
+            status = "✓" if estimated_gb <= total_gb else "⚠" if estimated_gb <= total_gb * 1.2 else "✗"
+            stats = (
+                f"GPU: {data['gpu_usage']}% | VRAM: {estimated_gb:.1f}/{total_gb:.1f} GB {status} | "
+                f"{used_gb:.1f}/{total_gb:.1f} GB | Temp: {data['temp']}°C | Power: {power_str}"
+            )
+        else:
+            stats = (
+                f"GPU: {data['gpu_usage']}% | VRAM: {data['used_mb']}/{data['total_mb']}MB | "
+                f"Temp: {data['temp']}°C | Power: {power_str}"
+            )
+        self.stats_label.setText(stats)
+
+    def _display_vram_estimate(self, info: dict):
+        """Display VRAM estimation in debug output (on model selection)."""
+        estimated_gb = self._get_vram_estimate_gb()
+        total_gb_text = ""
+
+        # Read ngl for CPU-mode check
+        ngl = 0
+        param_sliders = getattr(self, 'param_sliders', None)
+        if param_sliders:
+            ngl_slider = param_sliders.get("-ngl", {})
+            if ngl_slider:
+                s = ngl_slider.get("slider")
+                if s:
+                    ngl = s.value()
+                if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
+                    ngl = -1
+
+        from gguf_utils import read_gpu_vram
+        gpu = read_gpu_vram()
+
+        # Initialize display variables
+        model_mb = 0.0
+        model_gb = 0.0
+        cache_gb = 0.0
+        fit = ""
+
+        if gpu:
+            total_gb = gpu["total_mb"] / 1024
+            free_gb = gpu["free_mb"] / 1024
+            total_gb_text = f" (GPU gesamt: {total_gb:.1f} GB, frei: {free_gb:.1f} GB)"
+
+            if estimated_gb > 0:
+                if estimated_gb <= gpu["free_mb"] / 1024:
+                    fit = t('debug_vram_fit')
+                elif estimated_gb <= total_gb:
+                    fit = t('debug_vram_partial')
+                else:
+                    fit = t('debug_vram_nofit')
+
+            model_mb = info.get('file_size', 0) * 1.05 / (1024 * 1024)
+            model_gb = model_mb / 1024
+            cache_gb = estimated_gb - model_gb if estimated_gb > model_gb else 0
+
+        self.debug_text.append("")
+        self.debug_text.append(f"  ┃ {t('debug_vram_section')}{total_gb_text}")
+
+        if ngl <= 0:
+            self.debug_text.append(f"  ┃ {t('debug_vram_cpu_only')}")
+        elif estimated_gb > 0 and gpu:
+            self.debug_text.append(f"  ┃ {t('debug_vram_model')} {model_gb:.1f} GB ({model_mb:.0f} MB)")
+            self.debug_text.append(f"  ┃ {t('debug_vram_cache')} {cache_gb:.2f} GB")
+            self.debug_text.append(f"  ┃ {t('debug_vram_total')} {estimated_gb:.2f} GB")
+            self.debug_text.append(f"  ┃ {fit}")
+
+            ctx_size = 4096
+            if param_sliders:
+                c_slider = param_sliders.get("-c", {})
+                if c_slider:
+                    s = c_slider.get("slider")
+                    if s:
+                        ctx_size = s.value()
+                np_slots = 1
+                np_slider = param_sliders.get("-np", {})
+                if np_slider:
+                    s = np_slider.get("slider")
+                    if s:
+                        np_slots = s.value()
+                k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
+                cache_type_k = k_combo.currentText() if k_combo else "f16"
+                v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
+                cache_type_v = v_combo.currentText() if v_combo else "f16"
+            else:
+                np_slots = 1
+                cache_type_k = "f16"
+                cache_type_v = "f16"
+            ngl_display = "all" if ngl < 0 else str(ngl)
+            cache_display = f"{cache_type_k}/{cache_type_v}"
+            note = t("debug_vram_ngl_note").format(
+                ngl=ngl_display, ctx=ctx_size, slots=np_slots, cache=cache_display
+            )
+            self.debug_text.append(f"  ┃ {note}")
+        else:
+            self.debug_text.append(f"  ┃ {t('debug_vram_unavailable')}")
 
     def on_slider_changed(self, param_key: str, value: int):
         pass

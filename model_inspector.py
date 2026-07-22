@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any, Dict
 
 # Import GGUF utilities
-from gguf_utils import get_model_info as gguf_get_model_info, format_size, read_gguf_context_length, check_model_architecture
+from gguf_utils import (
+    get_model_info as gguf_get_model_info,
+    format_size,
+    read_gguf_context_length,
+    check_model_architecture,
+    read_gpu_vram,
+    estimate_vram,
+)
 
 
 def _format_file_size(size_bytes: int) -> str:
@@ -75,6 +82,122 @@ def _get_model_info(model_path: str) -> Dict[str, Any]:
     return result
 
 
+def _get_ui_params(window) -> Dict[str, Any]:
+    """Read current parameter values from the UI for VRAM estimation."""
+    params = {}
+    param_sliders = getattr(window, 'param_sliders', {})
+    param_defs = getattr(window, 'PARAM_DEFINITIONS', {})
+
+    # Context size (-c)
+    c_slider = param_sliders.get("-c", {})
+    if c_slider:
+        slider_widget = c_slider.get("slider")
+        params["ctx_size"] = slider_widget.value() if slider_widget else 4096
+    else:
+        params["ctx_size"] = 4096
+
+    # GPU layers (-ngl)
+    ngl_slider = param_sliders.get("-ngl", {})
+    if ngl_slider:
+        slider_widget = ngl_slider.get("slider")
+        ngl_value = slider_widget.value() if slider_widget else 0
+        if hasattr(window, "ngl_all_checkbox") and window.ngl_all_checkbox.isChecked():
+            ngl_value = -1
+        params["ngl"] = ngl_value
+    else:
+        params["ngl"] = 0
+
+    # Parallel slots (-np)
+    np_slider = param_sliders.get("-np", {})
+    if np_slider:
+        slider_widget = np_slider.get("slider")
+        params["np_slots"] = slider_widget.value() if slider_widget else 1
+    else:
+        params["np_slots"] = 1
+
+    # Cache types
+    k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
+    params["cache_type_k"] = k_combo.currentText() if k_combo else "f16"
+
+    v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
+    params["cache_type_v"] = v_combo.currentText() if v_combo else "f16"
+
+    return params
+
+
+def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
+    """Display VRAM estimation in debug output."""
+    try:
+        from i18n import I18nManager
+        gettext = I18nManager.get_instance().gettext
+    except Exception:
+        def gettext(key):
+            return key
+
+    params = _get_ui_params(window)
+    ngl = params["ngl"]
+    ctx_size = params["ctx_size"]
+    np_slots = params["np_slots"]
+    cache_type_k = params["cache_type_k"]
+    cache_type_v = params["cache_type_v"]
+
+    # Estimate VRAM
+    vram = estimate_vram(
+        model_info=model_info,
+        ngl=ngl,
+        ctx_size=ctx_size,
+        np_slots=np_slots,
+        cache_type_k=cache_type_k,
+        cache_type_v=cache_type_v,
+    )
+
+    # Guard: skip VRAM estimation if UI sliders not ready yet (e.g. during init)
+    param_sliders = getattr(window, 'param_sliders', None)
+    if not param_sliders:
+        return
+
+    # Get GPU info
+    gpu = read_gpu_vram()
+    window.debug_text.append("")
+    window.debug_text.append(f"  ┃ {gettext('debug_vram_section')}")
+    
+    if ngl <= 0:
+        # CPU mode
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_cpu_only')}")
+    else:
+        # Show model weights VRAM
+        model_mb = vram["model_vram_mb"]
+        cache_mb = vram["cache_vram_mb"]
+        total_mb = vram["total_vram_mb"]
+        total_gb = total_mb / 1024
+
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_model')} {total_gb:.1f} GB ({model_mb:.0f} MB)")
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_cache')} {cache_mb:.1f} MB")
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_total')} {total_gb:.2f} GB")
+
+        # Compare with GPU free memory
+        if gpu:
+            free_gb = gpu["free_mb"] / 1024
+            window.debug_text.append(f"  ┃ {gettext('debug_vram_free')} {free_gb:.2f} GB ({gpu['free_mb']} MB / {gpu['total_mb']} MB)")
+
+            if total_mb <= gpu["free_mb"]:
+                window.debug_text.append(f"  ┃ {gettext('debug_vram_fit')}")
+            elif total_mb <= gpu["total_mb"]:
+                window.debug_text.append(f"  ┃ {gettext('debug_vram_partial')}")
+            else:
+                window.debug_text.append(f"  ┃ {gettext('debug_vram_nofit')}")
+        else:
+            window.debug_text.append(f"  ┃ {gettext('debug_vram_unavailable')}")
+
+        # Show parameter note
+        ngl_display = "all" if ngl < 0 else str(ngl)
+        cache_display = f"{cache_type_k}/{cache_type_v}"
+        note = gettext("debug_vram_ngl_note").format(
+            ngl=ngl_display, ctx=ctx_size, slots=np_slots, cache=cache_display
+        )
+        window.debug_text.append(f"  ┃ {note}")
+
+
 def on_model_selected(window, model_name: str) -> None:
     """Handle model selection in the model combo box.
 
@@ -134,6 +257,15 @@ def on_model_selected(window, model_name: str) -> None:
                 window.debug_text.append(f"  {gettext('debug_embedding_length')}  {info['embedding_length']}")
             window.debug_text.append(f"  {gettext('debug_block_count')}      {info.get('block_count', '')}")
 
+            window.debug_text.append("\u2500" * 60)
+
+            # Cache model info on window for live VRAM updates
+            window._model_info = info
+
+            # VRAM estimation
+            _display_vram_estimate(window, info)
+
+            window.debug_text.append("")
             window.debug_text.append("\u2500" * 60)
 
             # Architektur-Prüfung: Warnung wenn Architektur nicht von llama.cpp unterstützt wird

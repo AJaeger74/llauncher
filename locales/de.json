@@ -238,5 +238,16 @@
   "msg_build_completed": "Build abgeschlossen, verstrichene Zeit: {elapsed}",
   "msg_clone_complete": "Clone erfolgreich. {fork_name}\nZiel: {path}",
   "msg_preset_loaded_cli": "Preset '{name}' per CLI geladen",
-  "msg_preset_not_found_cli": "Preset '{name}' nicht gefunden (ignoriere)"
+  "msg_preset_not_found_cli": "Preset '{name}' nicht gefunden (ignoriere)",
+  "debug_vram_section": "VRAM-Schätzung",
+  "debug_vram_model": "Model-Gewichte:",
+  "debug_vram_cache": "KV-Cache:",
+  "debug_vram_total": "Gesamt (geschätzt):",
+  "debug_vram_free": "GPU frei:",
+  "debug_vram_fit": "✓ Passt in den VRAM",
+  "debug_vram_partial": "⚠ Teilweise im VRAM — Fallback auf System-RAM wahrscheinlich",
+  "debug_vram_nofit": "✗ Passt NICHT in den VRAM — erwartet: OOM oder starker Fallback auf RAM",
+  "debug_vram_ngl_note": "(ngl={ngl}, ctx={ctx}, slots={slots}, cache={cache})",
+  "debug_vram_unavailable": "GPU-Abfrage nicht verfügbar",
+  "debug_vram_cpu_only": "CPU-Modus (ngl=0) — kein VRAM für Model-Gewichte"
 }
