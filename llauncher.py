@@ -951,9 +951,21 @@ class llauncher(QMainWindow):
         cache_type_v = v_combo.currentText() if v_combo else "f16"
 
         try:
+            # mmproj file size for vision models
+            mmproj_size = 0
+            mmproj = getattr(self, 'mmproj_line', None)
+            if mmproj and mmproj.text().strip():
+                try:
+                    from pathlib import Path
+                    p = Path(mmproj.text().strip())
+                    if p.exists():
+                        mmproj_size = p.stat().st_size
+                except Exception:
+                    pass
             vram = estimate_vram(
                 model_info=info, ngl=ngl, ctx_size=ctx_size,
                 np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
+                mmproj_size=mmproj_size,
             )
             return vram["total_vram_mb"] / 1024
         except Exception:
@@ -982,12 +994,10 @@ class llauncher(QMainWindow):
 
     def _display_vram_estimate(self, info: dict):
         """Display VRAM estimation in debug output (on model selection)."""
-        estimated_gb = self._get_vram_estimate_gb()
-        total_gb_text = ""
+        param_sliders = getattr(self, 'param_sliders', None)
 
         # Read ngl for CPU-mode check
         ngl = 0
-        param_sliders = getattr(self, 'param_sliders', None)
         if param_sliders:
             ngl_slider = param_sliders.get("-ngl", {})
             if ngl_slider:
@@ -997,20 +1007,60 @@ class llauncher(QMainWindow):
                 if hasattr(self, "ngl_all_checkbox") and self.ngl_all_checkbox.isChecked():
                     ngl = -1
 
+        # Read current params for estimate_vram call
+        ctx_size = 4096
+        np_slots = 1
+        cache_type_k = "f16"
+        cache_type_v = "f16"
+        if param_sliders:
+            c_slider = param_sliders.get("-c", {})
+            if c_slider:
+                s = c_slider.get("slider")
+                if s:
+                    ctx_size = s.value()
+            np_slider = param_sliders.get("-np", {})
+            if np_slider:
+                s = np_slider.get("slider")
+                if s:
+                    np_slots = s.value()
+            k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
+            cache_type_k = k_combo.currentText() if k_combo else "f16"
+            v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
+            cache_type_v = v_combo.currentText() if v_combo else "f16"
+
+        # mmproj file size
+        mmproj_size = 0
+        mmproj = getattr(self, 'mmproj_line', None)
+        if mmproj and mmproj.text().strip():
+            try:
+                from pathlib import Path
+                p = Path(mmproj.text().strip())
+                if p.exists():
+                    mmproj_size = p.stat().st_size
+            except Exception:
+                pass
+
+        # Calculate using estimate_vram
+        vram = estimate_vram(
+            model_info=info, ngl=ngl, ctx_size=ctx_size,
+            np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
+            mmproj_size=mmproj_size,
+        )
+
+        estimated_gb = vram["total_vram_mb"] / 1024
+        model_gb = vram["model_vram_mb"] / 1024
+        cache_gb = vram["cache_vram_mb"] / 1024
+        mmproj_gb = vram.get("mmproj_vram_mb", 0) / 1024
+
         from gguf_utils import read_gpu_vram
         gpu = read_gpu_vram()
 
-        # Initialize display variables
-        model_mb = 0.0
-        model_gb = 0.0
-        cache_gb = 0.0
+        total_gb_text = ""
         fit = ""
-
         if gpu:
             total_gb = gpu["total_mb"] / 1024
             free_gb = gpu["free_mb"] / 1024
             total_gb_text = f" (GPU gesamt: {total_gb:.1f} GB, frei: {free_gb:.1f} GB)"
-
             if estimated_gb > 0:
                 if estimated_gb <= gpu["free_mb"] / 1024:
                     fit = t('debug_vram_fit')
@@ -1019,42 +1069,19 @@ class llauncher(QMainWindow):
                 else:
                     fit = t('debug_vram_nofit')
 
-            model_mb = info.get('file_size', 0) * 1.05 / (1024 * 1024)
-            model_gb = model_mb / 1024
-            cache_gb = estimated_gb - model_gb if estimated_gb > model_gb else 0
-
         self.debug_text.append("")
         self.debug_text.append(f"  ┃ {t('debug_vram_section')}{total_gb_text}")
 
         if ngl <= 0:
             self.debug_text.append(f"  ┃ {t('debug_vram_cpu_only')}")
         elif estimated_gb > 0 and gpu:
-            self.debug_text.append(f"  ┃ {t('debug_vram_model')} {model_gb:.1f} GB ({model_mb:.0f} MB)")
-            self.debug_text.append(f"  ┃ {t('debug_vram_cache')} {cache_gb:.2f} GB")
-            self.debug_text.append(f"  ┃ {t('debug_vram_total')} {estimated_gb:.2f} GB")
+            self.debug_text.append(f"  ┃ {t('debug_vram_model')} {model_gb:.2f} GB ({vram['model_vram_mb']:.0f} MB)")
+            self.debug_text.append(f"  ┃ {t('debug_vram_cache')} {cache_gb:.2f} GB ({vram['cache_vram_mb']:.0f} MB)")
+            if mmproj_gb > 0:
+                self.debug_text.append(f"  ┃ mmproj             {mmproj_gb:.2f} GB ({vram['mmproj_vram_mb']:.0f} MB)")
+            self.debug_text.append(f"  ┃ {t('debug_vram_total')} {estimated_gb:.2f} GB ({vram['total_vram_mb']:.0f} MB)")
             self.debug_text.append(f"  ┃ {fit}")
 
-            ctx_size = 4096
-            if param_sliders:
-                c_slider = param_sliders.get("-c", {})
-                if c_slider:
-                    s = c_slider.get("slider")
-                    if s:
-                        ctx_size = s.value()
-                np_slots = 1
-                np_slider = param_sliders.get("-np", {})
-                if np_slider:
-                    s = np_slider.get("slider")
-                    if s:
-                        np_slots = s.value()
-                k_combo = param_sliders.get("--cache-type-k", {}).get("combo")
-                cache_type_k = k_combo.currentText() if k_combo else "f16"
-                v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
-                cache_type_v = v_combo.currentText() if v_combo else "f16"
-            else:
-                np_slots = 1
-                cache_type_k = "f16"
-                cache_type_v = "f16"
             ngl_display = "all" if ngl < 0 else str(ngl)
             cache_display = f"{cache_type_k}/{cache_type_v}"
             note = t("debug_vram_ngl_note").format(

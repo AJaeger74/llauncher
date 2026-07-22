@@ -426,6 +426,7 @@ def estimate_vram(
     np_slots: int = 1,
     cache_type_k: str = "f16",
     cache_type_v: str = "f16",
+    mmproj_size: int = 0,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
     
@@ -437,6 +438,7 @@ def estimate_vram(
         np_slots: Number of parallel slots (default 1, -1 treated as 1).
         cache_type_k: KV cache type for keys (e.g. "f16", "q4_0").
         cache_type_v: KV cache type for values.
+        mmproj_size: Size of mmproj file in bytes (for vision models).
     
     Returns dict with:
         model_vram_mb: Estimated model weight VRAM in MB
@@ -454,18 +456,34 @@ def estimate_vram(
         np_slots = 1
     
     # Model weights VRAM estimation:
-    # The file size on disk is the quantized size. When loaded into VRAM,
-    # llama.cpp keeps the quantized format — so file_size is a good lower bound.
-    # However, the actual GPU memory includes the quantized data plus workspace.
-    # For a rough estimate: file_size * 1.05 (5% overhead for quant format metadata)
-    model_vram_bytes = file_size * 1.05 if file_size > 0 else 0
+    # Quantized weights stay in quant format in VRAM. The file_size is a good
+    # base, but we need to account for partial offload and overhead.
+    #
+    # The GGUF contains: token embedding (tok_embd) + N transformer blocks +
+    # output projection (output). Only the ngl blocks go to GPU.
+    #
+    # Estimate: each block ≈ file_size / (block_count + 2)
+    # The +2 accounts for tok_embd and output projection which always go to GPU
+    # when ngl > 0.
     
-    # If ngl == 0, model stays on CPU — no model weights in VRAM
     if ngl <= 0:
+        # CPU only — model stays in system RAM
         model_vram_bytes = 0
-    elif ngl < 0:
-        # ngl == -1 means "all layers" — treat as full model
-        pass  # model_vram_bytes stays as calculated
+    elif block_count and block_count > 0:
+        # Partial or full offload — calculate GPU fraction
+        # Non-block weights (embedding + output) always go to GPU with any ngl
+        bytes_per_unit = file_size / (block_count + 2)
+        gpu_units = min(ngl, block_count) + 2  # ngl blocks + embedding + output
+        model_vram_bytes = bytes_per_unit * gpu_units
+    else:
+        # Fallback: no block info, assume full model
+        model_vram_bytes = file_size if file_size > 0 else 0
+    
+    # GPU overhead: llama.cpp allocates buffers that scale with context/session
+    # size (compute buffers, positional tables, scratch space). 10% overhead
+    # accounts for this — observed to grow with larger session sizes.
+    if model_vram_bytes > 0:
+        model_vram_bytes = model_vram_bytes * 1.10
     
     # KV Cache estimation:
     # Each token in context needs: n_kv_heads * (head_dim) * 2 (K + V) * dtype_size bytes
@@ -495,10 +513,17 @@ def estimate_vram(
     
     model_vram_mb = model_vram_bytes / (1024 * 1024)
     cache_vram_mb = total_cache_bytes / (1024 * 1024)
-    total_vram_mb = model_vram_mb + cache_vram_mb
+    
+    # mmproj: Vision models load the projector in f32 into VRAM.
+    # The file on disk may be quantized, but llama.cpp loads it as float32.
+    # Approximate: mmproj_size * 2 (quantized → f32 expansion)
+    mmproj_mb = (mmproj_size * 2 / (1024 * 1024)) if mmproj_size > 0 else 0
+    
+    total_vram_mb = model_vram_mb + cache_vram_mb + mmproj_mb
     
     return {
         "model_vram_mb": round(model_vram_mb, 1),
         "cache_vram_mb": round(cache_vram_mb, 1),
+        "mmproj_vram_mb": round(mmproj_mb, 1),
         "total_vram_mb": round(total_vram_mb, 1),
     }
