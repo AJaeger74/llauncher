@@ -632,8 +632,13 @@ def read_gpu_vram() -> Optional[Dict[str, int]]:
 
 # KV cache type sizes in bytes per element
 # Standard: exact bytes/value from GGML block layout (block_size=32)
-# Turbo:   bytes/value from block_turbo{2,3,4}_0 structs (block_size=128)
-# Source:  ggml/src/ggml-common.h, ggml/src/ggml.c (type_traits)
+# Turbo:   bytes/value from block_turbo{2,3,4,8}_0 structs (block_size varies)
+# TCQ:     bytes/value from block_turbo{1,2,3}_tcq structs (block_size=128)
+# Source:  ggml/src/ggml-common.h (buun-llama-cpp master), ggml/src/ggml.c (type_traits)
+#
+# VBR (Variable Bit Rate) is a dynamic mode that degrades layer-by-layer.
+# When VBR is active, estimate_vram() uses --vbr-vram budget if set,
+# otherwise falls back to the floor tier for estimation.
 KV_CACHE_TYPE_SIZES = {
     # Full precision
     "f32": 4.0,
@@ -646,14 +651,26 @@ KV_CACHE_TYPE_SIZES = {
     "iq4_nl": 0.625,  # 20 / 32 = 5 bits/value
     "q5_0": 0.6875,   # 22 / 32 = 5.5 bits/value
     "q5_1": 0.75,     # 24 / 32 = 6 bits/value
-    # TurboQuant (block_size=128) — TheTom/llama-cpp-turboquant
-    "turbo2_0": 0.265625,  # 34 / 128 = 2.125 bits/value (norm 2 + qs 32)
-    "turbo3_0": 0.390625,  # 50 / 128 = 3.125 bits/value (norm 2 + qs 32 + signs 16)
-    "turbo4_0": 0.53125,   # 68 / 128 = 4.25 bits/value
-    # Aliases (tcq naming used in some forks)
-    "turbo2_tcq": 0.265625,
-    "turbo3_tcq": 0.390625,
-    "turbo4_tcq": 0.53125,
+    # TurboQuant — PolarQuant (from ggml-common.h block_turbo*_0)
+    # turbo2: block_size=32, 10 bytes total
+    "turbo2": 0.3125,       # 10 / 32 = 2.5 bits/value
+    "turbo2_0": 0.3125,
+    # turbo3: block_size=128, 50 bytes total (norm 2 + qs 32 + signs 16)
+    "turbo3": 0.390625,     # 50 / 128 = 3.125 bits/value
+    "turbo3_0": 0.390625,
+    # turbo4: block_size=128, 66 bytes total (norm 2 + qs 64)
+    "turbo4": 0.515625,     # 66 / 128 = 4.125 bits/value
+    "turbo4_0": 0.515625,
+    # turbo8: block_size=128, 130 bytes total (norm 2 + qs 128)
+    "turbo8": 1.015625,     # 130 / 128 = 8.125 bits/value
+    "turbo8_0": 1.015625,
+    # TurboQuant — TCQ (Trellis-Coded Quantization) (from ggml-common.h block_turbo*_tcq)
+    # turbo3_tcq: block_size=128, 52 bytes total (norm 2 + qs 49 + pad 1)
+    "turbo3_tcq": 0.40625,  # 52 / 128 = 3.25 bits/value
+    # turbo2_tcq: block_size=128, 36 bytes total (norm 2 + qs 33 + pad 1)
+    "turbo2_tcq": 0.28125,  # 36 / 128 = 2.25 bits/value
+    # turbo1_tcq: block_size=128, 20 bytes total (norm 2 + qs 17 + pad 1)
+    "turbo1_tcq": 0.15625,  # 20 / 128 = 1.25 bits/value
     # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
     "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
 }
@@ -667,6 +684,7 @@ def estimate_vram(
     cache_type_k: str = "f16",
     cache_type_v: str = "f16",
     mmproj_size: int = 0,
+    vbr_vram_mb: int | None = None,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
 
@@ -681,9 +699,11 @@ def estimate_vram(
         ngl: Number of GPU layers (0 = CPU-only, -1 = all layers).
         ctx_size: Context size in tokens.
         np_slots: Number of parallel slots (default 1, -1 treated as 1).
-        cache_type_k: KV cache type for keys (e.g. "f16", "q4_0").
+        cache_type_k: KV cache type for keys (e.g. "f16", "q4_0", "vbr").
         cache_type_v: KV cache type for values.
         mmproj_size: Size of mmproj file in bytes (for vision models).
+        vbr_vram_mb: VBR VRAM budget in MB (--vbr-vram). When set and cache_type
+                     is "vbr" on either side, this overrides the computed cache size.
 
     Returns dict with:
         model_vram_mb: Estimated model weight VRAM in MB
@@ -729,17 +749,27 @@ def estimate_vram(
     # ── KV Cache VRAM ───────────────────────────────────────────────
     # bytes_per_token = key_heads × head_dim × (cache_k_bytes + cache_v_bytes)
     # head_dim = embedding_length / head_count
-    if embedding_length and head_count:
+    use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
+    
+    if use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
+        # VBR with explicit budget — use the budget directly as cache size
+        # RoPE is still added on top (not part of VBR budget)
+        if embedding_length:
+            rope_bytes = ctx_size * embedding_length * np_slots
+        else:
+            rope_bytes = 0
+        total_cache_bytes = int(vbr_vram_mb * 1024 * 1024) + rope_bytes
+    elif embedding_length and head_count:
         head_dim = embedding_length // head_count
-
+        
         cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16
         cache_bytes_v = KV_CACHE_TYPE_SIZES.get(cache_type_v, 2)
-
+        
         kv_cache_per_slot = ctx_size * key_head_count * head_dim * (cache_bytes_k + cache_bytes_v)
-
+        
         # RoPE embeddings (small: ctx × embedding_length × 1 byte)
         rope_per_slot = ctx_size * embedding_length
-
+        
         total_cache_bytes = (kv_cache_per_slot + rope_per_slot) * np_slots
     else:
         # Fallback: rough f16 estimate
