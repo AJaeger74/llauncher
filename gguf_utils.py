@@ -631,16 +631,31 @@ def read_gpu_vram() -> Optional[Dict[str, int]]:
 
 
 # KV cache type sizes in bytes per element
+# Standard: exact bytes/value from GGML block layout (block_size=32)
+# Turbo:   bytes/value from block_turbo{2,3,4}_0 structs (block_size=128)
+# Source:  ggml/src/ggml-common.h, ggml/src/ggml.c (type_traits)
 KV_CACHE_TYPE_SIZES = {
-    "f32": 4,
-    "f16": 2,
-    "bf16": 2,
-    "q8_0": 1,
-    "q4_0": 0.5,
-    "q4_1": 0.5,
-    "iq4_nl": 0.5,
-    "q5_0": 0.625,
-    "q5_1": 0.625,
+    # Full precision
+    "f32": 4.0,
+    "f16": 2.0,
+    "bf16": 2.0,
+    # Quantized (block_size=32)
+    "q8_0": 1.0625,   # 34 / 32 = 8.5 bits/value
+    "q4_0": 0.625,    # 20 / 32 = 5 bits/value
+    "q4_1": 0.6875,   # 22 / 32 = 5.5 bits/value
+    "iq4_nl": 0.625,  # 20 / 32 = 5 bits/value
+    "q5_0": 0.6875,   # 22 / 32 = 5.5 bits/value
+    "q5_1": 0.75,     # 24 / 32 = 6 bits/value
+    # TurboQuant (block_size=128) — TheTom/llama-cpp-turboquant
+    "turbo2_0": 0.265625,  # 34 / 128 = 2.125 bits/value (norm 2 + qs 32)
+    "turbo3_0": 0.390625,  # 50 / 128 = 3.125 bits/value (norm 2 + qs 32 + signs 16)
+    "turbo4_0": 0.53125,   # 68 / 128 = 4.25 bits/value
+    # Aliases (tcq naming used in some forks)
+    "turbo2_tcq": 0.265625,
+    "turbo3_tcq": 0.390625,
+    "turbo4_tcq": 0.53125,
+    # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
+    "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
 }
 
 
