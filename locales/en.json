@@ -249,6 +249,7 @@
   "msg_preset_not_found_cli": "Preset '{name}' not found (ignoring)",
   "debug_vram_section": "VRAM Estimation",
   "debug_vram_gpu_info": "(GPU total: {total_gb:.1f} GB, free: {free_gb:.1f} GB)",
+  "tooltip_vram_estimate": "Estimated VRAM usage: {estimated:.1f} GB (GPU total: {total:.1f} GB, free: {free:.1f} GB)",
   "debug_vram_model": "Model weights:",
   "debug_vram_cache": "KV cache:",
   "debug_vram_total": "Total (estimated):",

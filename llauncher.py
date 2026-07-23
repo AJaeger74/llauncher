@@ -952,11 +952,17 @@ class llauncher(QMainWindow):
                 f"GPU: {data['gpu_usage']}% | VRAM: {estimated_gb:.1f}/{free_gb:.1f} GB {status_html} | "
                 f"{used_gb:.1f}/{total_gb:.1f} GB | Temp: {data['temp']}°C | Power: {power_str}"
             )
+            # Tooltip with estimation details
+            self.stats_label.setToolTip(t(
+                "tooltip_vram_estimate",
+                estimated=estimated_gb, total=total_gb, free=free_gb
+            ))
         else:
             stats = (
                 f"GPU: {data['gpu_usage']}% | VRAM: {data['used_mb']}/{data['total_mb']}MB | "
                 f"Temp: {data['temp']}°C | Power: {power_str}"
             )
+            self.stats_label.setToolTip("")
         self.stats_label.setText(stats)
 
     def _calibrate_vbr(self):

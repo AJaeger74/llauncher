@@ -248,6 +248,7 @@
   "msg_preset_not_found_cli": "Preset '{name}' nicht gefunden (ignoriere)",
   "debug_vram_section": "VRAM-Schätzung",
   "debug_vram_gpu_info": "(GPU gesamt: {total_gb:.1f} GB, frei: {free_gb:.1f} GB)",
+  "tooltip_vram_estimate": "Geschätzter VRAM-Verbrauch: {estimated:.1f} GB (GPU gesamt: {total:.1f} GB, frei: {free:.1f} GB)",
   "debug_vram_model": "Model-Gewichte:",
   "debug_vram_cache": "KV-Cache:",
   "debug_vram_total": "Gesamt (geschätzt):",
