@@ -540,6 +540,12 @@ def build_llauncher_ui(window):
 
     window.stats_label = QLabel(gettext("stats_label"))
 
+    # VBR Calibrate button (next to stats label)
+    window.vbr_calibrate_btn = QPushButton(gettext("btn_vbr_calibrate"))
+    window.vbr_calibrate_btn.setToolTip(gettext("tooltip_vbr_calibrate"))
+    window.vbr_calibrate_btn.setFixedWidth(80)
+    window.vbr_calibrate_btn.clicked.connect(window._calibrate_vbr)
+
     presets_frame = QFrame()
     presets_layout = QHBoxLayout(presets_frame)
 
@@ -607,6 +613,7 @@ def build_llauncher_ui(window):
     presets_layout.addStretch()
 
     stats_presets_row.addWidget(window.stats_label)
+    stats_presets_row.addWidget(window.vbr_calibrate_btn)
     stats_presets_row.addWidget(presets_frame)
 
     main_layout.addLayout(stats_presets_row)

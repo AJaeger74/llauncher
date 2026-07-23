@@ -954,6 +954,77 @@ class llauncher(QMainWindow):
             )
         self.stats_label.setText(stats)
 
+    def _calibrate_vbr(self):
+        """Query /slots API for live kv_bpv, isolate V-cache bpv, and update VRAM estimate."""
+        import urllib.request
+        import urllib.error
+
+        host = "127.0.0.1"
+        port = "8080"
+
+        # Read host/port from UI if set
+        host_edit = self.param_sliders.get("--host", {}).get("edit")
+        if host_edit and host_edit.text().strip():
+            host = host_edit.text().strip()
+
+        url = f"http://{host}:{port}/slots"
+        self.debug_text.append(t("msg_vbr_calibrating", url=url))
+
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                slots = json.loads(resp.read())
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as e:
+            self.debug_text.append(t("msg_vbr_cal_error", error=str(e)))
+            return
+
+        active_slot = None
+        for slot in slots:
+            if slot.get("n_prompt_tokens", 0) > 0:
+                active_slot = slot
+                break
+        if active_slot is None:
+            self.debug_text.append(t("msg_vbr_no_slot"))
+            return
+
+        kv_bpv = active_slot.get("kv_bpv")
+        n_tokens = active_slot.get("n_prompt_tokens", 0)
+        if kv_bpv is None or kv_bpv <= 0:
+            self.debug_text.append(t("msg_vbr_no_kvpbv"))
+            return
+
+        # K-cache type (q8_0 = 8.5 bpv)
+        cache_k = self.param_sliders.get("--cache-type-k", {}).get("combo")
+        cache_v = self.param_sliders.get("--cache-type-v", {}).get("combo")
+        k_type = cache_k.currentText() if cache_k else "f16"
+        v_type = cache_v.currentText() if cache_v else "f16"
+
+        # K bpv lookup
+        k_bpv_map = {"f16": 16.0, "q8_0": 8.5, "q4_0": 6.625, "q5_0": 7.125, "q5_1": 7.625}
+        k_bpv = k_bpv_map.get(k_type, 16.0)
+
+        # Isolate V bpv: kv_bpv = (k_bpv + v_bpv) / 2
+        v_bpv = (kv_bpv * 2) - k_bpv
+        v_bytes_per_value = v_bpv / 8.0
+
+        self.debug_text.append(
+            t("msg_vbr_result", kv_bpv=kv_bpv, k_bpv=k_bpv, k_type=k_type,
+              v_bpv=v_bpv, v_type=v_type, v_bytes=v_bytes_per_value, tokens=n_tokens)
+        )
+
+        # Store calibrated value for use in VRAM estimate
+        self._calibrated_v_bytes = v_bytes_per_value
+
+        # Re-run VRAM estimate with calibrated value
+        info = getattr(self, '_model_info', None)
+        if info:
+            self._display_vram_estimate(info)
+
+        # Update stats label with calibration info
+        if hasattr(self, 'stats_label'):
+            current_text = self.stats_label.text()
+            self.stats_label.setText(f"{current_text} | VBR: {v_bpv:.1f} bpv ({v_bytes_per_value:.4f} B/v)")
+
     def _read_vram_params(self) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
 
@@ -1116,7 +1187,7 @@ class llauncher(QMainWindow):
         if gpu:
             total_gb = gpu["total_mb"] / 1024
             free_gb = gpu["free_mb"] / 1024
-            total_gb_text = f" (GPU gesamt: {total_gb:.1f} GB, frei: {free_gb:.1f} GB)"
+            total_gb_text = t("debug_vram_gpu_info", total_gb=total_gb, free_gb=free_gb)
             if estimated_gb > 0:
                 if estimated_gb <= gpu["free_mb"] / 1024:
                     fit = t('debug_vram_fit')
