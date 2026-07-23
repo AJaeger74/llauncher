@@ -942,9 +942,14 @@ class llauncher(QMainWindow):
         if estimated_gb > 0:
             # Compare estimated against free VRAM (not total — overhead is included)
             free_gb = (data["total_mb"] - data["used_mb"]) / 1024
-            status = "✓" if estimated_gb <= free_gb else "⚠" if estimated_gb <= total_gb else "✗"
+            if estimated_gb <= free_gb:
+                status_html = '<span style="color: #66bb6a">✓</span>'
+            elif estimated_gb <= total_gb:
+                status_html = '<span style="color: #FF9800">⚠</span>'
+            else:
+                status_html = '<span style="color: #F44336">✗</span>'
             stats = (
-                f"GPU: {data['gpu_usage']}% | VRAM: {estimated_gb:.1f}/{free_gb:.1f} GB {status} | "
+                f"GPU: {data['gpu_usage']}% | VRAM: {estimated_gb:.1f}/{free_gb:.1f} GB {status_html} | "
                 f"{used_gb:.1f}/{total_gb:.1f} GB | Temp: {data['temp']}°C | Power: {power_str}"
             )
         else:
