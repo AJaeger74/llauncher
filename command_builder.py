@@ -351,7 +351,7 @@ def _append_vram_estimate(window) -> None:
     v_combo = param_sliders.get("--cache-type-v", {}).get("combo")
     cache_type_v = v_combo.currentText() if v_combo else "f16"
 
-    if ngl <= 0:
+    if ngl == 0:
         return  # CPU mode — no VRAM needed
 
     try:

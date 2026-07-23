@@ -382,7 +382,7 @@ def build_llauncher_ui(window):
                 
                 # Sync: Edit-Feld → Checkbox aktivieren wenn "all" im Feld steht
                 def on_ngl_edit_changed(text, checkbox=ngl_all_checkbox):
-                    if text.lower() == "all":
+                    if text.lower() in ("all", "-1"):
                         checkbox.setChecked(True)
                     
                 slider_dict["edit"].textChanged.connect(on_ngl_edit_changed)

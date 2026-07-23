@@ -454,8 +454,8 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
                 print(f"[DEBUG] Found slider={slider is not None}, edit={edit is not None}")
 
                 if slider and edit:
-                    # Special handling for -ngl "all"
-                    if actual_key == '-ngl' and value == 'all':
+                    # Special handling for -ngl "all" or "-1" (both mean all layers on GPU)
+                    if actual_key == '-ngl' and value in ('all', '-1'):
                         window.ngl_all_checkbox.setChecked(True)
                         slider.setValue(0)
                         edit.setText('all')

@@ -693,8 +693,12 @@ def estimate_vram(
     # Each block ≈ total_tensor_bytes / (block_count + 2)
     # Embedding + output always go to GPU when ngl > 0.
 
-    if ngl <= 0:
+    if ngl == 0:
+        # CPU-only mode — no weights on GPU
         model_vram_bytes = 0
+    elif ngl < 0:
+        # -ngl all — full model on GPU
+        model_vram_bytes = total_tensor_bytes
     elif block_count and block_count > 0:
         bytes_per_unit = total_tensor_bytes / (block_count + 2)
         gpu_units = min(ngl, block_count) + 2  # ngl blocks + embedding + output

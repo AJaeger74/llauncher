@@ -313,8 +313,8 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
                     args.append(value)
             
             else:  # Integer/Float-Slider
-                # Sonderfall: -ngl mit String "all" → direkt als String verwenden
-                if param_key == "-ngl" and isinstance(value, str) and value == "all":
+                # Sonderfall: -ngl mit String "all" oder "-1" → direkt als String verwenden
+                if param_key == "-ngl" and isinstance(value, str) and value in ("all", "-1"):
                     args.append(param_key)
                     args.append(value)
                     continue

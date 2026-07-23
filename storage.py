@@ -387,8 +387,8 @@ def apply_preset(window, preset: dict):
             slider_data = window.param_sliders[param_key]
             if isinstance(slider_data, dict):
                 slider = slider_data["slider"]
-                # Sonderfall: -ngl mit String "all" -> Edit auf "all", Slider auf 0
-                if param_key == "-ngl" and isinstance(value, str) and value == "all":
+                # Sonderfall: -ngl mit String "all" oder "-1" -> Edit auf "all", Slider auf 0
+                if param_key == "-ngl" and isinstance(value, str) and value in ("all", "-1"):
                     slider.setValue(0)
                     slider_data["edit"].setText("all")
                 else:
@@ -402,7 +402,7 @@ def apply_preset(window, preset: dict):
 
         # Sonderfall: -ngl mit "all" Checkbox -> Edit auf "all", Slider = 0 (unwichtig)
         if param_key == "-ngl":
-            ngl_all_value = preset.get("params", {}).get("-ngl") == "all" or preset.get("ngl_all", False)
+            ngl_all_value = preset.get("params", {}).get("-ngl") in ("all", "-1") or preset.get("ngl_all", False)
             has_checkbox = hasattr(window, "ngl_all_checkbox")
             checkbox_exists = window.ngl_all_checkbox if has_checkbox else None
             if has_checkbox and checkbox_exists:

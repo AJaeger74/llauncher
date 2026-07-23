@@ -919,7 +919,7 @@ class llauncher(QMainWindow):
 
         params = self._read_vram_params()
         ngl = params["ngl"]
-        if ngl <= 0:
+        if ngl == 0:
             return 0.0  # CPU mode
 
         try:
@@ -1036,7 +1036,7 @@ class llauncher(QMainWindow):
 
         # Only act if user wants GPU layers (ngl > 0 or checkbox "all")
         current_ngl = params["ngl"]
-        if current_ngl <= 0:
+        if current_ngl == 0:
             return  # CPU mode — no adjustment needed
 
         # Calculate suggested ngl
@@ -1128,7 +1128,7 @@ class llauncher(QMainWindow):
         self.debug_text.append("")
         self.debug_text.append(f"  ┃ {t('debug_vram_section')}{total_gb_text}")
 
-        if ngl <= 0:
+        if ngl == 0:
             self.debug_text.append(f"  ┃ {t('debug_vram_cpu_only')}")
         elif estimated_gb > 0 and gpu:
             self.debug_text.append(f"  ┃ {t('debug_vram_model')} {model_gb:.2f} GB ({vram['model_vram_mb']:.0f} MB)")

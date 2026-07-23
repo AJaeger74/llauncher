@@ -162,7 +162,7 @@ def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
     window.debug_text.append("")
     window.debug_text.append(f"  ┃ {gettext('debug_vram_section')}")
     
-    if ngl <= 0:
+    if ngl == 0:
         # CPU mode
         window.debug_text.append(f"  ┃ {gettext('debug_vram_cpu_only')}")
     else:
