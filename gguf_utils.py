@@ -673,6 +673,9 @@ KV_CACHE_TYPE_SIZES = {
     "turbo1_tcq": 0.15625,  # 20 / 128 = 1.25 bits/value
     # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
     "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
+    # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier
+    # Uses turbo8 as conservative baseline; actual usage degrades per layer
+    "vbr": 1.015625,  # same as turbo8 (8.125 bits/value)
 }
 
 
