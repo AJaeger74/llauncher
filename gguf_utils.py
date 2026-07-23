@@ -251,25 +251,246 @@ def format_size(bytes_size: int) -> str:
     return f"{bytes_size:.2f} PB"
 
 
+# GGML type → (block_size, type_size) for byte calculation
+# Covers all known llama.cpp quantization types.
+# block_size = number of elements per block
+# type_size  = number of bytes per block
+GGML_TYPE_SIZES = {
+    0:  (1, 4),   # GGML_TYPE_F32
+    1:  (1, 2),   # GGML_TYPE_F16
+    2:  (32, 20), # GGML_TYPE_Q4_0
+    3:  (32, 22), # GGML_TYPE_Q4_1
+    6:  (32, 22), # GGML_TYPE_Q5_0
+    7:  (32, 24), # GGML_TYPE_Q5_1
+    8:  (32, 34), # GGML_TYPE_Q8_0
+    9:  (32, 36), # GGML_TYPE_Q8_1
+    10: (16, 13), # GGML_TYPE_Q2_K
+    11: (32, 22), # GGML_TYPE_Q3_K
+    12: (32, 24), # GGML_TYPE_Q4_K
+    13: (32, 28), # GGML_TYPE_Q5_K
+    14: (32, 36), # GGML_TYPE_Q6_K
+    15: (32, 36), # GGML_TYPE_Q8_K
+    16: (256, 56),# GGML_TYPE_IQ2_XXS
+    17: (256, 76),# GGML_TYPE_IQ2_XS
+    18: (256, 56),# GGML_TYPE_IQ3_XXS
+    19: (256, 36),# GGML_TYPE_IQ1_S
+    20: (32, 20), # GGML_TYPE_IQ4_NL
+    21: (256, 68),# GGML_TYPE_IQ3_S
+    22: (256, 76),# GGML_TYPE_IQ2_S
+    23: (256, 68),# GGML_TYPE_IQ4_XS
+    24: (256, 76),# GGML_TYPE_IQ2_M
+    25: (1, 1),   # GGML_TYPE_I8
+    26: (1, 2),   # GGML_TYPE_I16
+    27: (1, 4),   # GGML_TYPE_I32
+    28: (1, 8),   # GGML_TYPE_I64
+    29: (1, 8),   # GGML_TYPE_F64
+    30: (256, 36),# GGML_TYPE_IQ1_M
+    31: (1, 2),   # GGML_TYPE_BF16
+    32: (256, 96),# GGML_TYPE_Q4_0_4_4
+    33: (256, 96),# GGML_TYPE_Q4_0_4_8
+    34: (256, 96),# GGML_TYPE_Q4_0_8_8
+    35: (256, 26),# GGML_TYPE_TQ1_0
+    36: (256, 42),# GGML_TYPE_TQ2_0
+}
+
+
+def _read_gguf_header(data: bytes) -> Optional[Dict[str, int]]:
+    """Parse GGUF header fields: version, metadata_kv_count, tensor_count.
+
+    Returns dict or None if not a valid GGUF file.
+    GGUF v3 layout (all little-endian):
+        [0:4]  magic  b"GGUF"
+        [4:8]  version  uint32
+        [8:16] metadata_kv_count  uint64
+        [16:24] tensor_count  uint64
+    """
+    if len(data) < 24 or data[0:4] != b"GGUF":
+        return None
+
+    version = struct.unpack('<I', data[4:8])[0]
+    metadata_kv_count = struct.unpack('<Q', data[8:16])[0]
+    tensor_count = struct.unpack('<Q', data[16:24])[0]
+
+    # Sanity checks
+    if version not in (2, 3):
+        return None
+    if metadata_kv_count > 10000 or tensor_count > 100000:
+        return None
+
+    return {
+        "version": version,
+        "metadata_kv_count": metadata_kv_count,
+        "tensor_count": tensor_count,
+    }
+
+
+def _skip_gguf_kv_entry(data: bytes, offset: int) -> int:
+    """Skip a single GGUF metadata KV entry and return the next offset.
+
+    GGUF v3 KV entry layout:
+        key_len  uint32
+        type     uint32
+        value    depends on type (aligned to 8 bytes)
+    Returns the offset after this entry.
+    """
+    if offset + 8 > len(data):
+        return len(data)  # malformed — bail
+
+    key_len = struct.unpack('<I', data[offset:offset + 4])[0]
+    # type is at offset+4, but we only need to skip the value
+    type_byte = data[offset + 4]  # single byte is enough for type dispatch
+
+    val_offset = offset + 8
+    if val_offset > len(data):
+        return len(data)
+
+    # Type→size mapping (GGUF v3 types)
+    # 0: bool, 1: float32, 2: uint32, 3: uint64, 4: int32, 5: string,
+    # 6: int64, 7: array (special)
+    if type_byte == 5:  # string
+        if val_offset + 8 > len(data):
+            return len(data)
+        str_len = struct.unpack('<Q', data[val_offset:val_offset + 8])[0]
+        next_off = val_offset + 8 + str_len
+    elif type_byte in (0, 1, 2, 4):  # bool, float32, uint32, int32
+        next_off = val_offset + 4
+    elif type_byte in (3, 6):  # uint64, int64
+        next_off = val_offset + 8
+    elif type_byte == 7:  # array
+        # array: type(4) + n_items(8) + items (each parsed recursively)
+        if val_offset + 12 > len(data):
+            return len(data)
+        arr_type = data[val_offset]
+        n_items = struct.unpack('<Q', data[val_offset + 4:val_offset + 12])[0]
+        item_off = val_offset + 12
+        # Skip each item in the array (they are primitive types or strings)
+        for _ in range(n_items):
+            if arr_type == 5:  # array of strings
+                if item_off + 8 > len(data):
+                    return len(data)
+                item_len = struct.unpack('<Q', data[item_off:item_off + 8])[0]
+                item_off += 8 + item_len
+            elif arr_type in (0, 1, 2, 4):
+                item_off += 4
+            elif arr_type in (3, 6):
+                item_off += 8
+            else:
+                break  # unknown nested type — bail
+        next_off = item_off
+    else:
+        return len(data)  # unknown type
+
+    # Align to 8 bytes
+    next_off = ((next_off + 7) // 8) * 8
+    return next_off
+
+
+def read_gguf_tensor_bytes(path: str) -> Optional[int]:
+    """Parse the GGUF tensor table and return the total bytes of all tensors.
+
+    Reads enough of the file to cover the header, metadata, and tensor table.
+    Uses GGML block sizes to correctly calculate quantized tensor sizes.
+
+    Returns total bytes or None if parsing fails.
+    """
+    try:
+        file_size = os.path.getsize(path)
+    except OSError:
+        return None
+
+    # Estimate how much to read: header + metadata + tensor table
+    # Each tensor entry ≈ 32-64 bytes + name length
+    # Read up to 500KB to be safe for models with many tensors
+    read_size = min(file_size, 500 * 1024)
+    # If file is small, read it all
+    if read_size >= file_size:
+        read_size = file_size
+
+    try:
+        with open(path, "rb") as f:
+            data = f.read(read_size)
+    except OSError:
+        return None
+
+    header = _read_gguf_header(data)
+    if header is None:
+        return None
+
+    tensor_count = header["tensor_count"]
+    if tensor_count == 0:
+        return 0
+
+    # Skip metadata KV entries to reach the tensor table
+    offset = 24  # after header
+    for _ in range(header["metadata_kv_count"]):
+        offset = _skip_gguf_kv_entry(data, offset)
+        if offset >= len(data):
+            return None  # truncated data — not enough read
+
+    # Now iterate through tensor entries
+    total_tensor_bytes = 0
+    for _ in range(tensor_count):
+        if offset + 12 > len(data):
+            break  # truncated
+
+        # name_len (uint64)
+        name_len = struct.unpack('<Q', data[offset:offset + 8])[0]
+        offset += 8
+
+        if offset + name_len > len(data):
+            break  # truncated
+        # Skip tensor name
+        offset += name_len
+
+        if offset + 12 > len(data):
+            break
+
+        # n_dims (uint32)
+        n_dims = struct.unpack('<I', data[offset:offset + 4])[0]
+        offset += 4
+
+        if offset + (n_dims * 8) + 12 > len(data):
+            break
+
+        # dims (n_dims × uint64) — calculate total elements
+        total_elements = 1
+        for _ in range(n_dims):
+            dim = struct.unpack('<Q', data[offset:offset + 8])[0]
+            total_elements *= dim
+            offset += 8
+
+        # dtype (uint32) — GGML type
+        dtype = struct.unpack('<I', data[offset:offset + 4])[0]
+        offset += 4
+
+        # tensor offset (uint64) — skip it
+        offset += 8
+
+        # Calculate tensor size from dtype + elements
+        block_info = GGML_TYPE_SIZES.get(dtype)
+        if block_info:
+            block_size, type_size = block_info
+            # Number of blocks (rounded up)
+            num_blocks = (total_elements + block_size - 1) // block_size
+            tensor_bytes = num_blocks * type_size
+            total_tensor_bytes += tensor_bytes
+
+        # Align to 8 bytes
+        offset = ((offset + 7) // 8) * 8
+
+    return total_tensor_bytes
+
+
 def read_gguf_tensor_count(path: str) -> int:
     """Read tensor count from GGUF header."""
     try:
         with open(path, "rb") as f:
-            data = f.read(16)
-        
-        if len(data) < 16 or data[0:4] != b"GGUF":
+            data = f.read(24)
+
+        if len(data) < 24 or data[0:4] != b"GGUF":
             return 0
-        
-        version = struct.unpack('<I', data[4:8])[0]
-        
-        if version == 3:
-            # GGUF v3: tensor_count is uint64 at offset 8
-            return struct.unpack('<Q', data[8:16])[0]
-        elif version == 2:
-            # GGUF v2: tensor_count is uint64 at offset 8
-            return struct.unpack('<Q', data[8:16])[0]
-        
-        return 0
+
+        return struct.unpack('<Q', data[16:24])[0]
     except Exception:
         return 0
 
@@ -361,6 +582,9 @@ def get_model_info(path: str) -> Dict[str, Any]:
         read_gguf_integer(path, "feed_forward_length", min_val=1, max_val=10000000)
     )
     
+    # Parse tensor bytes from GGUF header (accurate, excludes metadata)
+    tensor_bytes = read_gguf_tensor_bytes(path)
+    
     result = {
         "filename": Path(path).name,
         "arch": arch,
@@ -369,6 +593,7 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "file_size": stat.st_size,
         "version": version,
         "tensor_count": tensor_count,
+        "tensor_bytes": tensor_bytes,
         "block_count": block_count,
         "embedding_length": embedding_length,
         "head_count": head_count,
@@ -429,101 +654,169 @@ def estimate_vram(
     mmproj_size: int = 0,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
-    
+
+    Three components:
+        VRAM_model   = tensor_bytes × GPU fraction × 1.05 (alignment padding)
+        VRAM_context = KV cache + RoPE per slot
+        VRAM_overhead = 1024 MB fixed buffer (CUDA runtime + driver)
+
     Args:
-        model_info: Output of get_model_info() — needs file_size, block_count,
-                    embedding_length, head_count, key_head_count.
+        model_info: Output of get_model_info() — needs tensor_bytes, file_size,
+                    block_count, embedding_length, head_count, key_head_count.
         ngl: Number of GPU layers (0 = CPU-only, -1 = all layers).
         ctx_size: Context size in tokens.
         np_slots: Number of parallel slots (default 1, -1 treated as 1).
         cache_type_k: KV cache type for keys (e.g. "f16", "q4_0").
         cache_type_v: KV cache type for values.
         mmproj_size: Size of mmproj file in bytes (for vision models).
-    
+
     Returns dict with:
         model_vram_mb: Estimated model weight VRAM in MB
         cache_vram_mb: Estimated KV cache VRAM in MB
+        mmproj_vram_mb: Estimated mmproj VRAM in MB
+        overhead_mb: Fixed CUDA/driver overhead (1024 MB)
         total_vram_mb: Total estimated VRAM in MB
-        fit_status: "fit", "partial", or "nofit"
     """
-    file_size = model_info.get("file_size", 0)
+    # Prefer tensor_bytes (from GGUF header) over file_size.
+    # tensor_bytes excludes metadata/tokenizer/vocab — only GPU-relevant weights.
+    total_tensor_bytes = model_info.get("tensor_bytes") or model_info.get("file_size", 0)
     block_count = model_info.get("block_count")
     embedding_length = model_info.get("embedding_length")
     head_count = model_info.get("head_count")
-    key_head_count = model_info.get("key_head_count") or head_count
-    
+    key_head_count = model_info.get("key_head_count") or head_count or 1
+
     if np_slots < 0 or np_slots == 0:
         np_slots = 1
-    
-    # Model weights VRAM estimation:
-    # Quantized weights stay in quant format in VRAM. The file_size is a good
-    # base, but we need to account for partial offload and overhead.
-    #
-    # The GGUF contains: token embedding (tok_embd) + N transformer blocks +
-    # output projection (output). Only the ngl blocks go to GPU.
-    #
-    # Estimate: each block ≈ file_size / (block_count + 2)
-    # The +2 accounts for tok_embd and output projection which always go to GPU
-    # when ngl > 0.
-    
+
+    # ── Model weights VRAM ──────────────────────────────────────────
+    # GGUF layout: tok_embd + N blocks + output projection
+    # Each block ≈ total_tensor_bytes / (block_count + 2)
+    # Embedding + output always go to GPU when ngl > 0.
+
     if ngl <= 0:
-        # CPU only — model stays in system RAM
         model_vram_bytes = 0
     elif block_count and block_count > 0:
-        # Partial or full offload — calculate GPU fraction
-        # Non-block weights (embedding + output) always go to GPU with any ngl
-        bytes_per_unit = file_size / (block_count + 2)
+        bytes_per_unit = total_tensor_bytes / (block_count + 2)
         gpu_units = min(ngl, block_count) + 2  # ngl blocks + embedding + output
         model_vram_bytes = bytes_per_unit * gpu_units
     else:
         # Fallback: no block info, assume full model
-        model_vram_bytes = file_size if file_size > 0 else 0
-    
-    # GPU overhead: llama.cpp allocates buffers that scale with context/session
-    # size (compute buffers, positional tables, scratch space). 10% overhead
-    # accounts for this — observed to grow with larger session sizes.
+        model_vram_bytes = total_tensor_bytes if total_tensor_bytes > 0 else 0
+
+    # 5% safety margin for CUDA alignment and page padding in VRAM
     if model_vram_bytes > 0:
-        model_vram_bytes = model_vram_bytes * 1.10
-    
-    # KV Cache estimation:
-    # Each token in context needs: n_kv_heads * (head_dim) * 2 (K + V) * dtype_size bytes
+        model_vram_bytes = model_vram_bytes * 1.05
+
+    # ── KV Cache VRAM ───────────────────────────────────────────────
+    # bytes_per_token = key_heads × head_dim × (cache_k_bytes + cache_v_bytes)
     # head_dim = embedding_length / head_count
     if embedding_length and head_count:
         head_dim = embedding_length // head_count
-        bytes_per_token_per_head = head_dim
-        
-        cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16 = 2
+
+        cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16
         cache_bytes_v = KV_CACHE_TYPE_SIZES.get(cache_type_v, 2)
-        
-        # KV cache per slot: ctx * key_heads * head_dim * (bytes_k + bytes_v)
-        kv_cache_per_slot = ctx_size * key_head_count * bytes_per_token_per_head * (cache_bytes_k + cache_bytes_v)
-        
-        # Also account for RoPE embeddings (usually small, ~ctx * embedding_length * 1 byte)
-        rope_per_slot = ctx_size * embedding_length * 1
-        
+
+        kv_cache_per_slot = ctx_size * key_head_count * head_dim * (cache_bytes_k + cache_bytes_v)
+
+        # RoPE embeddings (small: ctx × embedding_length × 1 byte)
+        rope_per_slot = ctx_size * embedding_length
+
         total_cache_bytes = (kv_cache_per_slot + rope_per_slot) * np_slots
     else:
-        # Fallback: estimate ~2 bytes per token per dimension (f16)
-        # Very rough: file_size / (block_count + 1) gives ~bytes per layer
-        # Cache ≈ ctx * embedding_length * 2 (K+V) * 2 (f16) * slots
-        if embedding_length:
-            total_cache_bytes = ctx_size * embedding_length * 4 * np_slots
-        else:
-            total_cache_bytes = 0
-    
+        # Fallback: rough f16 estimate
+        total_cache_bytes = (
+            ctx_size * (embedding_length or 4096) * 4 * np_slots
+        )
+
+    # ── mmproj VRAM ─────────────────────────────────────────────────
+    # llama.cpp loads mmproj as float32 (quantized file → f32 expansion)
+    mmproj_mb = (mmproj_size * 2 / (1024 * 1024)) if mmproj_size > 0 else 0
+
+    # ── Fixed overhead ──────────────────────────────────────────────
+    overhead_mb = 1024  # CUDA runtime + driver + desktop compositor
+
     model_vram_mb = model_vram_bytes / (1024 * 1024)
     cache_vram_mb = total_cache_bytes / (1024 * 1024)
-    
-    # mmproj: Vision models load the projector in f32 into VRAM.
-    # The file on disk may be quantized, but llama.cpp loads it as float32.
-    # Approximate: mmproj_size * 2 (quantized → f32 expansion)
-    mmproj_mb = (mmproj_size * 2 / (1024 * 1024)) if mmproj_size > 0 else 0
-    
-    total_vram_mb = model_vram_mb + cache_vram_mb + mmproj_mb
-    
+
+    total_vram_mb = model_vram_mb + cache_vram_mb + mmproj_mb + overhead_mb
+
     return {
         "model_vram_mb": round(model_vram_mb, 1),
         "cache_vram_mb": round(cache_vram_mb, 1),
         "mmproj_vram_mb": round(mmproj_mb, 1),
+        "overhead_mb": overhead_mb,
         "total_vram_mb": round(total_vram_mb, 1),
     }
+
+
+def suggest_ngl(
+    model_info: Dict[str, Any],
+    ctx_size: int = 4096,
+    np_slots: int = 1,
+    cache_type_k: str = "f16",
+    cache_type_v: str = "f16",
+    mmproj_size: int = 0,
+    free_vram_mb: int = 0,
+) -> int:
+    """Calculate the maximum safe -ngl value given available VRAM.
+
+    Uses binary-free math:
+        available = free_vram_mb - cache_mb - overhead_mb - mmproj_mb
+        bytes_per_layer = total_tensor_bytes / (block_count + 2)
+        ngl = available / bytes_per_layer × 0.95 (safety margin)
+
+    Returns:
+        -1 if the full model fits
+        n  if partial offload is optimal (1..block_count)
+        0  if even 1 layer + context exceeds free VRAM
+    """
+    block_count = model_info.get("block_count")
+    if not block_count or block_count <= 0:
+        return -1  # can't determine, assume all
+
+    total_tensor_bytes = model_info.get("tensor_bytes") or model_info.get("file_size", 0)
+    if not total_tensor_bytes:
+        return -1
+
+    # Estimate cache + overhead + mmproj (these are ngl-independent)
+    cache_vram = estimate_vram(
+        model_info=model_info,
+        ngl=0,  # model weights stay on CPU
+        ctx_size=ctx_size,
+        np_slots=np_slots,
+        cache_type_k=cache_type_k,
+        cache_type_v=cache_type_v,
+        mmproj_size=mmproj_size,
+    )
+    non_model_mb = (
+        cache_vram["cache_vram_mb"]
+        + cache_vram["overhead_mb"]
+        + cache_vram["mmproj_vram_mb"]
+    )
+
+    # Bytes per layer (each block ≈ tensor_bytes / (block_count + 2))
+    bytes_per_unit = total_tensor_bytes / (block_count + 2)
+    bytes_per_layer_mb = bytes_per_unit / (1024 * 1024)
+
+    # Available for model weights (with 5% alignment padding)
+    available_for_model = free_vram_mb - non_model_mb
+    if available_for_model <= 0:
+        return 0  # not even cache + overhead fits
+
+    # Full model check: embedding + output + all blocks
+    full_model_mb = (bytes_per_unit * (block_count + 2) * 1.05) / (1024 * 1024)
+    if full_model_mb <= available_for_model:
+        return -1  # full model fits — use -ngl all
+
+    # Calculate max layers that fit
+    # embedding + output always go to GPU, so subtract them first
+    embd_output_mb = (bytes_per_unit * 2 * 1.05) / (1024 * 1024)
+    remaining_mb = available_for_model - embd_output_mb
+
+    if remaining_mb <= 0:
+        return 0  # not enough for even embedding + output + 1 layer
+
+    max_layers = int(remaining_mb / bytes_per_layer_mb)
+    max_layers = max(0, min(max_layers, block_count))
+
+    return max_layers

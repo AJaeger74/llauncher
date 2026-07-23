@@ -12,6 +12,7 @@ from gguf_utils import (
     check_model_architecture,
     read_gpu_vram,
     estimate_vram,
+    suggest_ngl,
 )
 
 
@@ -170,9 +171,11 @@ def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
         cache_mb = vram["cache_vram_mb"]
         total_mb = vram["total_vram_mb"]
         total_gb = total_mb / 1024
+        overhead_mb = vram.get("overhead_mb", 0)
 
         window.debug_text.append(f"  ┃ {gettext('debug_vram_model')} {total_gb:.1f} GB ({model_mb:.0f} MB)")
         window.debug_text.append(f"  ┃ {gettext('debug_vram_cache')} {cache_mb:.1f} MB")
+        window.debug_text.append(f"  ┃ overhead           {overhead_mb:.0f} MB")
         window.debug_text.append(f"  ┃ {gettext('debug_vram_total')} {total_gb:.2f} GB")
 
         # Compare with GPU free memory
