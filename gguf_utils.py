@@ -324,65 +324,97 @@ def _read_gguf_header(data: bytes) -> Optional[Dict[str, int]]:
     }
 
 
+def _gguf_scalar_size(entry_type: int) -> int:
+    """Return the byte size of a scalar GGUF v3 value type.
+
+    Type enum (from GGUF spec):
+        0:UINT8(1B)  1:INT8(1B)  2:UINT16(2B)  3:INT16(2B)
+        4:UINT32(4B)  5:INT32(4B)  6:FLOAT32(4B)  7:BOOL(1B)
+        10:UINT64(8B)  11:INT64(8B)  12:FLOAT64(8B)
+    """
+    if entry_type in (0, 1, 7):
+        return 1
+    if entry_type in (2, 3):
+        return 2
+    if entry_type in (4, 5, 6):
+        return 4
+    if entry_type in (10, 11, 12):
+        return 8
+    return 0
+
+
 def _skip_gguf_kv_entry(data: bytes, offset: int) -> int:
     """Skip a single GGUF metadata KV entry and return the next offset.
 
-    GGUF v3 KV entry layout:
-        key_len  uint32
-        type     uint32
-        value    depends on type (aligned to 8 bytes)
-    Returns the offset after this entry.
+    GGUF v3 KV entry layout (verified from hex dump):
+        key_len   uint32
+        padding   4 bytes (to align key to 8-byte boundary from entry start)
+        key       char[key_len]
+        type      uint32  (right after key, no alignment)
+        value     depends on type  (right after type, no alignment)
+
+    Entries are packed immediately — no alignment between entries.
+    GGUF type enum: 8=STRING, 9=ARRAY, others are scalars (see _gguf_scalar_size).
     """
     if offset + 8 > len(data):
-        return len(data)  # malformed — bail
-
-    key_len = struct.unpack('<I', data[offset:offset + 4])[0]
-    # type is at offset+4, but we only need to skip the value
-    type_byte = data[offset + 4]  # single byte is enough for type dispatch
-
-    val_offset = offset + 8
-    if val_offset > len(data):
         return len(data)
 
-    # Type→size mapping (GGUF v3 types)
-    # 0: bool, 1: float32, 2: uint32, 3: uint64, 4: int32, 5: string,
-    # 6: int64, 7: array (special)
-    if type_byte == 5:  # string
-        if val_offset + 8 > len(data):
+    key_len = struct.unpack('<I', data[offset:offset + 4])[0]
+    if key_len > 10000:
+        return len(data)  # malformed — bail
+
+    # Key starts at offset + 8 (key_len uint32 + 4 bytes padding)
+    key_start = offset + 8
+    if key_start + key_len > len(data):
+        return len(data)
+
+    # Type is right after the key (no alignment)
+    type_off = key_start + key_len
+    if type_off + 4 > len(data):
+        return len(data)
+    entry_type = struct.unpack('<I', data[type_off:type_off + 4])[0]
+
+    # Value starts right after type (no alignment)
+    val_off = type_off + 4
+    if val_off > len(data):
+        return len(data)
+
+    if entry_type == 8:  # STRING
+        if val_off + 8 > len(data):
             return len(data)
-        str_len = struct.unpack('<Q', data[val_offset:val_offset + 8])[0]
-        next_off = val_offset + 8 + str_len
-    elif type_byte in (0, 1, 2, 4):  # bool, float32, uint32, int32
-        next_off = val_offset + 4
-    elif type_byte in (3, 6):  # uint64, int64
-        next_off = val_offset + 8
-    elif type_byte == 7:  # array
-        # array: type(4) + n_items(8) + items (each parsed recursively)
-        if val_offset + 12 > len(data):
+        str_len = struct.unpack('<Q', data[val_off:val_off + 8])[0]
+        if str_len > 1000000:
+            return len(data)  # sanity check
+        return val_off + 8 + str_len
+    elif entry_type == 9:  # ARRAY
+        if val_off + 12 > len(data):
             return len(data)
-        arr_type = data[val_offset]
-        n_items = struct.unpack('<Q', data[val_offset + 4:val_offset + 12])[0]
-        item_off = val_offset + 12
-        # Skip each item in the array (they are primitive types or strings)
+        # arr_type is uint32, NOT uint8
+        arr_type = struct.unpack('<I', data[val_off:val_off + 4])[0]
+        n_items = struct.unpack('<Q', data[val_off + 4:val_off + 12])[0]
+        if n_items > 1000000:
+            return len(data)  # sanity check
+        item_off = val_off + 12
         for _ in range(n_items):
-            if arr_type == 5:  # array of strings
+            if arr_type == 8:  # array of strings
                 if item_off + 8 > len(data):
                     return len(data)
-                item_len = struct.unpack('<Q', data[item_off:item_off + 8])[0]
-                item_off += 8 + item_len
-            elif arr_type in (0, 1, 2, 4):
-                item_off += 4
-            elif arr_type in (3, 6):
-                item_off += 8
+                il = struct.unpack('<Q', data[item_off:item_off + 8])[0]
+                if il > 1000000:
+                    return len(data)
+                item_off += 8 + il
             else:
-                break  # unknown nested type — bail
-        next_off = item_off
+                sz = _gguf_scalar_size(arr_type)
+                if sz == 0:
+                    return len(data)
+                item_off += sz
+        return item_off
     else:
-        return len(data)  # unknown type
-
-    # Align to 8 bytes
-    next_off = ((next_off + 7) // 8) * 8
-    return next_off
+        # Scalar value
+        sz = _gguf_scalar_size(entry_type)
+        if sz == 0:
+            return len(data)  # unknown scalar type
+        return val_off + sz
 
 
 def read_gguf_tensor_bytes(path: str) -> Optional[int]:
@@ -399,12 +431,10 @@ def read_gguf_tensor_bytes(path: str) -> Optional[int]:
         return None
 
     # Estimate how much to read: header + metadata + tensor table
-    # Each tensor entry ≈ 32-64 bytes + name length
-    # Read up to 500KB to be safe for models with many tensors
-    read_size = min(file_size, 500 * 1024)
-    # If file is small, read it all
-    if read_size >= file_size:
-        read_size = file_size
+    # Metadata can be large (tokenizer/vocab) — some models have 10-20 MB metadata.
+    # Tensor table is small (52 entries × ~100 bytes ≈ 5 KB).
+    # Read up to 25 MB to be safe; for smaller files read everything.
+    read_size = min(file_size, 25 * 1024 * 1024)
 
     try:
         with open(path, "rb") as f:
@@ -420,12 +450,75 @@ def read_gguf_tensor_bytes(path: str) -> Optional[int]:
     if tensor_count == 0:
         return 0
 
-    # Skip metadata KV entries to reach the tensor table
+    # Skip metadata KV entries to reach the tensor table.
+    # The header's metadata_kv_count can over-count (some files include
+    # tokenizer array items in the count). Detect the tensor table by
+    # checking that the next entry's key is valid ASCII — tensor table
+    # entries start with a uint64 name_len, not a printable key.
     offset = 24  # after header
     for _ in range(header["metadata_kv_count"]):
+        # Peek at the next entry's key_len to detect tensor table
+        if offset + 12 > len(data):
+            return None
+        next_key_len = struct.unpack('<I', data[offset:offset + 4])[0]
+        # If key_len is zero, we may be at a valid empty-key entry or
+        # at the tensor table boundary. Check the key for validity.
+        next_key_start = offset + 8
+        if next_key_len > 0 and next_key_start + next_key_len > len(data):
+            return None
+        # Valid metadata keys are printable ASCII — NUL bytes or absurdly
+        # large key_len mean we're in tensor table data being misread as a key
+        if next_key_len == 0 or next_key_len > 1000:
+            # Try to read past this entry; if it fails we're at the tensor table
+            test_off = _skip_gguf_kv_entry(data, offset)
+            if test_off >= len(data) or test_off <= offset:
+                break
+            # Entry was valid (empty key is rare but possible), continue
+            offset = test_off
+            continue
+        next_key = data[next_key_start:next_key_start + next_key_len]
+        if b'\x00' in next_key:
+            break
+
         offset = _skip_gguf_kv_entry(data, offset)
         if offset >= len(data):
             return None  # truncated data — not enough read
+
+    # After metadata ends, scan forward for the tensor table.
+    # The table starts with the embedding token tensor — look for
+    # known first-tensor names to avoid false positives in metadata
+    # padding or boundary regions.
+    first_tensor_names = [
+        b"token_embd.weight",   # Standard naming (llama, qwen, etc.)
+        b"tok_embd.weight",     # Alternative naming
+        b"tok_embeddings.weight",  # GPT-NeoX style
+    ]
+    tensor_table_offset: int | None = None
+    for search_name in first_tensor_names:
+        idx = data.find(search_name, offset)
+        if idx > 0 and idx >= 8:
+            name_len = struct.unpack('<Q', data[idx - 8:idx])[0]
+            if name_len == len(search_name):
+                tensor_table_offset = idx - 8
+                break
+
+    # Fallback: if we didn't find a known first tensor, scan for any
+    # valid tensor entry (name_len + printable name with a dot).
+    if tensor_table_offset is None:
+        scan = offset
+        while scan < len(data) - 8:
+            name_len = struct.unpack('<Q', data[scan:scan + 8])[0]
+            if 1 <= name_len <= 200 and scan + 8 + name_len <= len(data):
+                candidate_name = data[scan + 8:scan + 8 + name_len]
+                if all(32 <= b < 127 for b in candidate_name) and b'.' in candidate_name:
+                    tensor_table_offset = scan
+                    break
+            scan += 1
+
+    if tensor_table_offset is None:
+        return None  # couldn't find tensor table
+
+    offset = tensor_table_offset
 
     # Now iterate through tensor entries
     total_tensor_bytes = 0
@@ -474,9 +567,6 @@ def read_gguf_tensor_bytes(path: str) -> Optional[int]:
             num_blocks = (total_elements + block_size - 1) // block_size
             tensor_bytes = num_blocks * type_size
             total_tensor_bytes += tensor_bytes
-
-        # Align to 8 bytes
-        offset = ((offset + 7) // 8) * 8
 
     return total_tensor_bytes
 
@@ -569,12 +659,24 @@ def get_model_info(path: str) -> Dict[str, Any]:
     )
     key_head_count = (
         read_gguf_integer(path, f"{arch}.attention.key_head_count", min_val=1, max_val=500) or
-        read_gguf_integer(path, "attention.key_head_count", min_val=1, max_val=500)
+        read_gguf_integer(path, "attention.key_head_count", min_val=1, max_val=500) or
+        read_gguf_integer(path, f"{arch}.attention.head_count_kv", min_val=1, max_val=500) or
+        read_gguf_integer(path, "attention.head_count_kv", min_val=1, max_val=500)
     )
     # For GQA: key_head_count < head_count; for MHA: key_head_count == head_count
     # Fallback: assume MHA (key_head_count == head_count), default to 1 if unknown
     if key_head_count is None:
         key_head_count = head_count if head_count is not None else 1
+
+    # KV head dimension — for most models this equals embedding_length // head_count,
+    # but MTP models (Qwen3.6, etc.) store a separate attention.key_length that
+    # differs from the Q-head dimension. Prefer the explicit GGUF key_length.
+    kv_head_dim = (
+        read_gguf_integer(path, f"{arch}.attention.key_length", min_val=1, max_val=4096) or
+        read_gguf_integer(path, "attention.key_length", min_val=1, max_val=4096)
+    )
+    if kv_head_dim is None and embedding_length and head_count:
+        kv_head_dim = embedding_length // head_count
     
     # Feed-forward dimension (for expert/MoE models)
     ff_length = (
@@ -598,6 +700,7 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "embedding_length": embedding_length,
         "head_count": head_count,
         "key_head_count": key_head_count,
+        "kv_head_dim": kv_head_dim,
         "ff_length": ff_length,
     }
     
@@ -673,9 +776,12 @@ KV_CACHE_TYPE_SIZES = {
     "turbo1_tcq": 0.15625,  # 20 / 128 = 1.25 bits/value
     # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
     "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
-    # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier
-    # Uses turbo8 as conservative baseline; actual usage degrades per layer
-    "vbr": 1.015625,  # same as turbo8 (8.125 bits/value)
+    # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier and degrades
+    # At full context, VBR degrades V to turbo2_tcq/turbo1_tcq range.
+    # 0.22 B/v (~1.75 bpv) is the midpoint between turbo1_tcq (0.15625) and
+    # turbo2_tcq (0.28125) — realistic for the V-cache at saturated context.
+    # The K-cache (usually q8_0 or similar) is estimated separately and dominates.
+    "vbr": 0.22,  # ~1.75 bits/value (turbo1/turbo2_tcq midpoint)
 }
 
 
@@ -688,6 +794,7 @@ def estimate_vram(
     cache_type_v: str = "f16",
     mmproj_size: int = 0,
     vbr_vram_mb: int | None = None,
+    vbr_calibrated_v_bytes: float | None = None,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
 
@@ -707,6 +814,9 @@ def estimate_vram(
         mmproj_size: Size of mmproj file in bytes (for vision models).
         vbr_vram_mb: VBR VRAM budget in MB (--vbr-vram). When set and cache_type
                      is "vbr" on either side, this overrides the computed cache size.
+        vbr_calibrated_v_bytes: When VBR is active, use the live-calibrated V-cache
+                     bytes/value from /slots API instead of the static type map.
+                     Set by VBR-Calibrate button (e.g. 0.72 for ~5.8 bpv).
 
     Returns dict with:
         model_vram_mb: Estimated model weight VRAM in MB
@@ -750,30 +860,49 @@ def estimate_vram(
         model_vram_bytes = model_vram_bytes * 1.05
 
     # ── KV Cache VRAM ───────────────────────────────────────────────
-    # bytes_per_token = key_heads × head_dim × (cache_k_bytes + cache_v_bytes)
-    # head_dim = embedding_length / head_count
+    # Per llama.cpp llama-kv-cache:
+    #   K tensor: ne[0]=head_dim, ne[1]=n_head_k, ne[2]=n_ctx
+    #   V tensor: ne[0]=head_dim, ne[1]=1 (transposed), ne[2]=n_ctx
+    # Per-layer: (key_heads + 1) × head_dim × row_bytes × ctx
+    # Total: n_layers × kv_per_layer × n_slots
     use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
     
     if use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
-        # VBR with explicit budget — use the budget directly as cache size
-        # RoPE is still added on top (not part of VBR budget)
-        if embedding_length:
-            rope_bytes = ctx_size * embedding_length * np_slots
-        else:
-            rope_bytes = 0
-        total_cache_bytes = int(vbr_vram_mb * 1024 * 1024) + rope_bytes
+        # VBR with explicit budget — use the budget directly as cache size.
+        # RoPE is computed on-the-fly in llama.cpp (not stored in KV cache).
+        total_cache_bytes = int(vbr_vram_mb * 1024 * 1024)
     elif embedding_length and head_count:
-        head_dim = embedding_length // head_count
-        
+        # Prefer explicit KV head dimension (e.g. from attention.key_length)
+        # over the naive embedding_length // head_count derivation.
+        # MTP/Qwen3.6 models store a separate key_length that differs from
+        # the Q-head dimension, so embedding/head_count gives wrong head_dim.
+        head_dim = model_info.get("kv_head_dim") or (embedding_length // head_count)
+
         cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16
         cache_bytes_v = KV_CACHE_TYPE_SIZES.get(cache_type_v, 2)
-        
-        kv_cache_per_slot = ctx_size * key_head_count * head_dim * (cache_bytes_k + cache_bytes_v)
-        
-        # RoPE embeddings (small: ctx × embedding_length × 1 byte)
-        rope_per_slot = ctx_size * embedding_length
-        
-        total_cache_bytes = (kv_cache_per_slot + rope_per_slot) * np_slots
+
+        # Use calibrated V bytes when VBR is active on the V side and the
+        # calibrated value shows real degradation (below the static type map).
+        # At low token counts VBR stays at F16 (2.0 B/v) — using that for
+        # estimation would massively overestimate VRAM.
+        if cache_type_v.lower() == "vbr" and vbr_calibrated_v_bytes is not None:
+            if vbr_calibrated_v_bytes < cache_bytes_v:
+                cache_bytes_v = vbr_calibrated_v_bytes
+            # else: calibrated shows F16 at current context → use type map
+            #       (VBR will degrade at target context size)
+
+        # K and V each store: key_heads × head_dim × ctx elements.
+        # V is transposed (ne[1]=1) for access but still holds the same
+        # number of elements as K — transposition is a layout choice,
+        # not a reduction in storage.
+        kv_k_per_slot = ctx_size * key_head_count * head_dim * cache_bytes_k
+        kv_v_per_slot = ctx_size * key_head_count * head_dim * cache_bytes_v
+        kv_per_slot = kv_k_per_slot + kv_v_per_slot
+
+        # Multiply by layers (each layer has its own KV cache) and slots.
+        # RoPE embeddings are computed on-the-fly in llama.cpp, NOT stored.
+        n_layers = model_info.get("block_count") or 1
+        total_cache_bytes = kv_per_slot * np_slots * n_layers
     else:
         # Fallback: rough f16 estimate
         total_cache_bytes = (
