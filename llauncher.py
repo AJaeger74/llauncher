@@ -923,10 +923,12 @@ class llauncher(QMainWindow):
             return 0.0  # CPU mode
 
         try:
+            vbr_cal = getattr(self, '_calibrated_v_bytes', None)
             vram = estimate_vram(
                 model_info=info, ngl=ngl, ctx_size=params["ctx_size"],
                 np_slots=params["np_slots"], cache_type_k=params["cache_type_k"],
                 cache_type_v=params["cache_type_v"], mmproj_size=params["mmproj_size"],
+                vbr_calibrated_v_bytes=vbr_cal,
             )
             return vram["total_vram_mb"] / 1024
         except Exception:
@@ -963,6 +965,22 @@ class llauncher(QMainWindow):
                 f"Temp: {data['temp']}°C | Power: {power_str}"
             )
             self.stats_label.setToolTip("")
+
+        # Append live context usage from /slots API (only if server is actively processing)
+        slots = data.get("slots")
+        if slots:
+            used = slots.get("used_tokens", 0)
+            ctx = slots.get("ctx", 0)
+            pct = (used / ctx * 100) if ctx > 0 else 0
+            kv_bpv = slots.get("kv_bpv", 0)
+            spec = slots.get("speculative", False)
+            spec_str = "Spec" if spec else ""
+            parts = [f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f}"]
+            if spec_str:
+                parts.append(spec_str)
+            ctx_suffix = " | ".join(parts)
+            stats = f"{stats} | {ctx_suffix}"
+
         self.stats_label.setText(stats)
 
     def _calibrate_vbr(self):
@@ -1179,10 +1197,12 @@ class llauncher(QMainWindow):
         cache_type_v = params["cache_type_v"]
         mmproj_size = params["mmproj_size"]
 
+        vbr_cal = getattr(self, '_calibrated_v_bytes', None)
         vram = estimate_vram(
             model_info=info, ngl=ngl, ctx_size=ctx_size,
             np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
             mmproj_size=mmproj_size,
+            vbr_calibrated_v_bytes=vbr_cal,
         )
 
         estimated_gb = vram["total_vram_mb"] / 1024

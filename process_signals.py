@@ -14,6 +14,7 @@ def start_gpu_monitor(window) -> None:
     
     if not hasattr(window, "gpu_monitor") or window.gpu_monitor is None:
         window.gpu_monitor = GPUMonitor()
+        window.gpu_monitor._window = window  # for dynamic host resolution
         window.gpu_monitor.gpu_update.connect(
             lambda data: _update_gpu_display(window.stats_label, data)
         )
@@ -43,23 +44,33 @@ def _update_gpu_display(label, gpu_data: dict) -> None:
         label: QLabel widget to update
         gpu_data: Dictionary from GPUMonitor with GPU stats
     """
-    if not gpu_data or "gpu_list" not in gpu_data:
-        return
-    
-    gpu_list = gpu_data["gpu_list"]
-    if not gpu_list:
+    if not gpu_data:
         label.setText("GPU: N/A")
         return
-    
-    # Show first GPU stats (or aggregate if multiple)
-    gpu = gpu_list[0]
-    temp = gpu.get("temperature", 0)
-    mem_used = gpu.get("memory_used", 0)
-    mem_total = gpu.get("memory_total", 1)
+
+    # Build display string
+    parts = []
+
+    # GPU info
+    temp = gpu_data.get("temp", 0)
+    mem_used = gpu_data.get("used_mb", 0)
+    mem_total = gpu_data.get("total_mb", 1)
     mem_pct = (mem_used / mem_total * 100) if mem_total > 0 else 0
-    load = gpu.get("gpu_load", 0)
-    
-    label.setText(f"GPU: {temp}°C | {mem_used}/{mem_total} MB ({mem_pct:.0f}%) | {load}%")
+    gpu_load = gpu_data.get("gpu_usage", 0)
+    parts.append(f"{temp}°C | {mem_used}/{mem_total} MB ({mem_pct:.0f}%) | {gpu_load}%")
+
+    # Context usage from /slots API
+    slots = gpu_data.get("slots")
+    if slots:
+        used = slots.get("used_tokens", 0)
+        ctx = slots.get("ctx", 0)
+        pct = (used / ctx * 100) if ctx > 0 else 0
+        kv_bpv = slots.get("kv_bpv", 0)
+        spec = slots.get("speculative", False)
+        spec_str = "Spec" if spec else ""
+        parts.append(f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f} | {spec_str}".strip())
+
+    label.setText(" | ".join(parts))
 
 
 def _get_free_gpu_memory() -> int:
