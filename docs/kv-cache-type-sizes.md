@@ -1,18 +1,15 @@
-# KV Cache Type Sizes — VRAM Estimation Reference
+# KV Cache Type Sizes — Exakte Werte aus ggml-common.h
 
 ## Quelle
 
-Die Werte stammen aus dem turboquant Fork (TheTom/llama-cpp-turboquant) und
-dem Original-TurboQuant-Projekt (unixsysdev/llama-turboquant).
+`ggml/src/ggml-common.h` aus buun-llama-cpp (https://github.com/spiritbuun/buun-llama-cpp).
+Alle Werte aus `static_assert(sizeof(block_...) == ...)`.
 
-Relevante Dateien:
-- `ggml/src/ggml-common.h` — block_turbo3_0, block_turbo4_0, block_turbo2_0 Structs
-- `ggml/include/ggml.h` — GGML_TYPE_TURBO2_0 = 42, TURBO3_0 = 43, TURBO4_0 = 44, TQ3_0 = 41
-- `ggml/src/ggml-quants.h` — quantize/dequantize Funktionssignaturen
+---
 
-## Standard-Typen (GGML block layout)
+## Standard-Typen
 
-| Cache Type | Block Size | Block Size (Bytes) | Bytes/Value | Bits/Value |
+| Typ | Block Size | Block Bytes | Bytes/Value | Bits/Value |
 |---|---|---|---|---|
 | f32 | 1 | 4 | 4.0 | 32 |
 | f16 | 1 | 2 | 2.0 | 16 |
@@ -24,91 +21,104 @@ Relevante Dateien:
 | q5_0 | 32 | 22 | 0.6875 | 5.5 |
 | q5_1 | 32 | 24 | 0.75 | 6.0 |
 
-## TurboQuant-Typen (TurboQuant paper ICLR 2026)
+---
 
-| Cache Type | Block Size | Block Size (Bytes) | Bytes/Value | Bits/Value | Kompression vs f16 |
+## TurboQuant-Typen (korrigiert)
+
+**WICHTIG:** Die alten Werte in diesem Dokument (Block Size 128, 10/14/68 Bytes)
+waren **falsch**. Korrektur aus `static_assert` in ggml-common.h:
+
+| Typ | QK | Block Bytes | Bytes/Value | Bits/Value | Block Struktur |
 |---|---|---|---|---|---|
-| turbo2_0 | 128 | 10 | 0.078125 | 2.5 | 6.4× |
-| turbo3_0 | 128 | 14 | 0.109375 | 3.5 | 4.6× |
-| turbo4_0 | 128 | 68 | 0.53125 | 4.25 | 3.8× |
-| tq3_0 (TQ3_0) | 32 | 14 | 0.4375 | 3.5 | 4.6× |
+| turbo8_0 | 128 | 130 | 1.015625 | 8.125 | norm(2) + qs[128] = 130 |
+| turbo4_0 | 128 | 66 | 0.515625 | 4.125 | norm(2) + qs[64] = 66 |
+| turbo3_tcq | 128 | 52 | 0.40625 | 3.25 | norm(2) + qs[49] + pad(1) = 52 |
+| turbo2_tcq | 128 | 36 | 0.28125 | 2.25 | norm(2) + qs[33] + pad(1) = 36 |
+| turbo2_0 | 32 | 10 | 0.3125 | 2.5 | norm(2) + qs[8] = 10 |
+| turbo3_0 | 32 | 14 | 0.4375 | 3.5 | norm(2) + qs[8] + signs[4] = 14 |
+| tq3_0 | 32 | 14 | 0.4375 | 3.5 | qs[8] + qr[4] + gamma(2) = 14 |
+| turbo1_tcq | 128 | 20 | 0.15625 | 1.25 | norm(2) + qs[17] + pad(1) = 20 |
+| turbo1_cq | 128 | 18 | 0.140625 | 1.125 | scale(2) + qs[16] = 18 |
+| turbo1_nsn | 128 | 20 | 0.15625 | 1.25 | s1(2)+s2(2)+signs[16] = 20 |
+| turbo1 | 128 | 18 | 0.140625 | 1.125 | scale(2)+signs[16] = 18 |
 
-### Block-Struktur im Detail
+### Block-Strukturen im Detail
 
-**turbo2_0 (2.5 bits/value):**
-- `norm` (fp16): 2 Byte — korrigierter L2-Norm
-- `qs[32]` (uint8): 32 Byte — 2-bit Indices (4 pro Byte) → 128/4 = 32
-- Total: 2 + 32 = 34? Nein, `block_turbo2_0` = `norm` (2) + `qs[QK_TURBO2/4]` = 2 + 32 = 34
-- Aber static_assert sagt 10 Byte → QK_TURBO2 = 128, also 2 + 128/4 = 2 + 32...
-- Korrektur: `block_turbo2_0` hat `qs[QK_TURBO2 / 4]` = `qs[32]` = 32 Byte? 
-- **Achtung:** static_assert sagt `sizeof(block_turbo2_0) == sizeof(ggml_half) + QK_TURBO2/4`
-  = 2 + 32 = 34 Byte. Aber der Kommentar sagt "10 bytes per 128 values".
-  
-**Korrekte Werte aus static_assert:**
+**turbo8_0 (8.125 bpw):**
+- `norm` (fp16): 2 Byte — L2 norm
+- `qs[QK_TURBO8]` (int8): 128 Byte — 8-bit codebook indices
+- Total: 130 bytes per 128 values = 1.015625 B/V
 
-```c
-// turbo2_0: 2 + 128/4 = 2 + 32 = 34 Byte → 0.265625 Byte/Value (2.125 bits)
-// turbo3_0: 2 + 128/4 + 128/8 = 2 + 32 + 16 = 50? 
-// 
-// NEIN — Block Size ist 128, aber der Speicher ist kompakter:
-// turbo3_0: norm(2) + qs[128/4=32] + signs[128/8=16] = 2 + 32 + 16 = 50? 
-// static_assert sagt: sizeof(ggml_half) + QK_TURBO3/4 + QK_TURBO3/8
-// = 2 + 32 + 16 = 50? Das kann nicht stimmen mit "14 bytes".
-```
+**turbo4_0 (4.125 bpw):**
+- `norm` (fp16): 2 Byte — L2 norm
+- `qs[QK_TURBO4 / 2]` (uint8): 64 Byte — 4-bit indices (low nibble first)
+- Total: 66 bytes per 128 values = 0.515625 B/V
 
-**WICHTIG — Die Werte im Code sind falsch interpretiert.**
-QK_TURBO3 = 128 bedeutet Blockgröße 128, aber die Array-Grössen:
-- `qs[QK_TURBO3 / 4]` = `qs[32]` → 32 Byte
-- `signs[QK_TURBO3 / 8]` = `signs[16]` → 16 Byte
-- Total: 2 + 32 + 16 = 50 Byte pro Block von 128 Werten
+**turbo3_tcq (3.25 bpw, TCQ):**
+- `norm` (fp16): 2 Byte — corrected group L2 norm
+- `qs[49]` (uint8): 49 Byte — 390-bit trellis bitstream (2 padding bits)
+- `pad`: 1 Byte — alignment padding
+- Total: 52 bytes per 128 values = 0.40625 B/V
 
-Das wäre 0.390625 Byte/Value (3.125 bits) — nicht 14 Byte.
+**turbo2_tcq (2.25 bpw, TCQ):**
+- `norm` (fp16): 2 Byte — corrected group L2 norm
+- `qs[33]` (uint8): 33 Byte — 262-bit trellis bitstream (2 padding bits)
+- `pad`: 1 Byte — alignment padding
+- Total: 36 bytes per 128 values = 0.28125 B/V
 
-**Aber der TQ3_0 (ursprünglicher TurboQuant) ist anders:**
-- Block Size 32, nicht 128
-- `qs[8]` (8 Byte) + `qr[4]` (4 Byte) + `gamma` (2 Byte fp16) = 14 Byte
-- 14 / 32 = 0.4375 Byte/Value = 3.5 bits/Value
+**turbo2_0 (2.5 bpw, original TQ):**
+- `norm` (fp16): 2 Byte — corrected vector L2 norm
+- `qs[QK_TURBO2 / 4]` (uint8): 8 Byte — 2-bit indices (4 per byte)
+- Total: 10 bytes per 32 values = 0.3125 B/V
 
-**Die turbo3_0, turbo4_0, turbo2_0 Typen haben Block Size 128 mit head_dim-padding.**
-Die effektiven Werte (mit Zero-Padding auf 128er-Grenze) sind komplexer.
+**turbo3_0 (3.5 bpw, original TQ):**
+- `norm` (fp16): 2 Byte — vector L2 norm
+- `qs[QK_TURBO3 / 4]` (uint8): 8 Byte — lower 2-bit indices
+- `signs[QK_TURBO3 / 8]` (uint8): 4 Byte — upper 1-bit of 3-bit index
+- Total: 14 bytes per 32 values = 0.4375 B/V
 
-## Praktische Werte für die Schätzung
+**tq3_0 (3.5 bpw, TQ3_0):**
+- `qs[8]` (uint8): 8 Byte
+- `qr[4]` (uint8): 4 Byte
+- `gamma` (fp16): 2 Byte
+- Total: 14 bytes per 32 values = 0.4375 B/V
 
-Für die VRAM-Schätzung verwenden wir konservative Werte basierend auf
-der tatsächlichen Block-Struktur aus ggml-common.h:
+### turbo1 variants (RESERVED — codec entfernt 2026-07-05)
 
-| Cache Type | Bytes/Value | Quelle |
+Die structs existieren noch in ggml-common.h für enum-stability, aber
+**keine Encode/Decode-Pfade** mehr:
+- turbo1: 18 bytes (scale + 128 sign bits)
+- turbo1_nsn: 20 bytes (double-normalize + 128 sign bits)
+- turbo1_cq: 18 bytes (16 codebook indices per 128 values)
+- turbo1_tcq: 20 bytes (1-bit Trellis-Coded Quantization)
+
+---
+
+## Praktische Werte für VRAM-Berechnung
+
+| GGML-Typ | Bytes/Value | VBR-Tier |
 |---|---|---|
-| f32 | 4.0 | GGML_TYPE_F32 |
-| f16 | 2.0 | GGML_TYPE_F16 |
-| bf16 | 2.0 | GGML_TYPE_BF16 |
-| q8_0 | 1.0625 | 34/32 (GGML_TYPE_Q8_0) |
-| q4_0 | 0.625 | 20/32 (GGML_TYPE_Q4_0) |
-| q4_1 | 0.6875 | 22/32 (GGML_TYPE_Q4_1) |
-| iq4_nl | 0.625 | 20/32 (GGML_TYPE_IQ4_NL) |
-| q5_0 | 0.6875 | 22/32 (GGML_TYPE_Q5_0) |
-| q5_1 | 0.75 | 24/32 (GGML_TYPE_Q5_1) |
-| turbo2_0 | 0.265625 | 34/128 (block_turbo2_0: 2+32=34) |
-| turbo3_0 | 0.390625 | 50/128 (block_turbo3_0: 2+32+16=50) |
-| turbo4_0 | 0.53125 | 68/128 (block_turbo4_0: 68 static) |
-| tq3_0 | 0.4375 | 14/32 (block_tq3_0: 8+4+2=14) |
-| turbo2_tcq | 0.265625 | Alias für turbo2_0 |
-| turbo3_tcq | 0.390625 | Alias für turbo3_0 |
-| turbo4_tcq | 0.53125 | Alias für turbo4_0 |
+| GGML_TYPE_F16 | 2.0 | entry tier |
+| GGML_TYPE_TURBO8_0 | 1.015625 | VBR_TIER_T8 |
+| GGML_TYPE_TURBO4_0 | 0.515625 | VBR_TIER_T4 |
+| GGML_TYPE_TURBO3_TCQ | 0.40625 | VBR_TIER_T3_TCQ |
+| GGML_TYPE_TURBO2_TCQ | 0.28125 | VBR_TIER_T2_TCQ |
+| GGML_TYPE_TURBO1_TCQ | 0.15625 | VBR_TIER_T1_TCQ (RESERVED) |
+
+---
 
 ## Bemerkungen
 
-- turbo2_0, turbo3_0, turbo4_0 haben Block Size 128 (QK_TURBO2/3/4 = 128)
-- tq3_0 hat Block Size 32 (ursprünglicher TurboQuant/TQ3_0)
-- TurboQuant mit head_dim != multiple of 128: Zero-Padding auf nächste 128er-Grenze
-  → tatsächlicher Verbrauch kann 0-25% höher sein
-- turbo3_tcq = turbo3_0 (beide 3.125 bits/Value)
-- Die Werte sind konservative Schätzungen ohne Zero-Padding-Overhead
+- turbo8_0 und turbo4_0 haben Block Size 128 (QK_TURBO8/4 = 128)
+- turbo2_tcq, turbo3_tcq haben Block Size 128 (TCQ über 128-Element Rotation Groups)
+- turbo2_0, turbo3_0, tq3_0 haben Block Size 32 (original TurboQuant)
+- turbo1 variants: Block Size 128, aber codec entfernt 2026-07-05
+- turbo3_tcq = TRELLIS_CODED, nicht gleich turbo3_0! Andere Block-Struktur
+- turbo2_tcq = TRELLIS_CODED, nicht gleich turbo2_0! Andere Block-Struktur
+- Bei head_dim != multiple of QK: Zero-Padding auf nächste Block-Grenze → +0-25% Overhead
 
 ## Referenzen
 
+- ggml-common.h: https://github.com/spiritbuun/buun-llama-cpp/blob/master/ggml/src/ggml-common.h
 - TurboQuant Paper (ICLR 2026): https://arxiv.org/abs/2504.19874
-- PolarQuant (AISTATS 2026): https://arxiv.org/abs/2502.02617
-- QJL (2024): https://arxiv.org/abs/2406.03482
-- unixsysdev/llama-turboquant (TQ3_0): https://github.com/unixsysdev/llama-turboquant
-- TheTom/llama-cpp-turboquant (turbo2/3/4): https://github.com/TheTom/llama-cpp-turboquant
+- VBR-Doku: ./vbr-architecture.md

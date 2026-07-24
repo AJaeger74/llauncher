@@ -355,6 +355,7 @@ def _append_vram_estimate(window) -> None:
         return  # CPU mode — no VRAM needed
 
     try:
+        vbr_cal = getattr(window, '_calibrated_v_bytes', None)
         vram = estimate_vram(
             model_info=info,
             ngl=ngl,
@@ -362,6 +363,7 @@ def _append_vram_estimate(window) -> None:
             np_slots=np_slots,
             cache_type_k=cache_type_k,
             cache_type_v=cache_type_v,
+            vbr_calibrated_v_bytes=vbr_cal,
         )
         total_mb = vram["total_vram_mb"]
         model_mb = vram["model_vram_mb"]

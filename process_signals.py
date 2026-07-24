@@ -7,6 +7,9 @@ from PyQt6.QtCore import QTimer
 def start_gpu_monitor(window) -> None:
     """Start the GPU monitor thread and connect its signals.
     
+    The gpu_update signal is connected in ui_builder.py to window.update_gpu_display(),
+    which handles VRAM estimation + context info display.
+    
     Args:
         window: The main llauncher window instance
     """
@@ -15,9 +18,6 @@ def start_gpu_monitor(window) -> None:
     if not hasattr(window, "gpu_monitor") or window.gpu_monitor is None:
         window.gpu_monitor = GPUMonitor()
         window.gpu_monitor._window = window  # for dynamic host resolution
-        window.gpu_monitor.gpu_update.connect(
-            lambda data: _update_gpu_display(window.stats_label, data)
-        )
     
     if not window.gpu_monitor.isRunning():
         window.gpu_monitor.start()
