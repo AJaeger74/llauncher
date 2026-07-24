@@ -687,6 +687,12 @@ def get_model_info(path: str) -> Dict[str, Any]:
     # Parse tensor bytes from GGUF header (accurate, excludes metadata)
     tensor_bytes = read_gguf_tensor_bytes(path)
     
+    # For MoE models, tensor_bytes from GGUF tensor table parser is unreliable —
+    # expert tensors have non-standard dimension layouts that cause the parser to
+    # return only ~10% of the actual weight size. Use file_size as fallback.
+    if "moe" in (arch or "").lower():
+        tensor_bytes = stat.st_size
+    
     result = {
         "filename": Path(path).name,
         "arch": arch,
@@ -828,6 +834,12 @@ def estimate_vram(
     # Prefer tensor_bytes (from GGUF header) over file_size.
     # tensor_bytes excludes metadata/tokenizer/vocab — only GPU-relevant weights.
     total_tensor_bytes = model_info.get("tensor_bytes") or model_info.get("file_size", 0)
+    # For MoE models, tensor_bytes from GGUF tensor table parser is unreliable —
+    # expert tensors have non-standard dimension layouts that cause the parser to
+    # return only ~10% of the actual weight size. Use file_size as the estimate.
+    arch = model_info.get("arch", "")
+    if "moe" in arch.lower():
+        total_tensor_bytes = model_info.get("file_size", 0)
     block_count = model_info.get("block_count")
     embedding_length = model_info.get("embedding_length")
     head_count = model_info.get("head_count")

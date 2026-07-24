@@ -142,7 +142,8 @@ def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
     cache_type_k = params["cache_type_k"]
     cache_type_v = params["cache_type_v"]
 
-    # Estimate VRAM
+    # Estimate VRAM — pass calibrated V bytes if VBR is active
+    vbr_cal = getattr(window, '_calibrated_v_bytes', None)
     vram = estimate_vram(
         model_info=model_info,
         ngl=ngl,
@@ -150,6 +151,7 @@ def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
         np_slots=np_slots,
         cache_type_k=cache_type_k,
         cache_type_v=cache_type_v,
+        vbr_calibrated_v_bytes=vbr_cal,
     )
 
     # Guard: skip VRAM estimation if UI sliders not ready yet (e.g. during init)
@@ -171,12 +173,18 @@ def _display_vram_estimate(window, model_info: Dict[str, Any]) -> None:
         cache_mb = vram["cache_vram_mb"]
         total_mb = vram["total_vram_mb"]
         total_gb = total_mb / 1024
+        model_gb = model_mb / 1024
+        cache_gb = cache_mb / 1024
         overhead_mb = vram.get("overhead_mb", 0)
+        mmproj_mb = vram.get("mmproj_vram_mb", 0)
+        mmproj_gb = mmproj_mb / 1024
 
-        window.debug_text.append(f"  ┃ {gettext('debug_vram_model')} {total_gb:.1f} GB ({model_mb:.0f} MB)")
-        window.debug_text.append(f"  ┃ {gettext('debug_vram_cache')} {cache_mb:.1f} MB")
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_model')} {model_gb:.2f} GB ({model_mb:.0f} MB)")
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_cache')} {cache_gb:.2f} GB ({cache_mb:.0f} MB)")
+        if mmproj_mb > 0:
+            window.debug_text.append(f"  ┃ mmproj             {mmproj_gb:.2f} GB ({mmproj_mb:.0f} MB)")
         window.debug_text.append(f"  ┃ overhead           {overhead_mb:.0f} MB")
-        window.debug_text.append(f"  ┃ {gettext('debug_vram_total')} {total_gb:.2f} GB")
+        window.debug_text.append(f"  ┃ {gettext('debug_vram_total')} {total_gb:.2f} GB ({total_mb:.0f} MB)")
 
         # Compare with GPU free memory
         if gpu:

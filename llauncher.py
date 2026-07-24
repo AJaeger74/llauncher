@@ -870,6 +870,19 @@ class llauncher(QMainWindow):
                 # Cache model info on window for live VRAM updates in on_param_changed()
                 self._model_info = info
 
+                # Clear mmproj on model change — it's CPU-loaded (float32), not GPU VRAM
+                # Only keep it if a corresponding mmproj exists in the model directory
+                model_dir = str(model_path).rsplit('/', 1)[0]
+                mmproj_candidates = [
+                    os.path.join(model_dir, 'mmproj-F16.gguf'),
+                    os.path.join(model_dir, 'mmproj.q4_0.gguf'),
+                    os.path.join(model_dir, 'mmproj-f16.gguf'),
+                ]
+                has_mmproj = any(os.path.exists(p) for p in mmproj_candidates)
+                mmproj_line = getattr(self, 'mmproj_line', None)
+                if not has_mmproj and mmproj_line and mmproj_line.text().strip():
+                    mmproj_line.setText("")
+
                 # VRAM estimation + auto-adjust ngl
                 self._display_vram_estimate(info)
                 self._auto_adjust_ngl(info)
