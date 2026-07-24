@@ -776,12 +776,12 @@ KV_CACHE_TYPE_SIZES = {
     "turbo1_tcq": 0.15625,  # 20 / 128 = 1.25 bits/value
     # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
     "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
-    # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier and degrades
-    # At full context, VBR degrades V to turbo2_tcq/turbo1_tcq range.
-    # 0.22 B/v (~1.75 bpv) is the midpoint between turbo1_tcq (0.15625) and
-    # turbo2_tcq (0.28125) — realistic for the V-cache at saturated context.
-    # The K-cache (usually q8_0 or similar) is estimated separately and dominates.
-    "vbr": 0.22,  # ~1.75 bits/value (turbo1/turbo2_tcq midpoint)
+    # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier and degrades.
+    # Empirical value: 0.72 B/v (~5.8 bpv), derived from VBR-Calibrate at 120K tokens.
+    # This is the per-side baseline (applied to both K and V when both are VBR).
+    # At low token counts VBR stays at F16; at high context it degrades. 0.72
+    # is the realistic average across the full context range.
+    "vbr": 0.72,  # ~5.8 bits/value (empirical from VBR-Calibrate)
 }
 
 
