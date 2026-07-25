@@ -399,6 +399,7 @@ class HfDownloadDialog(QDialog):
         self.apply_theme(current_light_theme)
         self.setWindowTitle(gettext("hf_dl_dialog_title"))
         self.resize(520, 380)
+        self.setWindowIcon(self._window_icon())
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -922,6 +923,21 @@ class HfDownloadDialog(QDialog):
                 }
             """
 )
+
+    def _window_icon(self):
+        """Return a small icon with the 🤗 character rendered on it."""
+        from PyQt6.QtGui import QPixmap, QPainter, QFont, QIcon
+        from PyQt6.QtCore import Qt, QRect
+
+        size = 48
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setFont(QFont("Apple Color Emoji", 28))
+        painter.setPen(Qt.GlobalColor.white)
+        painter.drawText(QRect(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, "\U0001F917")
+        painter.end()
+        return QIcon(pixmap)
 
     def reject(self):
         """Called when user clicks Cancel or closes the dialog via X button.
