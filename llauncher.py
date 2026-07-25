@@ -987,10 +987,10 @@ class llauncher(QMainWindow):
             pct = (used / ctx * 100) if ctx > 0 else 0
             kv_bpv = slots.get("kv_bpv", 0)
             spec = slots.get("speculative", False)
-            spec_str = "Spec" if spec else ""
+            spec_type = slots.get("spec_type", "")
             parts = [f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f}"]
-            if spec_str:
-                parts.append(spec_str)
+            if spec_type:
+                parts.append(spec_type)
             ctx_suffix = " | ".join(parts)
             stats = f"{stats} | {ctx_suffix}"
 

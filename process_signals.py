@@ -67,8 +67,8 @@ def _update_gpu_display(label, gpu_data: dict) -> None:
         pct = (used / ctx * 100) if ctx > 0 else 0
         kv_bpv = slots.get("kv_bpv", 0)
         spec = slots.get("speculative", False)
-        spec_str = "Spec" if spec else ""
-        parts.append(f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f} | {spec_str}".strip())
+        spec_type = slots.get("spec_type", "")
+        parts.append(f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f} | {spec_type}")
 
     label.setText(" | ".join(parts))
 

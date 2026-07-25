@@ -54,6 +54,15 @@ class GPUMonitor(QThread):
             kv_bpv = slot.get("kv_bpv", 0)
             spec = slot.get("speculative", False)
             is_processing = slot.get("is_processing", False)
+            params = slot.get("params", {})
+            spec_types_str = params.get("speculative.types", "")
+            # Extract the active spec type (non-"none" type from comma-separated list)
+            spec_type = ""
+            if spec and spec_types_str:
+                types = [t.strip() for t in spec_types_str.split(",")]
+                active = [t for t in types if t != "none"]
+                if active:
+                    spec_type = active[0]
             return {
                 "ctx": ctx,
                 "prompt_tokens": prompt,
@@ -61,6 +70,7 @@ class GPUMonitor(QThread):
                 "used_tokens": prompt + decoded,
                 "kv_bpv": kv_bpv,
                 "speculative": spec,
+                "spec_type": spec_type,
                 "is_processing": is_processing,
             }
         except Exception:
