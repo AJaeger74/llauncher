@@ -121,33 +121,35 @@ python3 llauncher.py
 └── benchmarks.json   # Benchmark results
 
 ./                      # Project directory
-├── llauncher.py          # Main window (~1750 lines)
-├── ui_builder.py         # Declarative UI construction
-├── ui_helpers.py         # Text append, formatting utilities
-├── ui_persistence.py     # Window geometry + splitter state
-├── command_builder.py    # CLI arg assembly + param change signals
-├── params.py             # Parameter definitions and types
-├── gguf_utils.py         # GGUF parsing, CPU detection, model info
-├── storage.py            # JSON I/O for config/presets/benchmarks
-├── preset_manager.py     # Preset dialogs (save/load/benchmark rating)
-├── gpu_monitor.py        # GPUMonitor QThread with nvidia-smi polling
-├── process_runner.py     # ProcessRunner + terminate_by_pid()
-├── process_inspector.py  # Runtime process arg introspection
-├── process_signals.py    # GPU monitor startup + free VRAM queries
-├── status_manager.py     # Status label updates + error handling
-├── float_slider_sync.py  # DirectClickSlider + Float/Integer Slider Creation
-├── help_parser.py        # Dynamic parameter extraction from llama-server --help
-├── fork_manager.py       # Clone/build/switch llama.cpp forks
-├── settings_dialog.py    # Theme, language, path settings
-├── chat_templates.py     # Model-specific chat templates for benchmarks
+├── llauncher.py              # Main window (~2184 lines)
+├── ui_builder.py             # Declarative UI construction
+├── ui_helpers.py             # Text append, formatting utilities
+├── ui_persistence.py         # Window geometry + splitter state
+├── command_builder.py        # CLI arg assembly + param change signals
+├── params.py                 # Parameter definitions and types
+├── gguf_utils.py             # GGUF parsing, CPU detection, model info
+├── storage.py                # JSON I/O for config/presets/benchmarks
+├── preset_manager.py         # Preset dialogs (save/load/benchmark rating)
+├── gpu_monitor.py            # GPUMonitor QThread with nvidia-smi polling
+├── process_runner.py         # ProcessRunner + terminate_by_pid()
+├── process_inspector.py      # Runtime process arg introspection
+├── process_signals.py        # GPU monitor startup + free VRAM queries
+├── status_manager.py         # Status label updates + error handling
+├── float_slider_sync.py      # DirectClickSlider + Float/Integer Slider Creation
+├── help_parser.py            # Dynamic parameter extraction from llama-server --help
+├── fork_manager.py           # Clone/build/switch llama.cpp forks
+├── settings_dialog.py        # Theme, language, path settings
+├── chat_templates.py         # Model-specific chat templates for benchmarks
 ├── http_benchmark_thread.py  # HTTP streaming benchmark QThread
-├── benchmark_manager.py  # Benchmark lifecycle orchestration
-├── hf_download_dialog.py # Hugging Face model download dialog
-├── model_inspector.py    # GGUF metadata on model selection
-├── model_info_fetcher.py # Running model info via HTTP API
-├── i18n.py               # I18nManager + gettext system
-├── i18n_util.py          # Language helpers (auto-detect, defaults)
-├── locales/              # Translation JSON files (de.json, en.json)
+├── benchmark_manager.py      # Benchmark lifecycle orchestration
+├── hf_download_dialog.py     # Hugging Face model download dialog
+├── model_inspector.py        # GGUF metadata on model selection
+├── model_info_fetcher.py     # Running model info via HTTP API
+├── test_vram_calibration.py  # VRAM estimation calibration tests
+├── verify_estimate.py        # Quick VRAM estimate verification script
+├── i18n.py                   # I18nManager + gettext system
+├── i18n_util.py              # Language helpers (auto-detect, defaults)
+├── locales/                  # Translation JSON files (de.json, en.json)
 └── README.md
 ```
 
@@ -170,7 +172,7 @@ For vision models:
 - **GPU Monitoring**: nvidia-smi (NVIDIA-only)
 - **Process Management**: QThread with multi-signal shutdown (SIGINT→SIGTERM→SIGKILL)
 - **Styling**: Qt Style Sheet (QSS)
-- **Modularized**: ~9200 lines total across 26 modules; `llauncher.py` acts as orchestrator (~1750 lines)
+- **Modularized**: ~11280 lines total across 28 modules; `llauncher.py` acts as orchestrator (~2184 lines)
 - **Signal Handling**: Custom `object` type signals to avoid PyQt6 32-bit int truncation on large value emissions (progress sizes)
 - **i18n**: JSON-based translation system with lazy loading and runtime language switching
 - **Chat Templates**: Automatic template formatting per model family to prevent generation collapse during benchmarks
