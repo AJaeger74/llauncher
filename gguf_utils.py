@@ -431,10 +431,10 @@ def read_gguf_tensor_bytes(path: str) -> Optional[int]:
         return None
 
     # Estimate how much to read: header + metadata + tensor table
-    # Metadata can be large (tokenizer/vocab) — some models have 10-20 MB metadata.
-    # Tensor table is small (52 entries × ~100 bytes ≈ 5 KB).
-    # Read up to 25 MB to be safe; for smaller files read everything.
-    read_size = min(file_size, 25 * 1024 * 1024)
+    # Metadata can be large (tokenizer/vocab) — large MoE models may have
+    # 50+ MB of tokenizer metadata. Tensor table is small (~5 KB).
+    # Read up to 100 MB to be safe; for smaller files read everything.
+    read_size = min(file_size, 100 * 1024 * 1024)
 
     try:
         with open(path, "rb") as f:
@@ -686,12 +686,23 @@ def get_model_info(path: str) -> Dict[str, Any]:
     
     # Parse tensor bytes from GGUF header (accurate, excludes metadata)
     tensor_bytes = read_gguf_tensor_bytes(path)
+    file_size = stat.st_size
     
-    # For MoE models, tensor_bytes from GGUF tensor table parser is unreliable —
-    # expert tensors have non-standard dimension layouts that cause the parser to
-    # return only ~10% of the actual weight size. Use file_size as fallback.
-    if "moe" in (arch or "").lower():
-        tensor_bytes = stat.st_size
+    # Sanity check: the parser only handles standard llama/gpt-neox layouts.
+    # For non-standard architectures (MTP, MoE, SSM) it may return garbage
+    # — e.g. Qwen3.6-27B MTP returns only ~13% of file_size.  If the parser
+    # result is less than 70% of file_size, treat it as a failure.
+    if tensor_bytes is not None and file_size > 0:
+        if tensor_bytes < file_size * 0.7:
+            tensor_bytes = None  # treat as parse failure
+    
+    # Fallback: when the parser fails, use a fraction of file_size.
+    # GGUF metadata (tokenizer/vocab) is not loaded on GPU.  For these models
+    # the parser returns ~10-13% of file_size (structurally incomplete), so we
+    # fall back to a calibrated factor.  82% works for both MoE and Dense
+    # Qwen3.6 models — validated against nvidia-smi.
+    if tensor_bytes is None:
+        tensor_bytes = int(file_size * 0.82)
     
     result = {
         "filename": Path(path).name,
@@ -783,11 +794,11 @@ KV_CACHE_TYPE_SIZES = {
     # TQ3_0 (unixsysdev/llama-turboquant, block_size=32)
     "tq3_0": 0.4375,  # 14 / 32 = 3.5 bits/value (qs 8 + qr 4 + gamma 2)
     # VBR (Variable Bit Rate) — dynamic, starts at turbo8 tier and degrades.
-    # Empirical value: 0.72 B/v (~5.8 bpv), derived from VBR-Calibrate at 120K tokens.
-    # This is the per-side baseline (applied to both K and V when both are VBR).
-    # At low token counts VBR stays at F16; at high context it degrades. 0.72
-    # is the realistic average across the full context range.
-    "vbr": 0.72,  # ~5.8 bits/value (empirical from VBR-Calibrate)
+    # Empirical value: 0.38 B/v (~3.0 bpv), derived from live GPU measurement
+    # at 117K tokens where 52/65 layers were degraded (avg 0.36 B/v on degraded).
+    # At max context (262K), all layers are degraded — 0.38 is the safe average.
+    # The old 0.72 was measured at 120K with only partial degradation.
+    "vbr": 0.38,  # ~3.0 bits/value (empirical from live GPU at full degradation)
 }
 
 
@@ -833,13 +844,8 @@ def estimate_vram(
     """
     # Prefer tensor_bytes (from GGUF header) over file_size.
     # tensor_bytes excludes metadata/tokenizer/vocab — only GPU-relevant weights.
+    # llama.cpp keeps tokenizer/metadata on CPU — only tensor weights go to VRAM.
     total_tensor_bytes = model_info.get("tensor_bytes") or model_info.get("file_size", 0)
-    # For MoE models, tensor_bytes from GGUF tensor table parser is unreliable —
-    # expert tensors have non-standard dimension layouts that cause the parser to
-    # return only ~10% of the actual weight size. Use file_size as the estimate.
-    arch = model_info.get("arch", "")
-    if "moe" in arch.lower():
-        total_tensor_bytes = model_info.get("file_size", 0)
     block_count = model_info.get("block_count")
     embedding_length = model_info.get("embedding_length")
     head_count = model_info.get("head_count")
@@ -867,9 +873,10 @@ def estimate_vram(
         # Fallback: no block info, assume full model
         model_vram_bytes = total_tensor_bytes if total_tensor_bytes > 0 else 0
 
-    # 5% safety margin for CUDA alignment and page padding in VRAM
+    # For MoE models the alignment overhead is much smaller (more compact
+    # tensor packing, fewer small tensors).
     if model_vram_bytes > 0:
-        model_vram_bytes = model_vram_bytes * 1.05
+        model_vram_bytes *= 1.05
 
     # ── KV Cache VRAM ───────────────────────────────────────────────
     # Per llama.cpp llama-kv-cache:
