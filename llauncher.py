@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Importiere GGUF-Utilities aus separater Datei
-from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size, read_gguf_tensor_count, read_gpu_vram, estimate_vram, suggest_ngl
+from gguf_utils import get_cpu_count, read_gguf_context_length, get_model_info, format_size, read_gguf_tensor_count, read_gpu_vram, estimate_vram, suggest_ngl, get_vbr_degradation_info
 from help_parser import parse_cache_type_options
 from storage import (
     load_config, save_config, load_presets, save_presets,
@@ -985,13 +985,24 @@ class llauncher(QMainWindow):
             used = slots.get("used_tokens", 0)
             ctx = slots.get("ctx", 0)
             pct = (used / ctx * 100) if ctx > 0 else 0
-            kv_bpv = slots.get("kv_bpv", 0)
-            spec = slots.get("speculative", False)
+            shed_offer = slots.get("shed_offer", 0)
             spec_type = slots.get("spec_type", "")
-            parts = [f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f}"]
+
+            # Calculate live B/v from GPU usage
+            ctx_parts = [f"CX: {used:,}/{ctx:,} ({pct:.0f}%)"]
+            gpu_used_mb = data.get("used_mb", 0)
+            info = getattr(self, '_model_info', None)
+            if (shed_offer > 0 and used > 0 and gpu_used_mb > 0 and
+                    info and info.get("tensor_bytes", 0) > 0):
+                vbr = get_vbr_degradation_info(gpu_used_mb, shed_offer, used, info)
+                if vbr["bv_avg"] > 0:
+                    ctx_parts.append(f"B/v: {vbr['bv_avg']:.3f}")
+                    if vbr["layers_degraded"] > 0 and vbr["closest_tier"]:
+                        ctx_parts.append(f"({vbr['layers_degraded']:.0f} ≈ {vbr['closest_tier']})")
+
             if spec_type:
-                parts.append(spec_type)
-            ctx_suffix = " | ".join(parts)
+                ctx_parts.append(spec_type)
+            ctx_suffix = " | ".join(ctx_parts)
             stats = f"{stats} | {ctx_suffix}"
 
         self.stats_label.setText(stats)
@@ -1067,46 +1078,34 @@ class llauncher(QMainWindow):
 
         # Model info for back-calculation
         info = getattr(self, '_model_info', None)
-        block_count = info.get("block_count", 1) if info else 1
-        key_head_count = info.get("key_head_count", 1) if info else 1
-        kv_head_dim = info.get("kv_head_dim") or (info.get("embedding_length", 4096) // info.get("head_count", 1) if info else 256)
-        tensor_bytes = info.get("tensor_bytes") if info else 0
-
-        # shed_per_val: bytes freed per value when F16 -> turbo8
-        shed_per_val = 2.0 - 1.015625  # 0.984375
-        bv_degraded = 0.0  # B/v of degraded layers (0 = no degradation)
-
-        # Calculate F16 layers from shed_offer
-        layers_f16 = 0
-        if shed_offer > 0 and n_tokens > 0:
-            layers_f16 = shed_offer / (shed_per_val * n_tokens * key_head_count * kv_head_dim * 2)
-        layers_degraded = block_count - layers_f16
+        if not info or not info.get("tensor_bytes", 0):
+            block_count = 1
+        else:
+            block_count = info.get("block_count", 1)
 
         # Debug output
         self.debug_text.append("")
         self.debug_text.append(f"  ┃ VBR Degradation Analysis ({n_tokens:,} tokens)")
         self.debug_text.append(f"  ┃ kv_bpv (entry): {kv_bpv:.1f} bpv (F16)")
-        self.debug_text.append(f"  ┃ F16 layers: {layers_f16:.0f}/{block_count}")
-        self.debug_text.append(f"  ┃ Degraded:   {layers_degraded:.0f}/{block_count}")
 
-        if gpu_used_mb is not None and tensor_bytes > 0:
-            # Back-calculate from GPU usage
-            model_mb = tensor_bytes * 1.05 / (1024 * 1024)
-            overhead_mb = 1024
-            cache_mb = gpu_used_mb - model_mb - overhead_mb
+        v_bytes_per_value = 0.0
+        layers_degraded = 0
+        closest_tier = ""
 
-            if cache_mb > 0:
-                # Average B/v across all layers
-                cache_bytes = cache_mb * 1024 * 1024
-                bv_avg = cache_bytes / (n_tokens * key_head_count * kv_head_dim * 2 * block_count)
+        if gpu_used_mb is not None and info and info.get("tensor_bytes", 0) > 0 and shed_offer > 0:
+            vbr = get_vbr_degradation_info(gpu_used_mb, shed_offer, n_tokens, info)
+            layers_f16 = vbr["layers_f16"]
+            layers_degraded = vbr["layers_degraded"]
+            bv_avg = vbr["bv_avg"]
+            bv_degraded = vbr["bv_degraded"]
+            closest_tier = vbr["closest_tier"]
 
-                # B/v of degraded layers only
-                bv_degraded = 0.0
-                if layers_degraded > 0:
-                    bv_degraded = (bv_avg * block_count - layers_f16 * 2.0) / layers_degraded
+            self.debug_text.append(f"  ┃ F16 layers: {layers_f16:.0f}/{block_count}")
+            self.debug_text.append(f"  ┃ Degraded:   {layers_degraded:.0f}/{block_count}")
 
-                # Cache if all F16
-                cache_f16_gb = n_tokens * key_head_count * kv_head_dim * 2.0 * 2 * block_count / (1024**3)
+            if bv_avg > 0:
+                cache_mb = gpu_used_mb - info.get("tensor_bytes", 0) * 1.05 / (1024 * 1024) - 1024
+                cache_f16_gb = n_tokens * info.get("key_head_count", 4) * info.get("kv_head_dim", 256) * 2.0 * 2 * block_count / (1024**3)
                 cache_actual_gb = cache_mb / 1024
                 degradation_pct = (1 - cache_actual_gb / cache_f16_gb) * 100 if cache_f16_gb > 0 else 0
 
@@ -1115,27 +1114,17 @@ class llauncher(QMainWindow):
                 self.debug_text.append(f"  ┃ Degradation: {degradation_pct:.0%}")
                 self.debug_text.append(f"  ┃ Avg B/v: {bv_avg:.4f}")
 
-                if bv_degraded > 0:
-                    # Determine closest tier
-                    tiers = [
-                        ("turbo8_0", 1.015625),
-                        ("turbo4_0", 0.515625),
-                        ("turbo3_tcq", 0.40625),
-                        ("turbo2_tcq", 0.28125),
-                        ("turbo1_tcq", 0.15625),
-                    ]
-                    closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
-                    self.debug_text.append(f"  ┃ Degraded B/v: {bv_degraded:.4f} ≈ {closest[0]} ({closest[1]:.4f})")
+                if bv_degraded > 0 and closest_tier:
+                    self.debug_text.append(f"  ┃ Degraded B/v: {bv_degraded:.4f} ≈ {closest_tier}")
                     v_bytes_per_value = bv_degraded
                 else:
                     v_bytes_per_value = bv_avg
             else:
-                # Fallback: use kv_bpv isolation (only valid if no degradation)
-                v_bpv = (kv_bpv * 2) - k_bpv
-                v_bytes_per_value = v_bpv / 8.0
-                self.debug_text.append(f"  ┃ Fallback: V={v_bpv:.2f} bpv ({v_bytes_per_value:.4f} B/v)")
+                self.debug_text.append(f"  ┃ No cache data available")
         else:
             # Fallback: use kv_bpv isolation
+            self.debug_text.append(f"  ┃ F16 layers: {block_count}/{block_count}")
+            self.debug_text.append(f"  ┃ Degraded:   0/{block_count}")
             v_bpv = (kv_bpv * 2) - k_bpv
             v_bytes_per_value = v_bpv / 8.0
             self.debug_text.append(f"  ┃ Fallback: V={v_bpv:.2f} bpv ({v_bytes_per_value:.4f} B/v)")
@@ -1150,18 +1139,7 @@ class llauncher(QMainWindow):
         # Update stats label with calibration info
         if hasattr(self, 'stats_label'):
             current_text = self.stats_label.text()
-            bpv_display = v_bytes_per_value * 8
-            tier_label = ""
-            if layers_degraded > 0 and bv_degraded > 0:
-                tiers = [
-                    ("turbo8_0", 1.015625),
-                    ("turbo4_0", 0.515625),
-                    ("turbo3_tcq", 0.40625),
-                    ("turbo2_tcq", 0.28125),
-                    ("turbo1_tcq", 0.15625),
-                ]
-                closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
-                tier_label = f" ≈ {closest[0]}"
+            tier_label = f" ≈ {closest_tier}" if closest_tier else ""
             self.stats_label.setText(
                 f"{current_text} | VBR: {layers_degraded:.0f} layers{tier_label} ({v_bytes_per_value:.3f} B/v)"
             )

@@ -1020,3 +1020,94 @@ def suggest_ngl(
     max_layers = max(0, min(max_layers, block_count))
 
     return max_layers
+
+def get_vbr_degradation_info(
+    gpu_used_mb: int,
+    shed_offer: int,
+    used_tokens: int,
+    model_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Calculate live VBR degradation status from GPU usage and shed_offer.
+
+    Uses nvidia-smi GPU usage + shed_offer from /slots API to back-calculate
+    the effective B/v of degraded layers and determine the closest tier.
+
+    Args:
+        gpu_used_mb: GPU memory used in MB (from nvidia-smi)
+        shed_offer: Bytes freed if all F16 layers degrade to turbo8 (from /slots)
+        used_tokens: Current token count in the slot
+        model_info: Output of get_model_info()
+
+    Returns dict with:
+        bv_avg: Average B/v across all layers
+        bv_degraded: B/v of degraded layers only (0 if none degraded)
+        layers_f16: Number of layers still at F16
+        layers_degraded: Number of degraded layers
+        total_layers: Total block count
+        closest_tier: Name of closest VBR tier (e.g. 't3')
+        closest_bv: B/v of closest tier
+    """
+    block_count = model_info.get("block_count", 65)
+    key_head_count = model_info.get("key_head_count", 4)
+    kv_head_dim = model_info.get("kv_head_dim", 256)
+    tensor_bytes = model_info.get("tensor_bytes", 0)
+
+    # Default result if we can't calculate
+    result = {
+        "bv_avg": 0.0,
+        "bv_degraded": 0.0,
+        "layers_f16": 0,
+        "layers_degraded": 0,
+        "total_layers": block_count,
+        "closest_tier": "",
+        "closest_bv": 0.0,
+    }
+
+    # Need all inputs to be valid
+    if gpu_used_mb <= 0 or used_tokens <= 0 or tensor_bytes <= 0:
+        return result
+
+    # Back-calculate cache size from GPU usage
+    model_mb = tensor_bytes * 1.05 / (1024 * 1024)
+    overhead_mb = 1024
+    cache_mb = gpu_used_mb - model_mb - overhead_mb
+    if cache_mb <= 0:
+        return result
+
+    # Average B/v across all layers
+    cache_bytes = cache_mb * 1024 * 1024
+    bv_avg = cache_bytes / (used_tokens * key_head_count * kv_head_dim * 2 * block_count)
+    result["bv_avg"] = bv_avg
+
+    if shed_offer <= 0:
+        return result
+
+    # Calculate F16 layers from shed_offer
+    shed_per_val = 2.0 - 1.015625  # bytes freed per value when F16 -> turbo8
+    layers_f16 = shed_offer / (shed_per_val * used_tokens * key_head_count * kv_head_dim * 2)
+    layers_degraded = block_count - layers_f16
+
+    result["layers_f16"] = layers_f16
+    result["layers_degraded"] = layers_degraded
+
+    if layers_degraded <= 0:
+        return result
+
+    # B/v of degraded layers only
+    bv_degraded = (bv_avg * block_count - layers_f16 * 2.0) / layers_degraded
+    result["bv_degraded"] = bv_degraded
+
+    # Determine closest tier
+    tiers = [
+        ("t8", 1.015625),
+        ("t4", 0.515625),
+        ("t3", 0.40625),
+        ("t2", 0.28125),
+        ("t1", 0.15625),
+    ]
+    if bv_degraded > 0:
+        closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
+        result["closest_tier"] = closest[0]
+        result["closest_bv"] = closest[1]
+
+    return result
