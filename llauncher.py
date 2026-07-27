@@ -1129,15 +1129,23 @@ class llauncher(QMainWindow):
 
                 # --- VBR Simulation using vbr_calc ---
                 try:
-                    from vbr_calc import simulate_vbr, effective_degradation
+                    from vbr_calc import simulate_vbr, simulate_vbr_nemotron, effective_degradation
                     total_vram_bytes = gpu_total_mb * 1024 * 1024
-                    weights_bytes = info.get("tensor_bytes", 0)
 
-                    kv_sim, kv_budget, tiers = simulate_vbr(
-                        total_vram_bytes, weights_bytes,
-                        active_slot.get("n_ctx", 262144),
-                        block_count, key_head_count, kv_head_dim,
-                    )
+                    # Use nemotron-specific wrapper for nemotron_h_moe models
+                    if info.get("arch") == "nemotron_h_moe":
+                        kv_sim, kv_budget, tiers = simulate_vbr_nemotron(
+                            total_vram_bytes, info,
+                            active_slot.get("n_ctx", 262144),
+                            block_count, key_head_count, kv_head_dim,
+                        )
+                    else:
+                        weights_bytes = info.get("tensor_bytes", 0)
+                        kv_sim, kv_budget, tiers = simulate_vbr(
+                            total_vram_bytes, weights_bytes,
+                            active_slot.get("n_ctx", 262144),
+                            block_count, key_head_count, kv_head_dim,
+                        )
 
                     # Count tiers
                     tier_counts = {}
@@ -1184,9 +1192,9 @@ class llauncher(QMainWindow):
     def _read_vram_params(self) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
 
-        When VBR is active, uses actual token count from the running server
-        instead of the slider maximum — VBR cache scales with real tokens,
-        not the configured context limit.
+        When a server is running with an active slot, uses actual token count
+        instead of the slider maximum — cache scales with real tokens, not
+        the configured context limit.
 
         Returns a dict with ctx_size, ngl, np_slots, cache_type_k, cache_type_v, mmproj_size.
         """
@@ -1203,12 +1211,17 @@ class llauncher(QMainWindow):
         if not param_sliders:
             return params
 
-        # ctx_size
+        # ctx_size — start with slider value
         c_slider = param_sliders.get("-c", {})
         if c_slider:
             s = c_slider.get("slider")
             if s:
                 params["ctx_size"] = s.value()
+
+        # Override ctx_size with actual token count from running server
+        slots_info = self._query_slots_tokens()
+        if slots_info and slots_info.get("used_tokens", 0) > 0:
+            params["ctx_size"] = slots_info["used_tokens"]
 
         # ngl
         ngl_slider = param_sliders.get("-ngl", {})

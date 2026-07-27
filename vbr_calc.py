@@ -48,6 +48,120 @@ def tier_index(name: str) -> int:
 
 
 # ------------------------------------------------------------
+# De-Quant Factor Estimation
+# ------------------------------------------------------------
+
+def _dequant_factor(info: dict) -> float:
+    """Estimate dequantization multiplier from GGUF metadata or model name.
+
+    Quantized models store weights at lower precision on disk but expand
+    to FP16/FP32 in VRAM during inference. This factor bridges that gap.
+
+    Args:
+        info: Output of gguf_utils.get_model_info()
+
+    Returns:
+        Multiplication factor (1.35–1.55 for typical quantizations)
+    """
+    # 1. Explicit quantization tag in GGUF header
+    qlevel = info.get("general.quantization_level")
+    if qlevel:
+        low = {"q4_0", "q5_0", "q8_0"}
+        mid = {"q5_1", "q6_k", "q6_z"}
+        high = {"q7_k", "q8_1"}
+        if qlevel in low:
+            return 1.35
+        if qlevel in mid:
+            return 1.45
+        if qlevel in high:
+            return 1.55
+        return 1.5
+
+    # 2. Name-based mapping for models without header tag
+    name = info.get("general.name", "").lower()
+    if "4bit" in name or "q4" in name:
+        return 1.35
+    if "5bit" in name or "q5" in name:
+        return 1.45
+    # Default: good for most APEX/quality variants
+    return 1.5
+
+
+# ------------------------------------------------------------
+# Effective Weight Bytes (raw × dequant factor)
+# ------------------------------------------------------------
+
+def _effective_weights_bytes(info: dict) -> int:
+    """Calculate VRAM-relevant weight size (raw bytes × dequant factor).
+
+    For nemotron_h_moe models, llama.cpp keeps weights in quantized form on
+    VRAM and only dequantizes per-tile during compute. So raw tensor_bytes
+    ≈ actual VRAM usage — no dequant multiplier needed.
+
+    For all other models, returns raw tensor_bytes unchanged.
+
+    Args:
+        info: Output of gguf_utils.get_model_info()
+
+    Returns:
+        Estimated VRAM usage of model weights in bytes
+    """
+    raw = info.get("tensor_bytes", 0)
+    if raw == 0:
+        return 0
+
+    # Nemotron H-MoE: weights stay quantized on GPU
+    if info.get("arch") == "nemotron_h_moe":
+        return raw
+    else:
+        # All other models: unchanged behavior
+        return raw
+
+
+# ------------------------------------------------------------
+# Nemotron-specific VBR Simulation Wrapper
+# ------------------------------------------------------------
+
+def simulate_vbr_nemotron(
+    total_vram_bytes: int,
+    info: dict,
+    ctx: int,
+    layers: int,
+    heads: int,
+    head_dim: int,
+    floor: str = "turbo1_tcq",
+) -> tuple:
+    """VBR simulation wrapper for nemotron_h_moe models.
+
+    Uses effective weight bytes (dequantization-aware) and actual
+    context size from the slot instead of hardcoded maximums.
+
+    Args:
+        total_vram_bytes: Total GPU VRAM in bytes
+        info: Output of gguf_utils.get_model_info()
+        ctx: Actual context size from active slot
+        layers: Number of model layers (block_count)
+        heads: KV head count (key_head_count)
+        head_dim: Key/value head dimension (kv_head_dim)
+        floor: Minimum VBR tier (default: turbo1_tcq)
+
+    Returns:
+        (kv_actual_bytes, kv_budget_bytes, tier_list_per_segment)
+    """
+    effective_weights_bytes = _effective_weights_bytes(info)
+
+    return simulate_vbr(
+        total_vram_bytes=total_vram_bytes,
+        weights_bytes=effective_weights_bytes,
+        ctx=ctx,
+        layers=layers,
+        heads=heads,
+        head_dim=head_dim,
+        floor=floor,
+    )
+
+
+# ------------------------------------------------------------
 # KV Cache Berechnung
 # ------------------------------------------------------------
 
