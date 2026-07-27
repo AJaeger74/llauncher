@@ -997,7 +997,12 @@ class llauncher(QMainWindow):
         self.stats_label.setText(stats)
 
     def _calibrate_vbr(self):
-        """Query /slots API for live kv_bpv, isolate V-cache bpv, and update VRAM estimate."""
+        """Query /slots API + nvidia-smi for live VBR degradation status.
+
+        Uses shed_offer to count F16 layers, nvidia-smi for actual GPU usage,
+        and back-calculates the effective B/v of degraded layers.
+        kv_bpv from /slots is the entry type (always F16=16.0), not current state.
+        """
         import urllib.request
         import urllib.error
 
@@ -1029,11 +1034,26 @@ class llauncher(QMainWindow):
             self.debug_text.append(t("msg_vbr_no_slot"))
             return
 
-        kv_bpv = active_slot.get("kv_bpv")
-        n_tokens = active_slot.get("n_prompt_tokens", 0)
-        if kv_bpv is None or kv_bpv <= 0:
-            self.debug_text.append(t("msg_vbr_no_kvpbv"))
-            return
+        kv_bpv = active_slot.get("kv_bpv", 0)
+        n_prompt = active_slot.get("n_prompt_tokens", 0)
+        n_decoded_slot = active_slot.get("next_token", [{}])[0].get("n_decoded", 0)
+        n_tokens = n_prompt + n_decoded_slot
+
+        # shed_offer: bytes freed if all F16 layers degrade to turbo8
+        cotenancy = active_slot.get("cotenancy", {})
+        shed_offer = cotenancy.get("shed_offer", 0)
+
+        # Get GPU usage from nvidia-smi
+        gpu_used_mb = None
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                gpu_used_mb = int(result.stdout.strip())
+        except Exception:
+            pass
 
         # K-cache type (q8_0 = 8.5 bpv)
         cache_k = self.param_sliders.get("--cache-type-k", {}).get("combo")
@@ -1045,27 +1065,106 @@ class llauncher(QMainWindow):
         k_bpv_map = {"f16": 16.0, "q8_0": 8.5, "q4_0": 6.625, "q5_0": 7.125, "q5_1": 7.625}
         k_bpv = k_bpv_map.get(k_type, 16.0)
 
-        # Isolate V bpv: kv_bpv = (k_bpv + v_bpv) / 2
-        v_bpv = (kv_bpv * 2) - k_bpv
-        v_bytes_per_value = v_bpv / 8.0
+        # Model info for back-calculation
+        info = getattr(self, '_model_info', None)
+        block_count = info.get("block_count", 1) if info else 1
+        key_head_count = info.get("key_head_count", 1) if info else 1
+        kv_head_dim = info.get("kv_head_dim") or (info.get("embedding_length", 4096) // info.get("head_count", 1) if info else 256)
+        tensor_bytes = info.get("tensor_bytes") if info else 0
 
-        self.debug_text.append(
-            t("msg_vbr_result", kv_bpv=kv_bpv, k_bpv=k_bpv, k_type=k_type,
-              v_bpv=v_bpv, v_type=v_type, v_bytes=v_bytes_per_value, tokens=n_tokens)
-        )
+        # shed_per_val: bytes freed per value when F16 -> turbo8
+        shed_per_val = 2.0 - 1.015625  # 0.984375
+        bv_degraded = 0.0  # B/v of degraded layers (0 = no degradation)
+
+        # Calculate F16 layers from shed_offer
+        layers_f16 = 0
+        if shed_offer > 0 and n_tokens > 0:
+            layers_f16 = shed_offer / (shed_per_val * n_tokens * key_head_count * kv_head_dim * 2)
+        layers_degraded = block_count - layers_f16
+
+        # Debug output
+        self.debug_text.append("")
+        self.debug_text.append(f"  ┃ VBR Degradation Analysis ({n_tokens:,} tokens)")
+        self.debug_text.append(f"  ┃ kv_bpv (entry): {kv_bpv:.1f} bpv (F16)")
+        self.debug_text.append(f"  ┃ F16 layers: {layers_f16:.0f}/{block_count}")
+        self.debug_text.append(f"  ┃ Degraded:   {layers_degraded:.0f}/{block_count}")
+
+        if gpu_used_mb is not None and tensor_bytes > 0:
+            # Back-calculate from GPU usage
+            model_mb = tensor_bytes * 1.05 / (1024 * 1024)
+            overhead_mb = 1024
+            cache_mb = gpu_used_mb - model_mb - overhead_mb
+
+            if cache_mb > 0:
+                # Average B/v across all layers
+                cache_bytes = cache_mb * 1024 * 1024
+                bv_avg = cache_bytes / (n_tokens * key_head_count * kv_head_dim * 2 * block_count)
+
+                # B/v of degraded layers only
+                bv_degraded = 0.0
+                if layers_degraded > 0:
+                    bv_degraded = (bv_avg * block_count - layers_f16 * 2.0) / layers_degraded
+
+                # Cache if all F16
+                cache_f16_gb = n_tokens * key_head_count * kv_head_dim * 2.0 * 2 * block_count / (1024**3)
+                cache_actual_gb = cache_mb / 1024
+                degradation_pct = (1 - cache_actual_gb / cache_f16_gb) * 100 if cache_f16_gb > 0 else 0
+
+                self.debug_text.append(f"  ┃ GPU used: {gpu_used_mb/1024:.1f} GB")
+                self.debug_text.append(f"  ┃ Cache actual: {cache_actual_gb:.1f} GB (F16 would be: {cache_f16_gb:.1f} GB)")
+                self.debug_text.append(f"  ┃ Degradation: {degradation_pct:.0%}")
+                self.debug_text.append(f"  ┃ Avg B/v: {bv_avg:.4f}")
+
+                if bv_degraded > 0:
+                    # Determine closest tier
+                    tiers = [
+                        ("turbo8_0", 1.015625),
+                        ("turbo4_0", 0.515625),
+                        ("turbo3_tcq", 0.40625),
+                        ("turbo2_tcq", 0.28125),
+                        ("turbo1_tcq", 0.15625),
+                    ]
+                    closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
+                    self.debug_text.append(f"  ┃ Degraded B/v: {bv_degraded:.4f} ≈ {closest[0]} ({closest[1]:.4f})")
+                    v_bytes_per_value = bv_degraded
+                else:
+                    v_bytes_per_value = bv_avg
+            else:
+                # Fallback: use kv_bpv isolation (only valid if no degradation)
+                v_bpv = (kv_bpv * 2) - k_bpv
+                v_bytes_per_value = v_bpv / 8.0
+                self.debug_text.append(f"  ┃ Fallback: V={v_bpv:.2f} bpv ({v_bytes_per_value:.4f} B/v)")
+        else:
+            # Fallback: use kv_bpv isolation
+            v_bpv = (kv_bpv * 2) - k_bpv
+            v_bytes_per_value = v_bpv / 8.0
+            self.debug_text.append(f"  ┃ Fallback: V={v_bpv:.2f} bpv ({v_bytes_per_value:.4f} B/v)")
 
         # Store calibrated value for use in VRAM estimate
         self._calibrated_v_bytes = v_bytes_per_value
 
         # Re-run VRAM estimate with calibrated value
-        info = getattr(self, '_model_info', None)
         if info:
             self._display_vram_estimate(info)
 
         # Update stats label with calibration info
         if hasattr(self, 'stats_label'):
             current_text = self.stats_label.text()
-            self.stats_label.setText(f"{current_text} | VBR: {v_bpv:.1f} bpv ({v_bytes_per_value:.4f} B/v)")
+            bpv_display = v_bytes_per_value * 8
+            tier_label = ""
+            if layers_degraded > 0 and bv_degraded > 0:
+                tiers = [
+                    ("turbo8_0", 1.015625),
+                    ("turbo4_0", 0.515625),
+                    ("turbo3_tcq", 0.40625),
+                    ("turbo2_tcq", 0.28125),
+                    ("turbo1_tcq", 0.15625),
+                ]
+                closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
+                tier_label = f" ≈ {closest[0]}"
+            self.stats_label.setText(
+                f"{current_text} | VBR: {layers_degraded:.0f} layers{tier_label} ({v_bytes_per_value:.3f} B/v)"
+            )
 
     def _read_vram_params(self) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
