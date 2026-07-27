@@ -1070,6 +1070,10 @@ class llauncher(QMainWindow):
     def _read_vram_params(self) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
 
+        When VBR is active, uses actual token count from the running server
+        instead of the slider maximum — VBR cache scales with real tokens,
+        not the configured context limit.
+
         Returns a dict with ctx_size, ngl, np_slots, cache_type_k, cache_type_v, mmproj_size.
         """
         params: Dict[str, Any] = {
@@ -1125,6 +1129,36 @@ class llauncher(QMainWindow):
                 pass
 
         return params
+
+    def _query_slots_tokens(self) -> Optional[Dict[str, Any]]:
+        """Query the llama.cpp /slots API for current token usage.
+
+        Returns a dict with ``used_tokens`` (prompt + decoded) or ``None``
+        if the server is not reachable.
+        """
+        try:
+            host = "localhost"
+            host_edit = getattr(self, "param_sliders", {}).get("--host", {}).get("edit")
+            if host_edit:
+                h = host_edit.text().strip()
+                if h:
+                    host = h
+
+            result = subprocess.run(
+                ["curl", "-s", "--max-time", "2", f"http://{host}:8080/slots"],
+                capture_output=True, text=True, timeout=4,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return None
+            slots = json.loads(result.stdout)
+            if not slots or not isinstance(slots, list):
+                return None
+            slot = slots[0]
+            prompt = slot.get("n_prompt_tokens", 0)
+            decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
+            return {"used_tokens": prompt + decoded}
+        except Exception:
+            return None
 
     def _auto_adjust_ngl(self, info: dict) -> None:
         """Auto-adjust -ngl if current settings would exceed available VRAM.
@@ -2039,6 +2073,10 @@ class llauncher(QMainWindow):
         
         # Preset anwenden und Kommandozeile anzeigen
         apply_preset(self, preset)
+        
+        # Re-display VRAM estimate with new preset parameters
+        if hasattr(self, '_model_info') and self._model_info:
+            self._display_vram_estimate(self._model_info)
         
         preset_show_args(
             self,
