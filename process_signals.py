@@ -69,47 +69,60 @@ def _update_gpu_display(label, gpu_data: dict) -> None:
         spec = slots.get("speculative", False)
         spec_type = slots.get("spec_type", "")
 
-        # Calculate effective VBR status from shed_offer
-        # shed_offer = bytes freed if all F16 layers degrade to turbo8
-        # shed_per_val = 2.0 - 1.015625 = 0.984375
-        if shed_offer > 0 and used > 0:
-            # We need model info for exact layer count — use a reasonable default
-            # or get it from the window's cached model info
-            block_count = 65  # default; will be refined from model_info below
-            key_head_count = 4
-            kv_head_dim = 256
+        # Get model info from window for B/v calculation
+        model_info = None
+        try:
+            parent = label.parent()
+            while parent is not None:
+                mi = getattr(parent, '_model_info', None)
+                if mi and isinstance(mi, dict):
+                    model_info = mi
+                    break
+                parent = parent.parent()
+        except Exception:
+            pass
 
-            # Try to get model info from window for accurate calculation
-            label_obj = label  # the QLabel itself
-            # Access window via label's parent chain if possible
-            model_info = None
-            try:
-                # Check if label has a parent window with _model_info
-                parent = label.parent()
-                while parent is not None:
-                    mi = getattr(parent, '_model_info', None)
-                    if mi and isinstance(mi, dict):
-                        model_info = mi
-                        break
-                    parent = parent.parent()
-            except Exception:
-                pass
+        block_count = model_info.get("block_count", 65) if model_info else 65
+        key_head_count = model_info.get("key_head_count", 4) if model_info else 4
+        kv_head_dim = model_info.get("kv_head_dim", 256) if model_info else 256
+        tensor_bytes = model_info.get("tensor_bytes", 0) if model_info else 0
 
-            if model_info:
-                block_count = model_info.get("block_count", block_count)
-                key_head_count = model_info.get("key_head_count", key_head_count)
-                kv_head_dim = model_info.get("kv_head_dim", kv_head_dim) or 256
+        # Calculate Avg B/v from GPU usage
+        gpu_used_mb = gpu_data.get("used_mb", 0)
+        ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%)"
 
-            shed_per_val = 2.0 - 1.015625
-            layers_f16 = shed_offer / (shed_per_val * used * key_head_count * kv_head_dim * 2)
-            layers_degraded = block_count - layers_f16
+        if shed_offer > 0 and used > 0 and gpu_used_mb > 0 and tensor_bytes > 0:
+            # Back-calculate cache size from GPU usage
+            model_mb = tensor_bytes * 1.05 / (1024 * 1024)
+            overhead_mb = 1024
+            cache_mb = gpu_used_mb - model_mb - overhead_mb
 
-            if layers_degraded > 0:
-                ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | VBR: {layers_degraded:.0f}/{block_count} degraded | {spec_type}"
-            else:
-                ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | VBR: F16 | {spec_type}"
-        else:
-            ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | {spec_type}"
+            if cache_mb > 0:
+                cache_bytes = cache_mb * 1024 * 1024
+                bv_avg = cache_bytes / (used * key_head_count * kv_head_dim * 2 * block_count)
+                ctx_str += f" | B/v: {bv_avg:.3f}"
+
+                # Layers F16 / degraded from shed_offer
+                shed_per_val = 2.0 - 1.015625
+                layers_f16 = shed_offer / (shed_per_val * used * key_head_count * kv_head_dim * 2)
+                layers_degraded = block_count - layers_f16
+
+                if layers_degraded > 0:
+                    # Determine closest tier
+                    tiers = [
+                        ("t8", 1.015625),
+                        ("t4", 0.515625),
+                        ("t3", 0.40625),
+                        ("t2", 0.28125),
+                        ("t1", 0.15625),
+                    ]
+                    bv_degraded = (bv_avg * block_count - layers_f16 * 2.0) / layers_degraded
+                    if bv_degraded > 0:
+                        closest = min(tiers, key=lambda x: abs(x[1] - bv_degraded))
+                        ctx_str += f" ({layers_degraded:.0f} ≈ {closest[0]})"
+
+        elif spec_type:
+            ctx_str += f" | {spec_type}"
 
         parts.append(ctx_str)
 
