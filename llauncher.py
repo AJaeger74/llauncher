@@ -1189,12 +1189,18 @@ class llauncher(QMainWindow):
                 f"{current_text} | VBR: {layers_degraded:.0f} layers{tier_label} ({v_bytes_per_value:.3f} B/v)"
             )
 
-    def _read_vram_params(self) -> Dict[str, Any]:
+    def _read_vram_params(self, model_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
 
-        When a server is running with an active slot, uses actual token count
-        instead of the slider maximum — cache scales with real tokens, not
-        the configured context limit.
+        For nemotron_h_moe models, uses actual token count from running server
+        instead of slider maximum — cache scales with real tokens, not the
+        configured context limit.
+
+        For all other models, uses the slider maximum (original behavior).
+
+        Args:
+            model_info: Optional model info dict. If provided and arch is
+                nemotron_h_moe, uses actual token count from /slots.
 
         Returns a dict with ctx_size, ngl, np_slots, cache_type_k, cache_type_v, mmproj_size.
         """
@@ -1218,10 +1224,11 @@ class llauncher(QMainWindow):
             if s:
                 params["ctx_size"] = s.value()
 
-        # Override ctx_size with actual token count from running server
-        slots_info = self._query_slots_tokens()
-        if slots_info and slots_info.get("used_tokens", 0) > 0:
-            params["ctx_size"] = slots_info["used_tokens"]
+        # Override ctx_size with actual token count — ONLY for nemotron_h_moe
+        if model_info and model_info.get("arch") == "nemotron_h_moe":
+            slots_info = self._query_slots_tokens()
+            if slots_info and slots_info.get("used_tokens", 0) > 0:
+                params["ctx_size"] = slots_info["used_tokens"]
 
         # ngl
         ngl_slider = param_sliders.get("-ngl", {})
@@ -1363,7 +1370,7 @@ class llauncher(QMainWindow):
 
     def _display_vram_estimate(self, info: dict):
         """Display VRAM estimation in debug output (on model selection)."""
-        params = self._read_vram_params()
+        params = self._read_vram_params(info)
         ngl = params["ngl"]
         ctx_size = params["ctx_size"]
         np_slots = params["np_slots"]
