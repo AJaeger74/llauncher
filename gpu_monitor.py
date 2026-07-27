@@ -69,6 +69,7 @@ class GPUMonitor(QThread):
                 "decoded_tokens": decoded,
                 "used_tokens": prompt + decoded,
                 "kv_bpv": kv_bpv,
+                "shed_offer": slot.get("cotenancy", {}).get("shed_offer", 0),
                 "speculative": spec,
                 "spec_type": spec_type,
                 "is_processing": is_processing,

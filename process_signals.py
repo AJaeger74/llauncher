@@ -65,10 +65,53 @@ def _update_gpu_display(label, gpu_data: dict) -> None:
         used = slots.get("used_tokens", 0)
         ctx = slots.get("ctx", 0)
         pct = (used / ctx * 100) if ctx > 0 else 0
-        kv_bpv = slots.get("kv_bpv", 0)
+        shed_offer = slots.get("shed_offer", 0)
         spec = slots.get("speculative", False)
         spec_type = slots.get("spec_type", "")
-        parts.append(f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | kv_bpv={kv_bpv:.2f} | {spec_type}")
+
+        # Calculate effective VBR status from shed_offer
+        # shed_offer = bytes freed if all F16 layers degrade to turbo8
+        # shed_per_val = 2.0 - 1.015625 = 0.984375
+        if shed_offer > 0 and used > 0:
+            # We need model info for exact layer count — use a reasonable default
+            # or get it from the window's cached model info
+            block_count = 65  # default; will be refined from model_info below
+            key_head_count = 4
+            kv_head_dim = 256
+
+            # Try to get model info from window for accurate calculation
+            label_obj = label  # the QLabel itself
+            # Access window via label's parent chain if possible
+            model_info = None
+            try:
+                # Check if label has a parent window with _model_info
+                parent = label.parent()
+                while parent is not None:
+                    mi = getattr(parent, '_model_info', None)
+                    if mi and isinstance(mi, dict):
+                        model_info = mi
+                        break
+                    parent = parent.parent()
+            except Exception:
+                pass
+
+            if model_info:
+                block_count = model_info.get("block_count", block_count)
+                key_head_count = model_info.get("key_head_count", key_head_count)
+                kv_head_dim = model_info.get("kv_head_dim", kv_head_dim) or 256
+
+            shed_per_val = 2.0 - 1.015625
+            layers_f16 = shed_offer / (shed_per_val * used * key_head_count * kv_head_dim * 2)
+            layers_degraded = block_count - layers_f16
+
+            if layers_degraded > 0:
+                ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | VBR: {layers_degraded:.0f}/{block_count} degraded | {spec_type}"
+            else:
+                ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | VBR: F16 | {spec_type}"
+        else:
+            ctx_str = f"CX: {used:,}/{ctx:,} ({pct:.0f}%) | {spec_type}"
+
+        parts.append(ctx_str)
 
     label.setText(" | ".join(parts))
 
