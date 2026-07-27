@@ -1038,7 +1038,11 @@ class llauncher(QMainWindow):
 
         active_slot = None
         for slot in slots:
-            if slot.get("n_prompt_tokens", 0) > 0:
+            # Check for any token activity: prompt, processed, or decoded
+            n_prompt = slot.get("n_prompt_tokens", 0)
+            n_processed = slot.get("n_prompt_tokens_processed", 0)
+            n_decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
+            if n_prompt > 0 or n_processed > 0 or n_decoded > 0:
                 active_slot = slot
                 break
         if active_slot is None:
@@ -1047,8 +1051,10 @@ class llauncher(QMainWindow):
 
         kv_bpv = active_slot.get("kv_bpv", 0)
         n_prompt = active_slot.get("n_prompt_tokens", 0)
+        n_processed = active_slot.get("n_prompt_tokens_processed", 0)
         n_decoded_slot = active_slot.get("next_token", [{}])[0].get("n_decoded", 0)
-        n_tokens = n_prompt + n_decoded_slot
+        # Use processed tokens (what's actually in the cache) + decoded
+        n_tokens = max(n_processed, n_prompt) + n_decoded_slot
 
         # shed_offer: bytes freed if all F16 layers degrade to turbo8
         cotenancy = active_slot.get("cotenancy", {})
@@ -1056,13 +1062,17 @@ class llauncher(QMainWindow):
 
         # Get GPU usage from nvidia-smi
         gpu_used_mb = None
+        gpu_total_mb = None
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                ["nvidia-smi", "--query-gpu=memory.used,memory.total",
+                 "--format=csv,noheader,nounits"],
                 capture_output=True, text=True, timeout=5
             )
             if result.returncode == 0:
-                gpu_used_mb = int(result.stdout.strip())
+                parts = [p.strip() for p in result.stdout.strip().split(",")]
+                gpu_used_mb = int(parts[0])
+                gpu_total_mb = int(parts[1])
         except Exception:
             pass
 
@@ -1072,27 +1082,25 @@ class llauncher(QMainWindow):
         k_type = cache_k.currentText() if cache_k else "f16"
         v_type = cache_v.currentText() if cache_v else "f16"
 
-        # K bpv lookup
-        k_bpv_map = {"f16": 16.0, "q8_0": 8.5, "q4_0": 6.625, "q5_0": 7.125, "q5_1": 7.625}
-        k_bpv = k_bpv_map.get(k_type, 16.0)
-
         # Model info for back-calculation
         info = getattr(self, '_model_info', None)
-        if not info or not info.get("tensor_bytes", 0):
-            block_count = 1
-        else:
-            block_count = info.get("block_count", 1)
+        block_count = info.get("block_count", 1) if info else 1
+        key_head_count = info.get("key_head_count", 4) if info else 4
+        kv_head_dim = info.get("kv_head_dim", 256) if info else 256
 
-        # Debug output
+        # Debug output header
         self.debug_text.append("")
         self.debug_text.append(f"  ┃ VBR Degradation Analysis ({n_tokens:,} tokens)")
         self.debug_text.append(f"  ┃ kv_bpv (entry): {kv_bpv:.1f} bpv (F16)")
+        if gpu_used_mb is not None:
+            self.debug_text.append(f"  ┃ GPU used: {gpu_used_mb/1024:.1f} GB / {gpu_total_mb/1024:.1f} GB")
 
         v_bytes_per_value = 0.0
         layers_degraded = 0
         closest_tier = ""
 
         if gpu_used_mb is not None and info and info.get("tensor_bytes", 0) > 0 and shed_offer > 0:
+            # Use get_vbr_degradation_info for F16/degraded layer split
             vbr = get_vbr_degradation_info(gpu_used_mb, shed_offer, n_tokens, info)
             layers_f16 = vbr["layers_f16"]
             layers_degraded = vbr["layers_degraded"]
@@ -1105,11 +1113,10 @@ class llauncher(QMainWindow):
 
             if bv_avg > 0:
                 cache_mb = gpu_used_mb - info.get("tensor_bytes", 0) * 1.05 / (1024 * 1024) - 1024
-                cache_f16_gb = n_tokens * info.get("key_head_count", 4) * info.get("kv_head_dim", 256) * 2.0 * 2 * block_count / (1024**3)
+                cache_f16_gb = n_tokens * key_head_count * kv_head_dim * 2.0 * 2 * block_count / (1024**3)
                 cache_actual_gb = cache_mb / 1024
                 degradation_pct = (1 - cache_actual_gb / cache_f16_gb) * 100 if cache_f16_gb > 0 else 0
 
-                self.debug_text.append(f"  ┃ GPU used: {gpu_used_mb/1024:.1f} GB")
                 self.debug_text.append(f"  ┃ Cache actual: {cache_actual_gb:.1f} GB (F16 would be: {cache_f16_gb:.1f} GB)")
                 self.debug_text.append(f"  ┃ Degradation: {degradation_pct:.0%}")
                 self.debug_text.append(f"  ┃ Avg B/v: {bv_avg:.4f}")
@@ -1119,10 +1126,40 @@ class llauncher(QMainWindow):
                     v_bytes_per_value = bv_degraded
                 else:
                     v_bytes_per_value = bv_avg
+
+                # --- VBR Simulation using vbr_calc ---
+                try:
+                    from vbr_calc import simulate_vbr, effective_degradation
+                    total_vram_bytes = gpu_total_mb * 1024 * 1024
+                    weights_bytes = info.get("tensor_bytes", 0)
+
+                    kv_sim, kv_budget, tiers = simulate_vbr(
+                        total_vram_bytes, weights_bytes,
+                        active_slot.get("n_ctx", 262144),
+                        block_count, key_head_count, kv_head_dim,
+                    )
+
+                    # Count tiers
+                    tier_counts = {}
+                    for tier in tiers:
+                        tier_counts[tier.name] = tier_counts.get(tier.name, 0) + 1
+                    tier_summary = ", ".join(f"{k}: {v}" for k, v in sorted(tier_counts.items()))
+
+                    self.debug_text.append(f"  ┃ VBR Simulation:")
+                    self.debug_text.append(f"  ┃   Budget: {kv_budget/1024**3:.2f} GB, Cache: {kv_sim/1024**3:.2f} GB")
+                    self.debug_text.append(f"  ┃   Tiers: {tier_summary}")
+
+                except ImportError:
+                    pass
+                except Exception as e:
+                    self.debug_text.append(f"  ┃ VBR Simulation error: {e}")
+
             else:
                 self.debug_text.append(f"  ┃ No cache data available")
         else:
             # Fallback: use kv_bpv isolation
+            k_bpv_map = {"f16": 16.0, "q8_0": 8.5, "q4_0": 6.625, "q5_0": 7.125, "q5_1": 7.625}
+            k_bpv = k_bpv_map.get(k_type, 16.0)
             self.debug_text.append(f"  ┃ F16 layers: {block_count}/{block_count}")
             self.debug_text.append(f"  ┃ Degraded:   0/{block_count}")
             v_bpv = (kv_bpv * 2) - k_bpv
