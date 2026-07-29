@@ -2326,13 +2326,13 @@ class llauncher(QMainWindow):
 def _estimate_from_preset(preset_name: str) -> int:
     """Headless VRAM estimation from a preset name.
 
-    Loads a preset, reads model info, calls estimate_vram(), prints the result,
-    and exits. No GUI is created.
+    Uses estimate_vram_from_preset() from gguf_utils.py (same as GUI)
+    to ensure consistent results. No GUI is created.
 
     Returns 0 on success, 1 on failure.
     """
     from storage import load_preset_by_name
-    from gguf_utils import get_model_info, estimate_vram, read_gpu_vram
+    from gguf_utils import estimate_vram_from_preset, read_gpu_vram
 
     preset = load_preset_by_name(preset_name)
     if preset is None:
@@ -2345,52 +2345,29 @@ def _estimate_from_preset(preset_name: str) -> int:
         return 1
 
     model_path = preset.get("selected_model", "")
-    if not model_path or not Path(model_path).exists():
-        print(f"[estimate] ERROR: Model not found: {model_path}")
-        return 1
-
     print(f"[estimate] Model: {model_path}")
-    info = get_model_info(model_path)
-    if not info:
-        print("[estimate] ERROR: Could not read model info")
+
+    try:
+        vram = estimate_vram_from_preset(preset)
+    except ValueError as e:
+        print(f"[estimate] ERROR: {e}")
         return 1
-
-    params = preset.get("params", {})
-    ctx_size = params.get("-c", 4096)
-    np_slots = params.get("-np", 1)
-    cache_type_k = params.get("--cache-type-k", "f16")
-    cache_type_v = params.get("--cache-type-v", "f16")
-
-    # ngl: handle "all" string from presets
-    ngl_raw = params.get("-ngl", 0)
-    if isinstance(ngl_raw, str) and ngl_raw.lower() == "all":
-        ngl: int = -1
-    else:
-        ngl = int(ngl_raw)
-
-    # mmproj
-    mmproj_path = preset.get("mmproj_path", "")
-    mmproj_size = 0
-    if mmproj_path:
-        try:
-            mmproj_size = Path(mmproj_path).stat().st_size
-        except Exception:
-            pass
-
-    vram = estimate_vram(
-        model_info=info,
-        ngl=ngl,
-        ctx_size=ctx_size,
-        np_slots=np_slots,
-        cache_type_k=cache_type_k,
-        cache_type_v=cache_type_v,
-        mmproj_size=mmproj_size,
-    )
 
     estimated_gb = vram["total_vram_mb"] / 1024
     model_gb = vram["model_vram_mb"] / 1024
     cache_gb = vram["cache_vram_mb"] / 1024
     overhead_gb = vram["overhead_mb"] / 1024
+    mmproj_size = preset.get("mmproj_path", "")
+    params = preset.get("params", {})
+    ngl_raw = params.get("-ngl", 0)
+    if isinstance(ngl_raw, str) and ngl_raw.lower() == "all":
+        ngl = -1
+    else:
+        ngl = int(ngl_raw)
+    ctx_size = params.get("-c", 4096)
+    np_slots = params.get("-np", 1)
+    cache_type_k = params.get("--cache-type-k", "f16")
+    cache_type_v = params.get("--cache-type-v", "f16")
 
     gpu = read_gpu_vram()
     if gpu:
@@ -2400,7 +2377,7 @@ def _estimate_from_preset(preset_name: str) -> int:
         print(f"  VRAM Estimation (GPU total: {total_gb:.1f} GB, free: {free_gb:.1f} GB)")
         print(f"  Model weights:     {model_gb:.2f} GB ({vram['model_vram_mb']:.0f} MB)")
         print(f"  KV cache:          {cache_gb:.2f} GB ({vram['cache_vram_mb']:.0f} MB)")
-        if mmproj_size > 0:
+        if mmproj_size and Path(mmproj_size).exists():
             mmproj_gb = vram["mmproj_vram_mb"] / 1024
             print(f"  mmproj:            {mmproj_gb:.2f} GB ({vram['mmproj_vram_mb']:.0f} MB)")
         print(f"  Overhead:          {overhead_gb:.2f} GB ({vram['overhead_mb']:.0f} MB)")

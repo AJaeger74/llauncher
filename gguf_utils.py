@@ -802,6 +802,98 @@ KV_CACHE_TYPE_SIZES = {
 }
 
 
+def estimate_vram_from_preset(
+    preset: Dict[str, Any],
+    calibrated_v_bytes: float | None = None,
+    model_path: str | None = None,
+) -> Dict[str, Any]:
+    """Estimate VRAM from a preset dict (shared by GUI and headless mode).
+
+    This function encapsulates the full estimation pipeline:
+    - Loads model info from the preset selected_model path
+    - Extracts VRAM-relevant params from preset params
+    - Handles nemotron_h_moe special ctx_size override from /slots API
+    - Passes calibrated VBR bytes when available
+
+    Returns the same dict as estimate_vram().
+
+    Raises ValueError if preset is missing required keys.
+    """
+    from pathlib import Path as _Path
+
+    if not preset:
+        raise ValueError("preset is required")
+
+    selected = preset.get("selected_model", "") or ""
+    if model_path:
+        selected = model_path
+    if not selected or not _Path(selected).exists():
+        raise ValueError(f"Model not found: {selected}")
+
+    info = get_model_info(selected)
+    if not info:
+        raise ValueError("Could not read model info from GGUF")
+
+    params = preset.get("params", {})
+
+    # ctx_size -- start with preset value
+    ctx_size = params.get("-c", 4096)
+
+    # nemotron_h_moe override: use actual token count from running server
+    # when available, instead of the configured max context.
+    # This prevents overestimation for partial-load scenarios.
+    arch = info.get("arch")
+    if arch == "nemotron_h_moe":
+        try:
+            import urllib.request as _ur, json as _j
+            # Try to read host from preset, fallback to localhost
+            host_val = params.get("--host", "localhost") or "localhost"
+            slots_url = f"http://{host_val}:8080/slots"
+            req = _ur.Request(slots_url, headers={"Accept": "application/json"})
+            with _ur.urlopen(req, timeout=2) as _resp:
+                slots_data = _j.loads(_resp.read())
+            if slots_data:
+                slot = slots_data[0]
+                prompt = slot.get("n_prompt_tokens", 0)
+                decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
+                used = prompt + decoded
+                if used > 0:
+                    ctx_size = used
+        except Exception:
+            pass  # Use preset ctx_size as fallback
+
+    np_slots = params.get("-np", 1)
+    cache_type_k = params.get("--cache-type-k", "f16")
+    cache_type_v = params.get("--cache-type-v", "f16")
+
+    # ngl: handle "all" string from presets
+    ngl_raw = params.get("-ngl", 0)
+    if isinstance(ngl_raw, str) and ngl_raw.lower() == "all":
+        ngl: int = -1
+    else:
+        ngl = int(ngl_raw)
+
+    # mmproj
+    mmproj_path = preset.get("mmproj_path", "")
+    mmproj_size = 0
+    if mmproj_path:
+        try:
+            mmproj_size = _Path(mmproj_path).stat().st_size
+        except Exception:
+            pass
+
+    return estimate_vram(
+        model_info=info,
+        ngl=ngl,
+        ctx_size=ctx_size,
+        np_slots=np_slots,
+        cache_type_k=cache_type_k,
+        cache_type_v=cache_type_v,
+        mmproj_size=mmproj_size,
+        vbr_calibrated_v_bytes=calibrated_v_bytes,
+    )
+
+
 def estimate_vram(
     model_info: Dict[str, Any],
     ngl: int = 0,
