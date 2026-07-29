@@ -1371,7 +1371,11 @@ class llauncher(QMainWindow):
         self._display_vram_estimate(info)
 
     def _display_vram_estimate(self, info: dict):
-        """Display VRAM estimation in debug output (on model selection)."""
+        """Display VRAM estimation in debug output (on model selection).
+
+        Uses estimate_vram_from_preset() (same as headless mode) to ensure
+        consistent results. Builds a preset-like dict from the current UI state.
+        """
         params = self._read_vram_params(info)
         ngl = params["ngl"]
         ctx_size = params["ctx_size"]
@@ -1380,13 +1384,31 @@ class llauncher(QMainWindow):
         cache_type_v = params["cache_type_v"]
         mmproj_size = params["mmproj_size"]
 
+        # Build a preset-like dict from UI state
+        preset_like = {
+            "selected_model": self.selected_model or "",
+            "mmproj_path": getattr(self, 'mmproj_line', None) and self.mmproj_line.text().strip() or "",
+            "params": {
+                "-c": ctx_size,
+                "-np": np_slots,
+                "-ngl": ngl if ngl < 0 else int(ngl),
+                "--cache-type-k": cache_type_k,
+                "--cache-type-v": cache_type_v,
+            },
+        }
+
+        from gguf_utils import estimate_vram_from_preset
         vbr_cal = getattr(self, '_calibrated_v_bytes', None)
-        vram = estimate_vram(
-            model_info=info, ngl=ngl, ctx_size=ctx_size,
-            np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
-            mmproj_size=mmproj_size,
-            vbr_calibrated_v_bytes=vbr_cal,
-        )
+        try:
+            vram = estimate_vram_from_preset(preset_like, calibrated_v_bytes=vbr_cal)
+        except ValueError:
+            # Fallback to direct estimate_vram if preset approach fails
+            vram = estimate_vram(
+                model_info=info, ngl=ngl, ctx_size=ctx_size,
+                np_slots=np_slots, cache_type_k=cache_type_k, cache_type_v=cache_type_v,
+                mmproj_size=mmproj_size,
+                vbr_calibrated_v_bytes=vbr_cal,
+            )
 
         estimated_gb = vram["total_vram_mb"] / 1024
         model_gb = vram["model_vram_mb"] / 1024
