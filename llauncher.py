@@ -1112,7 +1112,9 @@ class llauncher(QMainWindow):
             self.debug_text.append(f"  ┃ Degraded:   {layers_degraded:.0f}/{block_count}")
 
             if bv_avg > 0:
-                cache_mb = gpu_used_mb - info.get("tensor_bytes", 0) * 1.05 / (1024 * 1024) - 1024
+                # Use 1.02 for MoE (more compact tensor packing), 1.05 for others
+                alignment_factor = 1.02 if info.get("arch") == "nemotron_h_moe" else 1.05
+                cache_mb = gpu_used_mb - info.get("tensor_bytes", 0) * alignment_factor / (1024 * 1024) - 1024
                 cache_f16_gb = n_tokens * key_head_count * kv_head_dim * 2.0 * 2 * block_count / (1024**3)
                 cache_actual_gb = cache_mb / 1024
                 degradation_pct = (1 - cache_actual_gb / cache_f16_gb) * 100 if cache_f16_gb > 0 else 0
@@ -2321,12 +2323,119 @@ class llauncher(QMainWindow):
 # storage-Imports nur noch für load_config und apply_presets (in Methoden inline)
 
 
+def _estimate_from_preset(preset_name: str) -> int:
+    """Headless VRAM estimation from a preset name.
+
+    Loads a preset, reads model info, calls estimate_vram(), prints the result,
+    and exits. No GUI is created.
+
+    Returns 0 on success, 1 on failure.
+    """
+    from storage import load_preset_by_name
+    from gguf_utils import get_model_info, estimate_vram, read_gpu_vram
+
+    preset = load_preset_by_name(preset_name)
+    if preset is None:
+        print(f"[estimate] ERROR: Preset '{preset_name}' not found in presets.json")
+        # List available presets
+        from storage import load_presets
+        available = list(load_presets().keys())
+        if available:
+            print(f"  Available presets: {', '.join(available)}")
+        return 1
+
+    model_path = preset.get("selected_model", "")
+    if not model_path or not Path(model_path).exists():
+        print(f"[estimate] ERROR: Model not found: {model_path}")
+        return 1
+
+    print(f"[estimate] Model: {model_path}")
+    info = get_model_info(model_path)
+    if not info:
+        print("[estimate] ERROR: Could not read model info")
+        return 1
+
+    params = preset.get("params", {})
+    ctx_size = params.get("-c", 4096)
+    np_slots = params.get("-np", 1)
+    cache_type_k = params.get("--cache-type-k", "f16")
+    cache_type_v = params.get("--cache-type-v", "f16")
+
+    # ngl: handle "all" string from presets
+    ngl_raw = params.get("-ngl", 0)
+    if isinstance(ngl_raw, str) and ngl_raw.lower() == "all":
+        ngl: int = -1
+    else:
+        ngl = int(ngl_raw)
+
+    # mmproj
+    mmproj_path = preset.get("mmproj_path", "")
+    mmproj_size = 0
+    if mmproj_path:
+        try:
+            mmproj_size = Path(mmproj_path).stat().st_size
+        except Exception:
+            pass
+
+    vram = estimate_vram(
+        model_info=info,
+        ngl=ngl,
+        ctx_size=ctx_size,
+        np_slots=np_slots,
+        cache_type_k=cache_type_k,
+        cache_type_v=cache_type_v,
+        mmproj_size=mmproj_size,
+    )
+
+    estimated_gb = vram["total_vram_mb"] / 1024
+    model_gb = vram["model_vram_mb"] / 1024
+    cache_gb = vram["cache_vram_mb"] / 1024
+    overhead_gb = vram["overhead_mb"] / 1024
+
+    gpu = read_gpu_vram()
+    if gpu:
+        total_gb = gpu["total_mb"] / 1024
+        free_gb = gpu["free_mb"] / 1024
+        print(f"")
+        print(f"  VRAM Estimation (GPU total: {total_gb:.1f} GB, free: {free_gb:.1f} GB)")
+        print(f"  Model weights:     {model_gb:.2f} GB ({vram['model_vram_mb']:.0f} MB)")
+        print(f"  KV cache:          {cache_gb:.2f} GB ({vram['cache_vram_mb']:.0f} MB)")
+        if mmproj_size > 0:
+            mmproj_gb = vram["mmproj_vram_mb"] / 1024
+            print(f"  mmproj:            {mmproj_gb:.2f} GB ({vram['mmproj_vram_mb']:.0f} MB)")
+        print(f"  Overhead:          {overhead_gb:.2f} GB ({vram['overhead_mb']:.0f} MB)")
+        print(f"  Total (estimated): {estimated_gb:.2f} GB ({vram['total_vram_mb']:.0f} MB)")
+
+        if estimated_gb <= free_gb:
+            print(f"  Status: Fits in GPU memory")
+        elif estimated_gb <= total_gb:
+            print(f"  Status: Partially fits — system RAM fallback likely")
+        else:
+            print(f"  Status: Does NOT fit — will exceed GPU VRAM")
+
+    ngl_display = "all" if ngl < 0 else str(ngl)
+    cache_display = f"{cache_type_k}/{cache_type_v}"
+    print(f"  (ngl={ngl_display}, ctx={ctx_size}, slots={np_slots}, cache={cache_display})")
+
+    return 0
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="llauncher – PyQt6 GUI für llama.cpp")
     parser.add_argument("--preset", type=str, default=None,
                         help="Name eines Presets aus presets.json, das beim Start automatisch geladen wird")
+    parser.add_argument("--estimatevram", action="store_true",
+                        help="Headless VRAM estimation from preset — prints result and exits (no GUI)")
     args = parser.parse_args()
-    
+
+    # Headless mode: estimate VRAM and exit
+    if args.estimatevram:
+        if not args.preset:
+            print("[estimate] ERROR: --estimatevram requires --preset")
+            print("  Usage: python llauncher.py --preset <name> --estimatevram")
+            sys.exit(1)
+        sys.exit(_estimate_from_preset(args.preset))
+
     # Initialize i18n before creating any widgets
     from i18n import I18nManager
     

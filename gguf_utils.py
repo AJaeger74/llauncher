@@ -875,8 +875,9 @@ def estimate_vram(
 
     # For MoE models the alignment overhead is much smaller (more compact
     # tensor packing, fewer small tensors).
+    is_moe = model_info.get("arch") == "nemotron_h_moe"
     if model_vram_bytes > 0:
-        model_vram_bytes *= 1.05
+        model_vram_bytes *= 1.02 if is_moe else 1.05
 
     # ── KV Cache VRAM ───────────────────────────────────────────────
     # Per llama.cpp llama-kv-cache:
@@ -900,7 +901,7 @@ def estimate_vram(
         cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16
         cache_bytes_v = KV_CACHE_TYPE_SIZES.get(cache_type_v, 2)
 
-        # Use calibrated V bytes when VBR is active on the V side and the
+        # Use calibrated bytes/value when VBR is active on either side and the
         # calibrated value shows real degradation (below the static type map).
         # At low token counts VBR stays at F16 (2.0 B/v) — using that for
         # estimation would massively overestimate VRAM.
@@ -909,6 +910,14 @@ def estimate_vram(
                 cache_bytes_v = vbr_calibrated_v_bytes
             # else: calibrated shows F16 at current context → use type map
             #       (VBR will degrade at target context size)
+
+        # Also apply calibration to K-cache when K-side is VBR — the degraded
+        # layers have the same B/v for both K and V tensors. Without this, a
+        # vbr/vbr config uses the calibrated value for V but the static 0.38
+        # fallback for K, roughly doubling the cache estimate.
+        if cache_type_k.lower() == "vbr" and vbr_calibrated_v_bytes is not None:
+            if vbr_calibrated_v_bytes < cache_bytes_k:
+                cache_bytes_k = vbr_calibrated_v_bytes
 
         # K and V each store: key_heads × head_dim × ctx elements.
         # V is transposed (ne[1]=1) for access but still holds the same
@@ -1068,7 +1077,9 @@ def get_vbr_degradation_info(
         return result
 
     # Back-calculate cache size from GPU usage
-    model_mb = tensor_bytes * 1.05 / (1024 * 1024)
+    # Use 1.02 for MoE (more compact tensor packing), 1.05 for others
+    is_moe = model_info.get("arch") == "nemotron_h_moe"
+    model_mb = tensor_bytes * (1.02 if is_moe else 1.05) / (1024 * 1024)
     overhead_mb = 1024
     cache_mb = gpu_used_mb - model_mb - overhead_mb
     if cache_mb <= 0:
