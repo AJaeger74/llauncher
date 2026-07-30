@@ -878,6 +878,11 @@ def estimate_vram_from_preset(
                     used = prompt + decoded
                     if used > 0:
                         ctx_size = used
+                    elif use_vbr:
+                        # Server running but no tokens yet — VBR hasn't allocated
+                        # lazily. Using full preset ctx_size would massively overestimate.
+                        ctx_size = 0
+                        vbr_lazy = True
         except Exception:
             # /slots unavailable — server not yet ready or no requests made.
             # VBR allocates lazily, so using the full preset ctx_size massively
