@@ -176,6 +176,7 @@ For vision models:
 - **Signal Handling**: Custom `object` type signals to avoid PyQt6 32-bit int truncation on large value emissions (progress sizes)
 - **i18n**: JSON-based translation system with lazy loading and runtime language switching
 - **Chat Templates**: Automatic template formatting per model family to prevent generation collapse during benchmarks
+- **VBR VRAM Estimation**: Rough estimates for VBR (Variable Bit Rate) cache — uses a ~3.6 GB base overhead at startup (VBR allocates lazily), live token usage via `/slots` API when available, and cross-server detection. Estimates are approximate; VBR's actual memory behavior depends on llama.cpp internals that change between builds. For Nemotron with 1M context, startup estimates are ~22 GB instead of the theoretical max of 43+ GB.
 
 ## Extension Possibilities
 
