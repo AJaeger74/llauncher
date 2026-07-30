@@ -839,10 +839,16 @@ def estimate_vram_from_preset(
     # ctx_size -- start with preset value
     ctx_size = params.get("-c", 4096)
 
+    # cache_type detection (needed for VBR logic below)
+    cache_type_k = params.get("--cache-type-k", "f16")
+    cache_type_v = params.get("--cache-type-v", "f16")
+    use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
+
     # nemotron_h_moe override: use actual token count from running server
     # when available, instead of the configured max context.
     # This prevents overestimation for partial-load scenarios.
     arch = info.get("arch")
+    vbr_lazy = False  # True when VBR is active but /slots is unavailable
     if arch == "nemotron_h_moe":
         try:
             import urllib.request as _ur, json as _j
@@ -854,17 +860,33 @@ def estimate_vram_from_preset(
                 slots_data = _j.loads(_resp.read())
             if slots_data:
                 slot = slots_data[0]
-                prompt = slot.get("n_prompt_tokens", 0)
-                decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
-                used = prompt + decoded
-                if used > 0:
-                    ctx_size = used
+                # Verify this is actually our Nemotron model. /slots doesn't
+                # always report a model name, so cross-check n_ctx against the
+                # preset context size. If they don't match, it's a different server.
+                slot_ctx = slot.get("n_ctx", 0)
+                if slot_ctx > 0 and slot_ctx != ctx_size:
+                    # Different model running on this port — use lazy fallback
+                    if use_vbr:
+                        ctx_size = 0
+                        vbr_lazy = True
+                    else:
+                        ctx_size = slot_ctx
+                else:
+                    # Same server or no ctx info — use token count
+                    prompt = slot.get("n_prompt_tokens", 0)
+                    decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
+                    used = prompt + decoded
+                    if used > 0:
+                        ctx_size = used
         except Exception:
-            pass  # Use preset ctx_size as fallback
+            # /slots unavailable — server not yet ready or no requests made.
+            # VBR allocates lazily, so using the full preset ctx_size massively
+            # overestimates VRAM at startup. Use a realistic VBR base instead.
+            if use_vbr:
+                ctx_size = 0
+                vbr_lazy = True
 
     np_slots = params.get("-np", 1)
-    cache_type_k = params.get("--cache-type-k", "f16")
-    cache_type_v = params.get("--cache-type-v", "f16")
 
     # ngl: handle "all" string from presets
     ngl_raw = params.get("-ngl", 0)
@@ -891,6 +913,7 @@ def estimate_vram_from_preset(
         cache_type_v=cache_type_v,
         mmproj_size=mmproj_size,
         vbr_calibrated_v_bytes=calibrated_v_bytes,
+        vbr_lazy=vbr_lazy,
     )
 
 
@@ -904,6 +927,7 @@ def estimate_vram(
     mmproj_size: int = 0,
     vbr_vram_mb: int | None = None,
     vbr_calibrated_v_bytes: float | None = None,
+    vbr_lazy: bool = False,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
 
@@ -926,6 +950,10 @@ def estimate_vram(
         vbr_calibrated_v_bytes: When VBR is active, use the live-calibrated V-cache
                      bytes/value from /slots API instead of the static type map.
                      Set by VBR-Calibrate button (e.g. 0.72 for ~5.8 bpv).
+        vbr_lazy: True when VBR is active but /slots API is unavailable (server
+                  not started or no requests yet). VBR allocates lazily — using the
+                  full ctx_size would massively overestimate VRAM. In lazy mode,
+                  use a fixed VBR base overhead instead of token-based cache size.
 
     Returns dict with:
         model_vram_mb: Estimated model weight VRAM in MB
@@ -978,8 +1006,17 @@ def estimate_vram(
     # Per-layer: (key_heads + 1) × head_dim × row_bytes × ctx
     # Total: n_layers × kv_per_layer × n_slots
     use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
-    
-    if use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
+
+    # VBR base overhead: infrastructure memory allocated at startup even with
+    # zero tokens. Measured on Nemotron (52 layers, vbr/vbr): ~3600 MB.
+    # Used as fallback when /slots API is unavailable (server not started).
+    VBR_BASE_OVERHEAD_MB = 3600
+
+    if vbr_lazy and use_vbr:
+        # Server not started or no requests yet — VBR allocates lazily.
+        # Use fixed base overhead instead of token-based formula.
+        total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
+    elif use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
         # VBR with explicit budget — use the budget directly as cache size.
         # RoPE is computed on-the-fly in llama.cpp (not stored in KV cache).
         total_cache_bytes = int(vbr_vram_mb * 1024 * 1024)
