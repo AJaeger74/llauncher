@@ -151,6 +151,7 @@ class llauncher(QMainWindow):
             preset = load_preset_by_name(self._preset_name)
             if preset:
                 apply_preset(self, preset)
+                self._update_vram_estimate_from_preset(preset)
                 self.debug_text.append(t("msg_preset_loaded_cli", name=self._preset_name))
             else:
                 self.debug_text.append(t("msg_preset_not_found_cli", name=self._preset_name))
@@ -925,24 +926,38 @@ class llauncher(QMainWindow):
         })
 
     def _get_vram_estimate_gb(self) -> float:
-        """Return estimated VRAM usage in GB based on current model + params."""
+        """Return estimated VRAM usage in GB based on current model + params.
+
+        Uses estimate_vram_from_preset() (same as headless --estimatevram and
+        _display_vram_estimate()) so nemotron_h_moe models get the /slots
+        override for actual token usage, giving consistent results everywhere.
+        """
         info = getattr(self, '_model_info', None)
         if not info or not info.get('file_size'):
             return 0.0
 
-        params = self._read_vram_params()
+        params = self._read_vram_params(info)
         ngl = params["ngl"]
         if ngl == 0:
             return 0.0  # CPU mode
 
         try:
+            from gguf_utils import estimate_vram_from_preset
+
             vbr_cal = getattr(self, '_calibrated_v_bytes', None)
-            vram = estimate_vram(
-                model_info=info, ngl=ngl, ctx_size=params["ctx_size"],
-                np_slots=params["np_slots"], cache_type_k=params["cache_type_k"],
-                cache_type_v=params["cache_type_v"], mmproj_size=params["mmproj_size"],
-                vbr_calibrated_v_bytes=vbr_cal,
-            )
+            preset_like = {
+                "selected_model": self.selected_model or "",
+                "mmproj_path": getattr(self, 'mmproj_line', None) and self.mmproj_line.text().strip() or "",
+                "params": {
+                    "-c": params["ctx_size"],
+                    "-np": params["np_slots"],
+                    "-ngl": ngl if ngl < 0 else int(ngl),
+                    "--cache-type-k": params["cache_type_k"],
+                    "--cache-type-v": params["cache_type_v"],
+                    "--host": getattr(self, "param_sliders", {}).get("--host", {}).get("edit", None) and self.param_sliders["--host"]["edit"].text().strip() or "localhost",
+                },
+            }
+            vram = estimate_vram_from_preset(preset_like, calibrated_v_bytes=vbr_cal)
             return vram["total_vram_mb"] / 1024
         except Exception:
             return 0.0
@@ -2340,6 +2355,31 @@ class llauncher(QMainWindow):
             self.runner = None  # Clear reference so Qt can destroy it
         
         event.accept()
+
+
+    def _update_vram_estimate_from_preset(self, preset: dict) -> None:
+        """Update live VRAM estimate using the same logic as headless --estimatevram.
+
+        
+
+        Builds a minimal preset‑like dict from the current UI state and feeds it
+
+        to ``estimate_vram_from_preset`` (the shared function that ``--estimatevram``
+
+        uses). The resulting numbers are then written into the debug text widget
+
+        so the live GUI shows exactly the same value that the headless command
+        prints.
+
+        """
+        try:
+            from gguf_utils import estimate_vram_from_preset
+            vram = estimate_vram_from_preset(preset)
+        except Exception as e:  # pragma: no cover – defensive fallback
+            self.debug_text.append(f"[estimate] Error: {e}\n")
+            return
+        estimated_gb = vram["total_vram_mb"] / 1024
+        self.debug_text.append(f"  ┃ {t('debug_vram_section')} {estimated_gb:.2f} GB ({vram['total_vram_mb']:.0f} MB)\n")
 
 
 # storage-Imports nur noch für load_config und apply_presets (in Methoden inline)
