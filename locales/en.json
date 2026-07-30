@@ -247,6 +247,7 @@
   "msg_clone_complete": "Clone complete. {fork_name}\nTarget: {path}",
   "msg_preset_loaded_cli": "Preset '{name}' loaded via CLI",
   "msg_preset_not_found_cli": "Preset '{name}' not found (ignoring)",
+  "msg_preset_model_missing": "Model from preset '{name}' not found: {path}",
   "debug_vram_section": "VRAM Estimation",
   "debug_vram_gpu_info": "(GPU total: {total_gb:.1f} GB, free: {free_gb:.1f} GB)",
   "tooltip_vram_estimate": "Estimated VRAM usage: {estimated:.1f} GB (GPU total: {total:.1f} GB, free: {free:.1f} GB)",
