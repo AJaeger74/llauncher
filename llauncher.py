@@ -1020,6 +1020,15 @@ class llauncher(QMainWindow):
             ctx_suffix = " | ".join(ctx_parts)
             stats = f"{stats} | {ctx_suffix}"
 
+        # Append VBR calibration info when available
+        vbr_cal = getattr(self, '_vbr_cal_info', None)
+        if vbr_cal:
+            tier_label = f" ≈ {vbr_cal['closest_tier']}" if vbr_cal.get('closest_tier') else ""
+            stats = (
+                f"{stats} | VBR: {vbr_cal['layers_degraded']:.0f} layers{tier_label} "
+                f"({vbr_cal['bv_avg']:.3f} B/v)"
+            )
+
         self.stats_label.setText(stats)
 
     def _calibrate_vbr(self):
@@ -1198,13 +1207,12 @@ class llauncher(QMainWindow):
         if info:
             self._display_vram_estimate(info)
 
-        # Update stats label with calibration info
-        if hasattr(self, 'stats_label'):
-            current_text = self.stats_label.text()
-            tier_label = f" ≈ {closest_tier}" if closest_tier else ""
-            self.stats_label.setText(
-                f"{current_text} | VBR: {layers_degraded:.0f} layers{tier_label} ({v_bytes_per_value:.3f} B/v)"
-            )
+        # Store calibration info for update_gpu_display to render
+        self._vbr_cal_info = {
+            "layers_degraded": layers_degraded,
+            "closest_tier": closest_tier,
+            "bv_avg": v_bytes_per_value,
+        }
 
     def _read_vram_params(self, model_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Read current UI parameter values for VRAM estimation.
