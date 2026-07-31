@@ -179,7 +179,7 @@ def apply_preset(window, preset: dict):
         window: llauncher Instanz
         preset: Dict mit Preset-Daten (llama_cpp_path, params, etc.)
     """
-    from gguf_utils import read_gguf_context_length, check_model_architecture, get_model_info as gguf_get_model_info
+    from gguf_utils import read_gguf_context_length, check_model_architecture, get_model_info as gguf_get_model_info, get_binary_path
 
     # Flag: verhindern dass on_model_selected() den Context-Size Slider überschreibt
     window.loading_preset = True

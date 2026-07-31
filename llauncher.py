@@ -1763,6 +1763,26 @@ class llauncher(QMainWindow):
                 self.start_stop_btn.setObjectName("StopButton")
                 self.status_label.setText("")
                 return
+
+            # Pre-Start Architektur-Check gegen das echte Binary (nur wenn nicht in statischer Liste)
+            if self.selected_model:
+                try:
+                    from gguf_utils import check_model_architecture, get_binary_path, get_model_info as gguf_get_model_info
+                    model_info = gguf_get_model_info(self.selected_model)
+                    arch = (model_info.get('arch') or 'unknown').strip('\x00 ')
+                    binary = get_binary_path(self)
+                    # Dry-Run gegen das Binary — dauert max 2s, blockiert aber den UI-Thread
+                    # kurz (User wartet eh auf den Start)
+                    arch_check = check_model_architecture(arch, binary_path=binary, model_path=self.selected_model)
+                    if arch_check:
+                        arch_msg = gettext("msg_arch_unsupported").format(arch=arch_check)
+                        QMessageBox.warning(self, gettext("msg_arch_unsupported_title"), arch_msg)
+                        self.start_stop_btn.setText(gettext("btn_start"))
+                        self.start_stop_btn.setObjectName("")
+                        self.status_label.setText("")
+                        return
+                except Exception:
+                    pass  # Check fehlgeschlagen → Start trotzdem erlauben
             
             # Crash-Dialog mit 5s Auto-Restart Timer
             class _CrashRestartDialog(QDialog):

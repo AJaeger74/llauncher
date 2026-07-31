@@ -10,6 +10,7 @@ from gguf_utils import (
     format_size,
     read_gguf_context_length,
     check_model_architecture,
+    get_binary_path,
     read_gpu_vram,
     estimate_vram,
     suggest_ngl,
@@ -279,7 +280,7 @@ def on_model_selected(window, model_name: str) -> None:
             window.debug_text.append("")
             window.debug_text.append("\u2500" * 60)
 
-            # Architektur-Prüfung: Warnung wenn Architektur nicht von llama.cpp unterstützt wird
+            # Architektur-Prüfung: Nur statische Liste (schnell, kein Binary-Check hier)
             unsupported_arch = check_model_architecture(arch)
             if unsupported_arch:
                 arch_msg = gettext("msg_arch_unsupported").format(arch=unsupported_arch)

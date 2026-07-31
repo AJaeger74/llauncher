@@ -599,25 +599,115 @@ KNOWN_LLAMA_ARCHITECTURES = {
     "ernie", "ernievision", "deepseek-vl", "molmo", "pangu",
     "baichuan", "qwen", "qwen1_5", "qwen35", "qwen35moe", "xglm", "refact", "smaug",
     "griffin", "baidu",
+    "laguna",
 }
 
 
-def check_model_architecture(arch: str) -> str | None:
-    """Prüft ob eine GGUF-Architektur von llama.cpp unterstützt wird.
+def get_binary_path(window) -> str | None:
+    """Resolve the configured llama-server binary path from the main window.
+
+    Returns the full path or None if not available.
+    """
+    try:
+        exe_name = window.exe_combo.currentText()
+        if not exe_name or exe_name == "llama.cpp nicht gefunden":
+            return None
+        cpp_path = window.llama_cpp_path
+        # Try exe_line first (set by fork switch or browse)
+        if hasattr(window, 'exe_line') and window.exe_line.text():
+            candidate = Path(window.exe_line.text())
+            if candidate.exists() and candidate.is_file():
+                return str(candidate)
+            # exe_line may be a directory — append exe_name
+            if candidate.is_dir():
+                candidate = candidate / exe_name
+                if candidate.exists():
+                    return str(candidate)
+        # Fallback search: build/bin, build/, root
+        for sub in ["build/bin", "build", ""]:
+            p = Path(cpp_path) / sub / exe_name
+            if p.exists():
+                return str(p)
+        return None
+    except Exception:
+        return None
+
+
+def check_model_architecture(arch: str, binary_path: str | None = None, model_path: str | None = None) -> str | None:
+    """Prüft ob eine GGUF-Architektur vom llama.cpp-Binary unterstützt wird.
+
+    Wenn sowohl binary_path als auch model_path angegeben sind, wird ein kurzes
+    Dry-Run (`llama-server -m <model> -c 1 -n 0 --port 0`) ausgeführt und der
+    Output auf "architecture ... is not supported" geprüft. Damit werden auch
+    nicht-standard Architekturen (z.B. 'laguna') korrekt erkannt.
 
     Args:
         arch: Architektur-String aus GGUF-Metadaten (z.B. 'llama', 'gemma2')
+        binary_path: Pfad zum llama-server Binary (optional).
+        model_path: Pfad zum GGUF-Modell (optional, für echten Dry-Run benötigt).
 
     Returns:
-        Fehlermeldung als String wenn Architektur nicht unterstützt, None wenn OK.
+        Architektur-Name als String wenn nicht unterstützt, None wenn OK.
     """
     if not arch or arch == "unknown":
         return None
 
+    # Echter Dry-Run wenn Binary + Modell verfügbar
+    if binary_path and model_path:
+        try:
+            binary_p = Path(binary_path)
+            model_p = Path(model_path)
+            if binary_p.exists() and os.access(str(binary_p), os.X_OK) and model_p.exists():
+                result = _check_architecture_binary(binary_path, model_path, arch)
+                if result is not None:
+                    return result  # Definitiv nicht unterstützt
+                return None  # Definitiv unterstützt (kein Fehler aufgetreten)
+        except Exception:
+            pass  # Fallback zur statischen Liste
+
+    # Fallback: statische Whitelist
     if arch in KNOWN_LLAMA_ARCHITECTURES:
         return None
 
     return arch
+
+
+def _check_architecture_binary(binary_path: str, model_path: str, arch: str) -> str | None:
+    """Dry-Run: Startet llama-server mit minimalem Kontext und prüft auf Arch-Fehler.
+
+    Args:
+        binary_path: Pfad zum llama-server Binary
+        model_path: Pfad zum GGUF-Modell
+        arch: Architektur-Name
+
+    Returns:
+        arch (String) wenn "not supported" im Output, None wenn kein Fehler.
+    """
+    try:
+        proc = subprocess.Popen(
+            [binary_path, "-m", model_path, "-c", "1", "-n", "0", "--port", "0"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            _, stderr_out = proc.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            _, stderr_out = proc.communicate(timeout=1)
+
+        combined = (stderr_out or "").lower()
+        if "not supported" in combined and arch.lower() in combined:
+            return arch
+        # Auch nach "failed to load model" oder "error" suchen, falls der Build
+        # die Fehlermeldung anders formuliert
+        if "failed to load model" in combined:
+            return arch
+        return None
+
+    except (FileNotFoundError, OSError):
+        return None
 
 
 def get_model_info(path: str) -> Dict[str, Any]:
