@@ -336,16 +336,23 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
     import shlex
     cmd_line = " ".join(shlex.quote(arg) for arg in args if arg)
 
-    # Modell-Missing-Warnung vor dem Clear prüfen
+    # Modell- und mmproj-Missing-Warnung vor dem Clear prüfen
     model_missing_msg = None
     model_from_preset_path = preset.get("selected_model", "")
     if model_from_preset_path and not Path(model_from_preset_path).exists():
         model_missing_msg = gettext("msg_preset_model_missing").format(name=preset_name, path=model_from_preset_path)
 
+    mmproj_missing_msg = None
+    mmproj_from_preset_path = preset.get("mmproj_path", "")
+    if mmproj_from_preset_path and not Path(mmproj_from_preset_path).exists():
+        mmproj_missing_msg = gettext("msg_preset_mmproj_missing").format(name=preset_name, path=mmproj_from_preset_path)
+
     debug_text.clear()
     lines = []
     if model_missing_msg:
         lines.append(f"  ✘ {model_missing_msg}\n")
+    if mmproj_missing_msg:
+        lines.append(f"  ✘ {mmproj_missing_msg}\n")
     lines.append(f"=== Preset: {preset_name} ===\n\nKommandozeile:\n{cmd_line}\n")
     debug_text.setPlainText("".join(lines))
 

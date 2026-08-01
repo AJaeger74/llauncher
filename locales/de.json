@@ -247,6 +247,7 @@
   "msg_preset_loaded_cli": "Preset '{name}' per CLI geladen",
   "msg_preset_not_found_cli": "Preset '{name}' nicht gefunden (ignoriere)",
   "msg_preset_model_missing": "Modell aus Preset '{name}' nicht gefunden: {path}",
+  "msg_preset_mmproj_missing": "mmproj aus Preset '{name}' nicht gefunden: {path}",
   "debug_vram_section": "VRAM-Schätzung",
   "debug_vram_gpu_info": "(GPU gesamt: {total_gb:.1f} GB, frei: {free_gb:.1f} GB)",
   "tooltip_vram_estimate": "Geschätzter VRAM-Verbrauch: {estimated:.1f} GB (GPU gesamt: {total:.1f} GB, frei: {free:.1f} GB)",
