@@ -332,6 +332,13 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
                     else:
                         args.append(str(value))
     
+    # Custom Commands aus Preset
+    custom_text = preset.get("custom_commands", "")
+    if custom_text:
+        from command_builder import _parse_custom_commands_text
+        custom_args = _parse_custom_commands_text(custom_text)
+        args.extend(custom_args)
+
     # Kommandozeile formatieren (mit Escape für Leerzeichen/Special-Chars)
     import shlex
     cmd_line = " ".join(shlex.quote(arg) for arg in args if arg)
