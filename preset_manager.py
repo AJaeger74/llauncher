@@ -332,16 +332,13 @@ def show_preset_args(window, debug_text, preset_name: str, preset: dict,
                     else:
                         args.append(str(value))
     
-    # Custom Commands aus Preset
-    custom_text = preset.get("custom_commands", "")
+    # Custom Commands aus Preset (plain Anhaengung, passend zu on_param_changed)
+    custom_text = preset.get("custom_commands", "").strip()
     if custom_text:
-        from command_builder import _parse_custom_commands_text
-        custom_args = _parse_custom_commands_text(custom_text)
-        args.extend(custom_args)
+        args.append(custom_text)
 
-    # Kommandozeile formatieren (mit Escape für Leerzeichen/Special-Chars)
-    import shlex
-    cmd_line = " ".join(shlex.quote(arg) for arg in args if arg)
+    # Kommandozeile formatieren (plain join, passend zu build_full_command/on_param_changed)
+    cmd_line = " ".join(args if args else [])
 
     # Modell- und mmproj-Missing-Warnung vor dem Clear prüfen
     model_missing_msg = None
