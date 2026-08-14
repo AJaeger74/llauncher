@@ -111,6 +111,26 @@ def _append_text_inline(text: str, text_widget) -> None:
     text_widget.setTextCursor(cursor)
 
 
+def sanitize_host(host_text: str) -> str:
+    """Strip trailing port from a host value (e.g. '127.0.0.1:8080' -> '127.0.0.1').
+
+    Also handles IPv6 like '[::1]:8080' -> '[::1]' and plain hostnames."""
+    if not host_text:
+        return "localhost"
+    # Strip trailing port for plain IPv4/host: remove last ':digits' segment
+    if host_text.startswith("["):
+        # IPv6 bracket notation: [::1]:8080
+        bracket_end = host_text.find("]")
+        if bracket_end >= 0:
+            return host_text[:bracket_end + 1]
+        return host_text
+    # Only strip if the last colon is followed by digits (port-like)
+    last_colon = host_text.rfind(":")
+    if last_colon > 0 and host_text[last_colon + 1:].isdigit():
+        return host_text[:last_colon]
+    return host_text
+
+
 def _format_file_size(size_bytes: int) -> str:
     """Format file size in human-readable format.
     

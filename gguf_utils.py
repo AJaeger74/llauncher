@@ -943,7 +943,9 @@ def estimate_vram_from_preset(
         try:
             import urllib.request as _ur, json as _j
             # Try to read host from preset, fallback to localhost
-            host_val = params.get("--host", "localhost") or "localhost"
+            from ui_helpers import sanitize_host
+
+            host_val = sanitize_host(params.get("--host", "localhost") or "localhost")
             slots_url = f"http://{host_val}:8080/slots"
             req = _ur.Request(slots_url, headers={"Accept": "application/json"})
             with _ur.urlopen(req, timeout=2) as _resp:

@@ -1036,9 +1036,11 @@ class llauncher(QMainWindow):
         port = "8080"
 
         # Read host/port from UI if set
+        from ui_helpers import sanitize_host
+
         host_edit = self.param_sliders.get("--host", {}).get("edit")
         if host_edit and host_edit.text().strip():
-            host = host_edit.text().strip()
+            host = sanitize_host(host_edit.text().strip())
 
         url = f"http://{host}:{port}/slots"
         self.debug_text.append(t("msg_vbr_calibrating", url=url))
