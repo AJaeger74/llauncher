@@ -183,6 +183,7 @@ def build_llauncher_ui(window):
     
     window.mmproj_line = QLineEdit()
     window.mmproj_line.setPlaceholderText("Optional: mmproj für Vision-Modelle")
+    window.mmproj_line.textChanged.connect(window._update_mmproj_validation)
     
     paths_layout.addRow(gettext("lbl_exe_select"), window.exe_combo)
     paths_layout.addRow(gettext("lbl_model_select"), window.model_combo)

@@ -243,6 +243,39 @@ class llauncher(QMainWindow):
                 }}
             """)
     
+    def _update_mmproj_validation(self):
+        """Validate mmproj path in mmproj_line.
+
+        Missing file  -> text stays red until fixed.
+        File restored -> brief green flash (500 ms), then back to normal.
+        Empty field   -> normal appearance.
+        """
+        line = getattr(self, 'mmproj_line', None)
+        if line is None:
+            return
+        text = line.text().strip()
+        if not text:
+            line.setProperty("mmproj_missing", False)
+            line.setStyleSheet("")
+            return
+        if os.path.exists(text):
+            if line.property("mmproj_missing"):
+                # Was red, now fixed -> green flash, then back to normal
+                line.setProperty("mmproj_missing", False)
+                line.setStyleSheet("color: #4CAF50;")
+                QTimer.singleShot(500, lambda: self._reset_mmproj_flash(line))
+            # else: already valid, keep normal appearance
+        else:
+            line.setProperty("mmproj_missing", True)
+            line.setStyleSheet("color: #ff4444;")
+
+    def _reset_mmproj_flash(self, line):
+        """End of green flash: back to normal if file still exists."""
+        if line.property("mmproj_missing"):
+            return  # became invalid meanwhile, red state wins
+        if line.text().strip() and os.path.exists(line.text().strip()):
+            line.setStyleSheet("")
+
     def show_settings_dialog(self):
         """Show settings dialog for theme and language."""
         # Get current config
