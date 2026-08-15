@@ -192,6 +192,31 @@ def _parse_custom_commands_text(text):
     return args
 
 
+def get_full_args(window) -> list:
+    """Baut die vollständige argv-Liste aus UI-Werten + Custom Commands.
+
+    Liefert die Argumente als Liste — ohne String-Roundtrip. Damit bleiben
+    Werte mit Leerzeichen (z.B. --chat-template-kwargs '{"think": false}')
+    als EIN argv-Element erhalten. build_full_command() ist nur für die
+    Anzeige gedacht; für die Ausführung immer diese Funktion verwenden.
+
+    Args:
+        window: llauncher main window instance
+
+    Returns:
+        list: Kommandozeilen-Argumente als String-Liste (argv)
+    """
+    args = get_current_args(window)
+
+    # Custom Commands Feld auslesen (benutzerdefinierte Kommandozeilen-Argumente)
+    if hasattr(window, 'custom_cmd_edit') and window.custom_cmd_edit:
+        custom_text = window.custom_cmd_edit.toPlainText()
+        custom_args = _parse_custom_commands_text(custom_text)
+        args.extend(custom_args)
+
+    return args
+
+
 def build_full_command(window, external_args: dict = None) -> str:
     """Vollständige Kommandozeile als String bauen.
     

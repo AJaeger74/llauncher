@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import threading
@@ -1748,9 +1747,14 @@ class llauncher(QMainWindow):
             self.status_label.setText(gettext("status_loading_model"))
             self.status_label.setStyleSheet("color: orange; font-weight: bold;")
 
-            args_str = self.build_full_command()
-            args = shlex.split(args_str)
-            
+            # argv-Liste direkt aus UI-Werten bauen — OHNE String-Roundtrip.
+            # shlex.split(build_full_command()) würde Werte mit Leerzeichen
+            # (z.B. --chat-template-kwargs '{"think": false}') in mehrere
+            # argv-Elemente zerhacken, weil die Anzeige-Zeile nicht gequoted ist.
+            from command_builder import get_full_args
+            args = get_full_args(self)
+            args_str = " ".join(args)  # nur für Logging/Display
+
             if not args or "-m" not in args:
                 QMessageBox.warning(self, gettext("msg_no_model_selected"))
                 self.start_stop_btn.setText(gettext("btn_start"))
