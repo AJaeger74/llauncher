@@ -108,6 +108,35 @@ def human_size(nbytes: int) -> str:
     val = nbytes / (1024 ** exp)
     return f"{val:.2f} {units[exp]}"
 
+# Vision-encoder architectures that mark a GGUF file as a multimodal
+# projector (mmproj). HF repos name projector files after the encoder
+# (clip-vit-l-336px.gguf, siglip-so400m.gguf, llava-clip-vit.gguf), so
+# the filename alone is not a reliable indicator — the GGUF architecture
+# is the ground truth.
+_MMPROJ_ARCHS = {
+    "clip", "siglip", "llava", "llava1_5", "llava1_6", "llava2",
+    "llama3_vision", "ernievision", "deepseek-vl", "molmo",
+}
+
+
+def _is_mmproj_file(path: str) -> bool:
+    """Detect whether a downloaded GGUF file is a multimodal projector.
+
+    Two-stage check:
+    1. Filename contains "mmproj" (covers the common mmproj-F16.gguf naming)
+    2. GGUF general.architecture is a known vision-encoder architecture
+       (covers encoder-named files like clip-vit-l-336px.gguf)
+    """
+    name = os.path.basename(path).lower()
+    if "mmproj" in name:
+        return True
+    try:
+        from gguf_utils import read_gguf_string_value
+        arch = (read_gguf_string_value(path, "general.architecture") or "").strip("\x00 ")
+        return arch.lower() in _MMPROJ_ARCHS
+    except Exception:
+        return False
+
 # ===================================================================
 # Repo listing via HF Tree API
 # ===================================================================
@@ -861,7 +890,7 @@ class HfDownloadDialog(QDialog):
         """After a successful mmproj download, ask whether to adopt the file
         as the current mmproj setting in the main window."""
         dst = getattr(self, "_last_dst", None)
-        if not dst or not os.path.basename(dst).startswith("mmproj"):
+        if not dst or not _is_mmproj_file(dst):
             return
         window = self.parent()
         if window is None or not hasattr(window, "mmproj_line"):
