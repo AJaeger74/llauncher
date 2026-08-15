@@ -216,6 +216,8 @@
   "msg_yes": "Yes",
   "msg_no": "No",
   "msg_download_cancelled": "Download cancelled.",
+  "msg_mmproj_adopt_title": "Adopt mmproj",
+  "msg_mmproj_adopt": "The mmproj file was downloaded:\n{path}\n\nAdopt it as the current mmproj setting?",
   "msg_insufficient_space": "Insufficient disk space for download.\n\nRequired: {required}\nAvailable: {available}\n\nPlease free up space and try again.",
   "lbl_custom_commands": "Custom Commands",
   "hint_custom_commands": "Enter additional command-line arguments here (not managed by the app).",

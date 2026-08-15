@@ -394,6 +394,7 @@ class HfDownloadDialog(QDialog):
         self._file_list = []  # Current file list from HF API
         self._current_short_id = None
         self._request_counter = 0  # Monotonically increasing request ID
+        self._last_dst: str | None = None  # Target path of the last download
 
         self.setup_ui()
         self.apply_theme(current_light_theme)
@@ -768,6 +769,7 @@ class HfDownloadDialog(QDialog):
 
         file_name = os.path.basename(file_path)  # Extract just the filename
         dst_path = Path(target_dir) / file_name
+        self._last_dst = str(dst_path)
 
         # Show target directory in the dialog before download starts
         self.target_dir_label.setText(target_dir)
@@ -846,12 +848,38 @@ class HfDownloadDialog(QDialog):
         self.download_btn.setEnabled(True)
         if success:
             QMessageBox.information(self, gettext("hf_dl_dialog_title"), message)
+            # Ask whether to adopt a downloaded mmproj as the current setting
+            self._ask_mmproj_adoption()
             # Close the dialog after user dismisses the success message
             self.reject()
         else:
             QMessageBox.critical(self, gettext("hf_dl_dialog_title"), message)
             # Leave dialog open on error so user can try again
         self.status_label.setText(message)
+
+    def _ask_mmproj_adoption(self):
+        """After a successful mmproj download, ask whether to adopt the file
+        as the current mmproj setting in the main window."""
+        dst = getattr(self, "_last_dst", None)
+        if not dst or not os.path.basename(dst).startswith("mmproj"):
+            return
+        window = self.parent()
+        if window is None or not hasattr(window, "mmproj_line"):
+            return
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(gettext("msg_mmproj_adopt_title"))
+        msg_box.setText(gettext("msg_mmproj_adopt").format(path=dst))
+        yes_btn = msg_box.addButton(
+            gettext("msg_yes"), QMessageBox.ButtonRole.YesRole
+        )
+        no_btn = msg_box.addButton(
+            gettext("msg_no"), QMessageBox.ButtonRole.NoRole
+        )
+        msg_box.setDefaultButton(no_btn)
+        msg_box.exec()
+        if msg_box.clickedButton() == yes_btn:
+            # setText triggers textChanged -> validation turns the path green
+            window.mmproj_line.setText(dst)
 
     def apply_theme(self, use_light: bool):
         """Apply light or dark theme to the dialog."""
