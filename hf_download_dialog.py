@@ -9,8 +9,10 @@ Zeigt ein Dialog-Fenster mit:
 - Download läuft im Hintergrund (QThread)
 
 Unterstützt:
-- Kurze Form: "owner/repo" → listet Dateien auf, User wählt eine
-|- Vollständige URL: "https://huggingface.co/owner/repo/blob/main/file.gguf" (oder …/resolve/main/…) → Download sofort
+- Kurze Form: "owner/repo" → listet alle Dateien rekursiv auf (inkl. Unterverzeichnisse), User wählt eine
+- URL mit blob/raw/resolve auf ein Unterverzeichnis (…/blob/main/UD-Q4_K_XL) → listet dieses Verzeichnis
+- Vollständige Datei-URL (…/resolve/main/sub/file.gguf) → Download sofort, Unterverzeichnis wird lokal angelegt
+- "Alle herunterladen" → lädt alle noch fehlenden Dateien des gewählten Verzeichnisses mit ihren Unterverzeichnissen
 """
 
 import json
@@ -53,11 +55,12 @@ CHUNK_SIZE = 1024 * 1024  # 1 MB download chunks
 
 def parse_hf_url(raw: str):
     """
-    Normalise a Hugging Face reference into (owner/repo, file_path | None).
+    Normalise a Hugging Face reference into (owner/repo, path | None).
 
     Returns:
         short_id  – always "owner/repo"
-        file_path – the file inside the repo if a full URL was given, else None.
+        path      – the file (blob/raw/resolve URL) or directory (tree URL)
+                    inside the repo, else None.
     """
     raw = raw.strip()
 
@@ -66,19 +69,21 @@ def parse_hf_url(raw: str):
         parsed = urlparse(raw)
         parts = [p for p in parsed.path.split("/") if p]
 
-        # Expected: owner / repo / blob / main / file  OR  owner / repo / raw / main / file
-        idx_blob = None
+        # Expected: owner / repo / blob|raw|resolve / main / file…  OR
+        #           owner / repo / tree / main / dir…
+        idx = None
         for i, p in enumerate(parts):
-            if p in ("blob", "raw", "resolve"):
-                idx_blob = i
+            if p in ("blob", "raw", "resolve", "tree"):
+                idx = i
                 break
 
-        if idx_blob is not None and len(parts) > idx_blob + 2:
-            short_id = f"{parts[idx_blob - 2]}/{parts[idx_blob - 1]}"
-            file_path = "/".join(parts[idx_blob + 2:])
-            return short_id, file_path
+        if idx is not None and len(parts) > idx + 1:
+            short_id = f"{parts[idx - 2]}/{parts[idx - 1]}"
+            # …/tree/main (no subpath) yields an empty path
+            path = "/".join(parts[idx + 2:])
+            return short_id, path
 
-        # Fallback: owner / repo only (no blob/raw in path)
+        # Fallback: owner / repo only (no blob/raw/tree in path)
         if len(parts) >= 2:
             return f"{parts[0]}/{parts[1]}", None
 
@@ -93,6 +98,14 @@ def parse_hf_url(raw: str):
         )
 
     return short_id, None
+
+
+def _is_dir_url(raw: str) -> bool:
+    """True if the URL points to a directory (…/tree/<branch>[/<path>])."""
+    if not raw.startswith("http"):
+        return False
+    parts = [p for p in urlparse(raw).path.split("/") if p]
+    return "tree" in parts
 
 # ===================================================================
 # Helpers – size formatting
@@ -141,31 +154,53 @@ def _is_mmproj_file(path: str) -> bool:
 # Repo listing via HF Tree API
 # ===================================================================
 
-def list_repo_files(short_id: str) -> list[dict]:
+def _fetch_tree_page(short_id: str, path_in_repo: str) -> list[dict]:
+    """Fetch one page of the HF Tree API for a directory (recursive)."""
+    url = (
+        f"{HUB_BASE}/api/models/{short_id}/tree/main"
+        + (f"/{path_in_repo}" if path_in_repo else "")
+        + "?recursive=true"
+    )
+    req = Request(url, headers={"User-Agent": "llauncher"})
+    with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _is_hidden_path(path: str) -> bool:
+    """True if any path component starts with a dot."""
+    return any(p.startswith(".") for p in path.split("/"))
+
+
+def list_repo_files(short_id: str, path_in_repo: str = "", sort: str = "size") -> list[dict]:
     """
-    Return a list of file info dicts for the given repo using the Tree API.
-    Uses only stdlib urllib.
+    Return a list of file info dicts for the given repo (or subdirectory)
+    using the Tree API. Uses only stdlib urllib.
+
+    The listing is recursive, so files in subdirectories (e.g. quantization
+    folders like UD-Q4_K_XL/) are included with their full relative path.
     Only non-hidden files (no leading '.') are returned.
+
+    sort: "size" → largest first, "name" → lexicographic.
     """
-    tree_url = f"{HUB_BASE}/api/models/{short_id}/tree/main"
-
-    try:
-        with urlopen(tree_url, timeout=REQUEST_TIMEOUT) as resp:
-            tree_data = json.loads(resp.read().decode())
-    except Exception as exc:
-        return []
-
     result = []
-    for item in tree_data:
-        path = item.get("path", "")
-        if not path.startswith("."):
+
+    def walk(p: str) -> None:
+        # recursive=true returns the full tree of this directory in one response
+        for item in _fetch_tree_page(short_id, p):
+            if item.get("type") != "file" or _is_hidden_path(item["path"]):
+                continue
             result.append({
-                "filename": path,
-                "size_bytes": item.get("size", 0),
+                "filename": item["path"],
+                "size_bytes": item.get("size", 0) or 0,
             })
 
-    # Sort by size descending – largest first (most likely to be what user wants)
-    result.sort(key=lambda f: f["size_bytes"], reverse=True)
+    walk(path_in_repo)
+
+    if sort == "name":
+        result.sort(key=lambda f: f["filename"])
+    else:
+        # Sort by size descending – largest first (most likely what user wants)
+        result.sort(key=lambda f: f["size_bytes"], reverse=True)
     return result
 
 # ===================================================================
@@ -194,13 +229,14 @@ class HfDownloadWorker(QThread):
     progress_percent = pyqtSignal(int)  # 0-100
     finished_signal = pyqtSignal(bool, str)  # success, result_message
 
-    def __init__(self, short_id: str, file_path: str, target_dir: str, file_name: str):
+    def __init__(self, short_id: str, file_path: str, target_dir: str):
         super().__init__()
         self.short_id = short_id
         self.file_path = file_path
         self.target_dir = target_dir
-        self.file_name = file_name
         self._cancelled = False
+        self.result_ok: bool | None = None  # Set in run(); pollable without signals
+        self.result_msg = ""
 
     def cancel(self) -> None:
         """Signal the worker to stop as soon as possible.
@@ -224,6 +260,13 @@ class HfDownloadWorker(QThread):
         except Exception:
             pass
 
+    def _emit_finished(self, ok: bool, message: str):
+        """Record the outcome (pollable by BatchDownloadWorker) and emit it."""
+        if self.result_ok is None:
+            self.result_ok, self.result_msg = ok, message
+        self._signal_emitted = True
+        self.finished_signal.emit(ok, message)
+
     def run(self):
         try:
             self._download()
@@ -232,11 +275,10 @@ class HfDownloadWorker(QThread):
             # emitted the cancel signal before we got here. If it didn't
             # (e.g. exception arrived mid-connect before we checked _cancelled),
             # emit it now to be safe.
-            if not getattr(self, "_signal_emitted", False):
-                self.finished_signal.emit(False, gettext("msg_download_cancelled"))
+            self._emit_finished(False, gettext("msg_download_cancelled"))
             return
         except Exception as exc:
-            self.finished_signal.emit(False, str(exc))
+            self._emit_finished(False, str(exc))
 
     def _download(self):
         """Execute the actual HTTP download with progress reporting."""
@@ -247,7 +289,8 @@ class HfDownloadWorker(QThread):
         target = Path(self.target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
-        dst = target / self.file_name
+        # Preserve the file's subdirectory (e.g. UD-Q4_K_XL/) below target_dir
+        dst = target / self.file_path
         dst.parent.mkdir(parents=True, exist_ok=True)
         partial_path = Path(str(dst) + ".partial")
 
@@ -345,16 +388,14 @@ class HfDownloadWorker(QThread):
                 # --- Handle completion or abortion --------------------------
                 if download_aborted:
                     # User cancelled — keep partial for resume, emit cancel signal
-                    self._signal_emitted = True
-                    self.finished_signal.emit(False, gettext("msg_download_cancelled"))
+                    self._emit_finished(False, gettext("msg_download_cancelled"))
                     return
 
                 # Atomic rename (success)
                 if partial_path.exists():
                     partial_path.replace(dst)
 
-                self._signal_emitted = True
-                self.finished_signal.emit(
+                self._emit_finished(
                     True, gettext("msg_download_complete").format(path=str(dst))
                 )
                 return  # done, no more retries needed
@@ -365,8 +406,7 @@ class HfDownloadWorker(QThread):
 
                 if attempt >= max_retries:
                     # Final failure – keep partial for manual inspection
-                    self._signal_emitted = True
-                    self.finished_signal.emit(
+                    self._emit_finished(
                         False, gettext("msg_download_error").format(error=error_msg)
                     )
                     return
@@ -397,17 +437,109 @@ class HfFilesWorker(QThread):
     files_ready = pyqtSignal(list)  # list of file dicts
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, short_id: str, request_id: int):
+    def __init__(self, short_id: str, request_id: int, path_in_repo: str = ""):
         super().__init__()
         self.short_id = short_id
         self.request_id = request_id
+        self.path_in_repo = path_in_repo
 
     def run(self):
         try:
-            files = list_repo_files(self.short_id)
+            files = list_repo_files(self.short_id, self.path_in_repo, sort="name")
             self.files_ready.emit(files)
         except Exception as exc:
             self.error_occurred.emit(gettext("msg_repo_loading_failed").format(error=str(exc)))
+
+# ===================================================================
+# Worker thread – batch download (all files of a directory)
+# ===================================================================
+
+class BatchDownloadWorker(QThread):
+    """Downloads multiple files sequentially, preserving subdirectory structure.
+
+    Each file is delegated to an HfDownloadWorker (resume, retry and
+    cancellation logic are reused). Progress is reported as an overall
+    percentage across all files.
+    """
+
+    file_started = pyqtSignal(int, int, str)  # index (1-based), total, file_path
+    size_changed = pyqtSignal(str, object)    # file_path, current_bytes_on_disk
+    progress_percent = pyqtSignal(int)        # overall 0-100
+    finished_signal = pyqtSignal(bool, str)   # success, result_message
+
+    def __init__(self, short_id: str, file_paths: list[str], target_dir: str):
+        super().__init__()
+        self.short_id = short_id
+        self.file_paths = file_paths
+        self.target_dir = target_dir
+        self._cancelled = False
+        self._current = None  # inner HfDownloadWorker while running
+        self._signal_emitted = False
+
+    def cancel(self) -> None:
+        """Signal the batch (and the inner worker) to stop."""
+        self._cancelled = True
+        if self._current and self._current.isRunning():
+            self._current.cancel()
+
+    def run(self):
+        try:
+            total = len(self.file_paths)
+            errors = []
+            for i, fp in enumerate(self.file_paths):
+                if self._cancelled:
+                    self._finish(False, gettext("msg_download_cancelled"))
+                    return
+
+                # Progress bar shows per-file progress; status label shows
+                # which file of the batch is active (emitted by the dialog
+                # on file_started).
+                self.file_started.emit(i + 1, total, fp)
+
+                inner = HfDownloadWorker(
+                    self.short_id, fp, self.target_dir
+                )
+                self._current = inner
+                inner.size_changed.connect(self.size_changed)
+                inner.progress_percent.connect(self.progress_percent)
+                inner.start()
+                while inner.isRunning():
+                    inner.wait(100)
+                self._current = None
+
+                # Poll the worker's result fields directly — reliable across
+                # threads, no signal-slot dispatch window to miss.
+                ok = inner.result_ok if inner.result_ok is not None else False
+                msg = inner.result_msg or "unknown error"
+                if self._cancelled:
+                    self._finish(False, gettext("msg_download_cancelled"))
+                    return
+                if not ok:
+                    errors.append(f"{fp}: {msg}")
+
+            if errors:
+                done = total - len(errors)
+                detail = "\n".join(errors)
+                self._finish(
+                    False,
+                    gettext("msg_batch_partial").format(
+                        done=done, count=total, errors=detail
+                    ),
+                )
+            else:
+                self.progress_percent.emit(100)
+                self._finish(
+                    True,
+                    gettext("msg_batch_complete").format(
+                        count=total, path=self.target_dir
+                    ),
+                )
+        except Exception as exc:
+            self._finish(False, str(exc))
+
+    def _finish(self, ok: bool, message: str):
+        self._signal_emitted = True
+        self.finished_signal.emit(ok, message)
 
 # ===================================================================
 # Dialog
@@ -420,8 +552,10 @@ class HfDownloadDialog(QDialog):
         super().__init__(parent)
         self.current_light_theme = current_light_theme
         self.worker = None  # HfDownloadWorker instance
+        self.batch_worker = None  # BatchDownloadWorker instance
         self._file_list = []  # Current file list from HF API
         self._current_short_id = None
+        self._current_dir_path = ""  # Subdirectory scope of the current listing
         self._request_counter = 0  # Monotonically increasing request ID
         self._last_dst: str | None = None  # Target path of the last download
 
@@ -512,11 +646,27 @@ class HfDownloadDialog(QDialog):
         """)
         self.download_btn.clicked.connect(self._start_download)
 
+        self.batch_btn = QPushButton(gettext("btn_download_all"))
+        self.batch_btn.setEnabled(False)  # Disabled until a file list is loaded
+        self.batch_btn.setMinimumHeight(36)
+        self.batch_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 13px;
+                padding: 6px 16px;
+            }
+            QPushButton:disabled {
+                color: #888;
+            }
+        """)
+        self.batch_btn.setToolTip(gettext("tooltip_download_all"))
+        self.batch_btn.clicked.connect(self._start_batch_download)
+
         close_btn = QPushButton(gettext("btn_cancel"))
         close_btn.setMinimumHeight(36)
         close_btn.clicked.connect(self.reject)
 
         btn_layout.addStretch()
+        btn_layout.addWidget(self.batch_btn)
         btn_layout.addWidget(self.download_btn)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
@@ -540,16 +690,17 @@ class HfDownloadDialog(QDialog):
             self.file_combo.clear()
             self.file_combo.setEnabled(False)
             self.download_btn.setEnabled(False)
+            self.batch_btn.setEnabled(False)
             self.status_label.setText("")
             self.loading_label.setVisible(False)
             self.target_dir_label.setText("")
             return
 
-        # Check if it's a full file URL (blob, raw, or resolve)
-        if "blob" in text.lower() or "raw" in text.lower() or "resolve" in text.lower():
-            # Full file URL – skip file list, go straight to download
+        # Check if it's a full file/directory URL (blob, raw, resolve, tree)
+        if any(k in text.lower() for k in ("blob", "raw", "resolve", "tree")):
+            # Full URL – go straight to download or directory listing
             try:
-                short_id, file_path = parse_hf_url(text)
+                short_id, url_path = parse_hf_url(text)
                 # Strip query string (e.g. ?download=true) from displayed URL
                 parsed_url = urlparse(text)
                 clean_url = urlunparse((
@@ -559,22 +710,40 @@ class HfDownloadDialog(QDialog):
                     "", "", "",
                 ))
                 self.url_edit.setText(clean_url)
-                # Show target directory for full URL too
-                self._update_target_dir_label(short_id)
-                # Pre-populate combo so user can see the resolved filename
-                self.file_combo.clear()
-                self.file_combo.addItem(file_path, file_path)
-                self.file_combo.setEnabled(False)
-                self.download_btn.setEnabled(True)
-                self.status_label.setText(f"{short_id}/{file_path}")
+                self._current_short_id = short_id
+
+                if _is_dir_url(text):
+                    # Directory URL – list the files inside it
+                    self._current_dir_path = url_path or ""
+                    self._update_target_dir_label(short_id, self._current_dir_path)
+                    self.file_combo.clear()
+                    self.file_combo.setEnabled(False)
+                    self.download_btn.setEnabled(False)
+                    self.batch_btn.setEnabled(False)
+                    self.status_label.setText("")
+                    self.loading_label.setVisible(True)
+                    self._load_files(short_id, self._current_dir_path)
+                else:
+                    # File URL – skip file list, go straight to download
+                    self._current_dir_path = ""
+                    self._update_target_dir_label(short_id, url_path)
+                    # Pre-populate combo so user can see the resolved filename
+                    self.file_combo.clear()
+                    self.file_combo.addItem(url_path, url_path)
+                    self.file_combo.setEnabled(False)
+                    self.download_btn.setEnabled(True)
+                    self.batch_btn.setEnabled(False)
+                    self.status_label.setText(f"{short_id}/{url_path}")
             except ValueError as exc:
                 self.status_label.setText(str(exc))
                 self.download_btn.setEnabled(False)
+                self.batch_btn.setEnabled(False)
         else:
             # Short form (owner/repo) — debounce before firing the API call
             try:
                 short_id, _ = parse_hf_url(text)
                 self._current_short_id = short_id
+                self._current_dir_path = ""
                 self.status_label.setText("")
                 self.loading_label.setVisible(True)
 
@@ -586,7 +755,7 @@ class HfDownloadDialog(QDialog):
                 timer = QTimer(self)
                 timer.setSingleShot(True)
                 timer.timeout.connect(
-                    lambda sid=short_id: self._load_files(sid)
+                    lambda sid=short_id: self._load_files(sid, "")
                 )
                 timer.start(500)
                 self._url_debounce_timer = timer
@@ -594,9 +763,13 @@ class HfDownloadDialog(QDialog):
                 self.status_label.setText(str(exc))
                 self.file_combo.setEnabled(False)
                 self.download_btn.setEnabled(False)
+                self.batch_btn.setEnabled(False)
 
-    def _load_files(self, short_id: str):
-        """Load file list from HF Tree API using a background worker thread."""
+    def _load_files(self, short_id: str, path_in_repo: str = ""):
+        """Load file list from HF Tree API using a background worker thread.
+
+        path_in_repo restricts the listing to a subdirectory (recursive).
+        """
         # Only cancel the previous request if it's still running (don't kill mid-flight)
         if hasattr(self, '_files_worker') and self._files_worker is not None:
             if self._files_worker.isRunning():
@@ -612,7 +785,7 @@ class HfDownloadDialog(QDialog):
         self._request_counter += 1
         current_request_id = self._request_counter
 
-        self._files_worker = HfFilesWorker(short_id, current_request_id)
+        self._files_worker = HfFilesWorker(short_id, current_request_id, path_in_repo)
         self._files_worker.files_ready.connect(self._on_files_loaded)
         self._files_worker.error_occurred.connect(self._on_files_error)
         self._files_worker.start()
@@ -631,9 +804,11 @@ class HfDownloadDialog(QDialog):
             self.status_label.setText(gettext("msg_no_files_found"))
             self.file_combo.setEnabled(False)
             self.download_btn.setEnabled(False)
+            self.batch_btn.setEnabled(False)
             return
 
-        # Populate combo box with "filename (size)" entries — sorted by size desc
+        # Populate combo box with "filename (size)" entries — name order,
+        # so shards like …00001-of-00004… stay in download order
         self._file_list = gguf_files
         self.file_combo.blockSignals(True)
         self.file_combo.clear()
@@ -645,8 +820,9 @@ class HfDownloadDialog(QDialog):
 
         self.file_combo.setEnabled(True)
         self.download_btn.setEnabled(False)
+        self.batch_btn.setEnabled(True)
 
-        # Auto-select the largest .gguf file
+        # Auto-select the first file in the list
         self.file_combo.blockSignals(True)
         self.file_combo.setCurrentIndex(0)
         self.file_combo.blockSignals(False)
@@ -668,16 +844,21 @@ class HfDownloadDialog(QDialog):
         """Enable download button when a file is selected."""
         self.download_btn.setEnabled(True)
 
-    def _update_target_dir_label(self, short_id: str):
+    def _update_target_dir_label(self, short_id: str, rel_path: str = ""):
         """Compute and display the target directory for a given short_id.
 
         Called whenever the short_id becomes known (URL entered, repo loaded).
-        Shows the absolute path where the file will be downloaded.
+        Shows the absolute path where the file(s) will be downloaded.
+        rel_path is a file or directory inside the repo — its subdirectories
+        are appended to the target directory.
         """
         try:
             model_dir = self._get_model_directory()
             repo_subdir = short_id.replace("/", "_")
             target_dir = os.path.join(model_dir, repo_subdir)
+            # Preserve subdirectories below the repo folder
+            if rel_path:
+                target_dir = os.path.join(target_dir, *rel_path.split("/"))
             self.target_dir_label.setText(target_dir)
         except Exception:
             self.target_dir_label.setText("")
@@ -752,17 +933,18 @@ class HfDownloadDialog(QDialog):
         return True
 
     def _start_download(self):
-        """Start the background download."""
+        """Start the background download of a single file."""
 
         self.download_btn.setEnabled(False)
         # Reset progress bar at start (will be updated by worker signals)
         self.progress_bar.setValue(0)
-        
+
         # Show download in progress in UI label
         self.status_label.setText(gettext("msg_downloading"))
 
         text = self.url_edit.text().strip()
         if not text:
+            self.download_btn.setEnabled(True)
             QMessageBox.warning(self, gettext("hf_dl_dialog_title"),
                                 gettext("msg_no_url_entered"))
             return
@@ -770,6 +952,7 @@ class HfDownloadDialog(QDialog):
         try:
             short_id, file_path = parse_hf_url(text)
         except ValueError as exc:
+            self.download_btn.setEnabled(True)
             QMessageBox.warning(self, gettext("hf_dl_dialog_title"), str(exc))
             return
 
@@ -777,11 +960,13 @@ class HfDownloadDialog(QDialog):
         if not file_path and self.file_combo.count() > 0:
             file_path = str(self.file_combo.currentData()) or ""
             if not file_path:
+                self.download_btn.setEnabled(True)
                 QMessageBox.warning(self, gettext("hf_dl_dialog_title"),
                                     gettext("msg_no_files_found"))
                 return
 
         if not file_path:
+            self.download_btn.setEnabled(True)
             QMessageBox.warning(self, gettext("hf_dl_dialog_title"),
                                 gettext("msg_no_files_found"))
             return
@@ -796,12 +981,12 @@ class HfDownloadDialog(QDialog):
         else:
             target_dir = os.path.join(model_dir, repo_subdir)
 
-        file_name = os.path.basename(file_path)  # Extract just the filename
-        dst_path = Path(target_dir) / file_name
+        # Subdirectories inside the repo are preserved below target_dir
+        dst_path = Path(target_dir) / file_path
         self._last_dst = str(dst_path)
 
         # Show target directory in the dialog before download starts
-        self.target_dir_label.setText(target_dir)
+        self.target_dir_label.setText(str(dst_path.parent))
 
         # --- Disk space check -----------------------------------------
         file_size = self._get_file_size(short_id, file_path)
@@ -830,21 +1015,20 @@ class HfDownloadDialog(QDialog):
 
         # Compute partial path the same way the worker does, so we can show
         # the size of an existing partial file *before* the download starts.
-        dst_path_full = Path(target_dir) / file_name
-        partial_path_str = str(dst_path_full) + ".partial"
+        partial_path_str = str(dst_path) + ".partial"
         if os.path.exists(partial_path_str):
             real_size = os.path.getsize(partial_path_str)
-            self._on_size_changed(file_name, real_size)
+            self._on_size_changed(file_path, real_size)
 
         self.status_label.setText(gettext("msg_downloading"))
 
         # --- Create and start the worker ----------------------------------
-        
+
         if self.worker is not None and self.worker.isRunning():
             self.worker.terminate()
             self.worker.wait(1000)
-        
-        self.worker = HfDownloadWorker(short_id, file_path, target_dir, file_name)
+
+        self.worker = HfDownloadWorker(short_id, file_path, target_dir)
         self.worker.size_changed.connect(self._on_size_changed)
         self.worker.progress_percent.connect(self.progress_bar.setValue)
         self.worker.finished_signal.connect(self._on_download_finished)
@@ -852,6 +1036,107 @@ class HfDownloadDialog(QDialog):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 100)
         self.worker.start()
+
+    def _start_batch_download(self):
+        """Start downloading all .gguf files of the current listing."""
+        text = self.url_edit.text().strip()
+        if not text:
+            QMessageBox.warning(self, gettext("hf_dl_dialog_title"),
+                                gettext("msg_no_url_entered"))
+            return
+
+        if not self._file_list:
+            QMessageBox.warning(self, gettext("hf_dl_dialog_title"),
+                                gettext("msg_no_files_found"))
+            return
+
+        try:
+            short_id, _ = parse_hf_url(text)
+        except ValueError as exc:
+            QMessageBox.warning(self, gettext("hf_dl_dialog_title"), str(exc))
+            return
+
+        model_dir = self._get_model_directory()
+        repo_subdir = short_id.replace("/", "_")
+        model_dir_stripped = model_dir.rstrip(os.sep)
+        if model_dir_stripped.endswith(os.sep + repo_subdir) or model_dir_stripped == repo_subdir:
+            base_dir = model_dir_stripped
+        else:
+            base_dir = os.path.join(model_dir, repo_subdir)
+
+        # Files are grouped under their subdirectories (e.g. UD-Q4_K_XL/)
+        files = sorted(self._file_list, key=lambda f: f["filename"])
+        missing = [f for f in files if not (Path(base_dir) / f["filename"]).exists()]
+        if not missing:
+            QMessageBox.information(self, gettext("hf_dl_dialog_title"),
+                                    gettext("msg_batch_all_downloaded"))
+            return
+
+        # --- Disk space check for all missing files ----------------------
+        total_size = sum(f.get("size_bytes", 0) for f in missing)
+        if total_size > 0:
+            if not self._check_disk_space(base_dir, total_size):
+                return
+
+        # --- Confirm ------------------------------------------------------
+        total_human = human_size(total_size) if total_size else "?"
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(gettext("hf_dl_dialog_title"))
+        msg_box.setText(gettext("msg_batch_confirm").format(
+            count=len(missing), size=total_human, path=base_dir
+        ))
+        yes_btn = msg_box.addButton(
+            gettext("msg_yes"), QMessageBox.ButtonRole.YesRole
+        )
+        no_btn = msg_box.addButton(
+            gettext("msg_no"), QMessageBox.ButtonRole.NoRole
+        )
+        msg_box.setDefaultButton(no_btn)
+        msg_box.exec()
+        if msg_box.clickedButton() != yes_btn:
+            return
+
+        # --- Start the batch worker ---------------------------------------
+        self.download_btn.setEnabled(False)
+        self.batch_btn.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)
+        self.status_label.setText(gettext("msg_downloading"))
+        self._last_dst = None
+
+        if self.batch_worker is not None and self.batch_worker.isRunning():
+            self.batch_worker.cancel()
+            self.batch_worker.wait(3000)
+
+        self.batch_worker = BatchDownloadWorker(
+            short_id, [f["filename"] for f in missing], base_dir
+        )
+        self.batch_worker.file_started.connect(self._on_batch_file_started)
+        self.batch_worker.size_changed.connect(self._on_size_changed)
+        self.batch_worker.progress_percent.connect(self.progress_bar.setValue)
+        self.batch_worker.finished_signal.connect(self._on_batch_finished)
+        self.batch_worker.start()
+
+    def _on_batch_file_started(self, index: int, total: int, file_path: str):
+        """Show which file of the batch is being downloaded."""
+        self.status_label.setText(
+            gettext("msg_downloading_file").format(index=index, total=total, file=file_path)
+        )
+        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 100)
+
+    def _on_batch_finished(self, success: bool, message: str):
+        """Handle batch download completion."""
+        self.progress_bar.setValue(100 if success else 0)
+        self.size_label.setVisible(True)
+        self.download_btn.setEnabled(True)
+        self.batch_btn.setEnabled(True)
+        if success:
+            QMessageBox.information(self, gettext("hf_dl_dialog_title"), message)
+        else:
+            QMessageBox.critical(self, gettext("hf_dl_dialog_title"), message)
+        self.status_label.setText(message)
 
     def _on_size_changed(self, filename: str, current_bytes: int):
         """Update file size label from filesystem."""
@@ -1002,6 +1287,9 @@ class HfDownloadDialog(QDialog):
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(3000)  # graceful termination window
+        if self.batch_worker and self.batch_worker.isRunning():
+            self.batch_worker.cancel()
+            self.batch_worker.wait(5000)  # batch may be between files
         super().reject()
 
     def closeEvent(self, event):
@@ -1009,4 +1297,7 @@ class HfDownloadDialog(QDialog):
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(5000)  # give more time for cleanup via closeEvent path
+        if self.batch_worker and self.batch_worker.isRunning():
+            self.batch_worker.cancel()
+            self.batch_worker.wait(5000)
         event.accept()
