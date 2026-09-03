@@ -280,11 +280,13 @@ def on_model_selected(window, model_name: str) -> None:
             window.debug_text.append("")
             window.debug_text.append("\u2500" * 60)
 
-            # Architektur-Prüfung: Nur statische Liste (schnell, kein Binary-Check hier)
+            # Architektur-Prüfung: Nur statische Liste (schnell, kein Binary-Check hier).
+            # Ein Treffer bedeutet "nicht in der bekannten Liste" — das ist eine
+            # Info, kein harter Fehler. Autoritativ ist der Dry-Run im Pre-Start-Check.
             unsupported_arch = check_model_architecture(arch)
             if unsupported_arch:
-                arch_msg = gettext("msg_arch_unsupported").format(arch=unsupported_arch)
-                window.debug_text.append(f"  \u26d4 {arch_msg}")
+                arch_msg = gettext("msg_arch_unverified").format(arch=unsupported_arch)
+                window.debug_text.append(f"  \u26a0\ufe0f {arch_msg}")
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     window,

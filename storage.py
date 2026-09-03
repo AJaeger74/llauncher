@@ -303,7 +303,9 @@ def apply_preset(window, preset: dict):
             if hasattr(window, "debug_text") and window.debug_text:
                 window.debug_text.append(f"  ⚠️ Modell '{model_name}' nicht im Dropdown gefunden")
 
-        # Architektur-Prüfung: IMMER durchführen (auch wenn Modell nicht im Dropdown war)
+        # Architektur-Prüfung: IMMER durchführen (auch wenn Modell nicht im Dropdown war).
+        # Nur statische Liste — ein Treffer bedeutet "nicht bekannt", kein harter Fehler.
+        # Autoritativ ist der Binary-Dry-Run im Pre-Start-Check.
         try:
             model_info = gguf_get_model_info(selected_model)
             arch = (model_info.get('arch') or 'unknown').strip('\x00 ')
@@ -313,9 +315,9 @@ def apply_preset(window, preset: dict):
                 from i18n import I18nManager
                 gettext = I18nManager.get_instance().gettext
                 from PyQt6.QtWidgets import QMessageBox
-                arch_msg = gettext("msg_arch_unsupported").format(arch=unsupported_arch)
+                arch_msg = gettext("msg_arch_unverified").format(arch=unsupported_arch)
                 if hasattr(window, "debug_text") and window.debug_text:
-                    window.debug_text.append(f"  ⛔ {arch_msg}")
+                    window.debug_text.append(f"  ⚠️ {arch_msg}")
                 QMessageBox.warning(
                     window,
                     gettext("msg_arch_unsupported_title"),

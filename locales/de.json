@@ -174,6 +174,7 @@
   "msg_model_info_read_error": "Konnte Modell-Info nicht lesen: {error}",
   "msg_arch_unsupported": "Die Modell-Architektur '{arch}' wird von deinem llama.cpp-Build nicht unterstützt. Dieses Modell kann nicht geladen werden — der Server startet damit nicht.",
   "msg_arch_unsupported_title": "Nicht unterstützte Modell-Architektur",
+  "msg_arch_unverified": "Die Modell-Architektur '{arch}' ist nicht in der bekannten Liste von llauncher. Es kann sich um eine neuere llama.cpp-Architektur handeln — llauncher prüft sie gegen dein Binary, wenn du das Modell startest.",
   "msg_model_load_failed": "Modell konnte nicht geladen werden. Das ausgewählte Modell wird möglicherweise nicht unterstützt oder ist beschädigt. Siehe Debug-Ausgabe für Details.",
   "msg_model_load_failed_title": "Modell-Ladefehler",
   "msg_unavailable": "nicht verfügbar",

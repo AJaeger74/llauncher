@@ -586,6 +586,9 @@ def read_gguf_tensor_count(path: str) -> int:
 
 
 # Architekturen die von llama.cpp unterstützt werden (llama.cpp/src/llama-arch.cpp)
+# HINWEIS: Neue Architekturen in llama.cpp müssen hier ergänzt werden, sonst
+# warnen die statischen Checks (Modell-Auswahl, Preset-Load) falsch positiv.
+# Autoritativ bleibt der Binary-Dry-Run im Pre-Start-Check (llauncher.py).
 KNOWN_LLAMA_ARCHITECTURES = {
     "llama", "mamba", "gpt-neox", "stablelm", "stablelm2", "phi", "phi-3", "phi3",
     "gpt-2", "bert", "qwen2", "qwen2_moe", "qwen2_vl", "gptj", "starcoder2",
@@ -597,7 +600,7 @@ KNOWN_LLAMA_ARCHITECTURES = {
     "telechat", "textgen", "whisper", "t5", "bart", "bart2",
     "nemotron", "nemotron_h_moe", "nemotron_hpu_moe", "pwm",
     "ernie", "ernievision", "deepseek-vl", "molmo", "pangu",
-    "baichuan", "qwen", "qwen1_5", "qwen35", "qwen35moe", "xglm", "refact", "smaug",
+    "baichuan", "qwen", "qwen1_5", "qwen35", "qwen35moe", "qwen4exp", "xglm", "refact", "smaug",
     "griffin", "baidu",
     "laguna",
 }
