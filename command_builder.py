@@ -156,9 +156,13 @@ def _parse_custom_commands_text(text):
         if not line or line.startswith('#'):  # Skip empty lines and comments
             continue
         
-        # If line starts with a flag (- or --) and contains '=', keep as single arg
-        # (--param=value must stay as one token for subprocess, not split into two)
-        if '=' in line and line.startswith('-'):
+        # Only keep as a single arg when it's true '--flag=value' form: the '='
+        # must come before any whitespace. A line like "-ot 'exps=CPU'" contains
+        # '=' inside the QUOTED VALUE — it is 'key value' form and must be split,
+        # otherwise argv gets one token "-ot 'exps=CPU'" with literal quotes.
+        eq_idx = line.find('=')
+        ws_idx = next((i for i, ch in enumerate(line) if ch.isspace()), len(line))
+        if eq_idx != -1 and line.startswith('-') and eq_idx < ws_idx:
             # Strip surrounding quotes from the whole line if present
             if len(line) >= 2:
                 if (line.startswith("'") and line.endswith("'")) or \
