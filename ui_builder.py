@@ -84,11 +84,75 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWidgets import QScrollBar
 
 
+import html as _html
+import re as _re
+
+# Terminal-like log colors (llama.cpp severity scheme, tuned for dark theme)
+_LOG_COLORS = {
+    "error": "#ff6b6b",    # red    — E / errors / failed
+    "warn":  "#e5c07b",    # yellow — W / warnings / ⚠
+    "info":  None,         # default foreground — I
+    "debug": "#7f8c8d",    # gray   — D / internal chatter
+    "ok":    "#98c379",    # green  — listening / idle / ✓
+    "tag":   "#56b6c2",    # cyan   — command line, [FORK]/[PULL]
+}
+
+_SEVERITY_RE = _re.compile(r"^\s*\d+(?:[:.]\d+)*\s+([DIWE])\s")  # e.g. "19:42:53.123 I srv ..."
+_ERROR_RE = _re.compile(r"\b(error|failed|exception|traceback)\b", _re.I)
+_WARN_RE = _re.compile(r"\b(warn(?:ing)?)\b|\bWARN\b|⚠", _re.I)
+_OK_RE = _re.compile(r"listening on |all slots are idle|loaded|✓|⚡")
+_DEBUG_RE = _re.compile(r"^ggml_|^common_|slot (print|update)|^ *\"", _re.I)
+
+
+def classify_log_line(text: str):
+    """Map a log line to a color key, mirroring terminal coloring."""
+    if text.startswith(("─", "━")) or text.strip() == "":
+        return "debug"
+    if text.startswith(("[FORK]", "[PULL]")):
+        return "tag"
+    m = _SEVERITY_RE.match(text)
+    if m:
+        sev = m.group(1)
+        if sev == "E":
+            return "error"
+        if sev == "W":
+            return "warn"
+        if sev == "D":
+            return "debug"
+        # I: still highlight obvious errors inside info lines
+        if _ERROR_RE.search(text):
+            return "error"
+        if _OK_RE.search(text):
+            return "ok"
+        return "info"
+    if _ERROR_RE.search(text):
+        return "error"
+    if _WARN_RE.search(text):
+        return "warn"
+    if _OK_RE.search(text):
+        return "ok"
+    if _DEBUG_RE.search(text):
+        return "debug"
+    return None  # default
+
+
 class AutoFollowTextEdit(QTextEdit):
-    """QTextEdit that auto-scrolls to bottom when autofollow checkbox is checked."""
+    """QTextEdit that auto-scrolls to bottom when autofollow checkbox is checked.
+
+    Colors appended lines like a terminal (severity-based, llama.cpp style).
+    """
 
     def append(self, text: str) -> None:
-        super().append(text)
+        key = classify_log_line(text)
+        color = _LOG_COLORS.get(key) if key else None
+        if color:
+            # HTML append keeps escaping safe; QTextEdit appends as new paragraph
+            super().append(
+                f'<span style="color:{color};white-space:pre-wrap">'
+                f"{_html.escape(text)}</span>"
+            )
+        else:
+            super().append(_html.escape(text) if "<" in text else text)
         self._check_autofollow()
 
     def insertPlainText(self, text: str) -> None:
