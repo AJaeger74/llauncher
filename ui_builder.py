@@ -143,16 +143,16 @@ class AutoFollowTextEdit(QTextEdit):
     """
 
     def append(self, text: str) -> None:
+        # Always append via HTML: mixing plain-text and HTML appends on Qt
+        # leaks the previous paragraph's char format into later plain-text
+        # appends (e.g. a yellow line keeps coloring everything after it).
         key = classify_log_line(text)
         color = _LOG_COLORS.get(key) if key else None
         if color:
-            # HTML append keeps escaping safe; QTextEdit appends as new paragraph
-            super().append(
-                f'<span style="color:{color};white-space:pre-wrap">'
-                f"{_html.escape(text)}</span>"
-            )
+            inner = f'<span style="color:{color}">{_html.escape(text)}</span>'
         else:
-            super().append(_html.escape(text) if "<" in text else text)
+            inner = _html.escape(text)
+        super().append(f'<div style="white-space:pre-wrap">{inner}</div>')
         self._check_autofollow()
 
     def insertPlainText(self, text: str) -> None:
