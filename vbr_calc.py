@@ -92,30 +92,14 @@ def _dequant_factor(info: dict) -> float:
 # ------------------------------------------------------------
 
 def _effective_weights_bytes(info: dict) -> int:
-    """Calculate VRAM-relevant weight size (raw bytes × dequant factor).
+    """Return the on-GPU weight size in bytes for a model.
 
-    For nemotron_h_moe models, llama.cpp keeps weights in quantized form on
-    VRAM and only dequantizes per-tile during compute. So raw tensor_bytes
-    ≈ actual VRAM usage — no dequant multiplier needed.
-
-    For all other models, returns raw tensor_bytes unchanged.
-
-    Args:
-        info: Output of gguf_utils.get_model_info()
-
-    Returns:
-        Estimated VRAM usage of model weights in bytes
+    All architectures keep their quantized weights packed on VRAM —
+    llama.cpp dequantizes per-tile during compute and never materializes
+    an expanded copy — so raw tensor_bytes IS the VRAM usage. No dequant
+    multiplier is applied for any arch.
     """
-    raw = info.get("tensor_bytes", 0)
-    if raw == 0:
-        return 0
-
-    # Nemotron H-MoE: weights stay quantized on GPU
-    if info.get("arch") == "nemotron_h_moe":
-        return raw
-    else:
-        # All other models: unchanged behavior
-        return raw
+    return info.get("tensor_bytes", 0)
 
 
 # ------------------------------------------------------------

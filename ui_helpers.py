@@ -131,6 +131,28 @@ def sanitize_host(host_text: str) -> str:
     return host_text
 
 
+def host_port(host_text: str, default: str = "8080") -> str:
+    """Extract the trailing port from a host value ('127.0.0.1:8090' -> '8090').
+
+    The --host UI field accepts an optional ':port' suffix (sanitize_host
+    strips it). Returns `default` when no port is given or the input is
+    empty. Handles IPv6 bracket notation ('[::1]:9000' -> '9000')."""
+    if not host_text:
+        return default
+    text = host_text.strip()
+    if text.startswith("["):
+        bracket_end = text.find("]")
+        if bracket_end >= 0:
+            rest = text[bracket_end + 1:]
+            if rest.startswith(":") and rest[1:].isdigit():
+                return rest[1:]
+        return default
+    last_colon = text.rfind(":")
+    if last_colon > 0 and text[last_colon + 1:].isdigit():
+        return text[last_colon + 1:]
+    return default
+
+
 def _format_file_size(size_bytes: int) -> str:
     """Format file size in human-readable format.
     

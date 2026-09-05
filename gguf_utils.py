@@ -1058,9 +1058,9 @@ def estimate_vram_from_preset(
     if use_vbr:
         try:
             import urllib.request as _ur, json as _j
-            from ui_helpers import sanitize_host
+            from ui_helpers import sanitize_host, host_port
             host_val = sanitize_host(params.get("--host", "localhost") or "localhost")
-            slots_url = f"http://{host_val}:8080/slots"
+            slots_url = f"http://{host_val}:{host_port(params.get('--host', '') or '')}/slots"
             req = _ur.Request(slots_url, headers={"Accept": "application/json"})
             with _ur.urlopen(req, timeout=2) as _resp:
                 slots_data = _j.loads(_resp.read())
@@ -1104,9 +1104,9 @@ def estimate_vram_from_preset(
         # actual running token count instead of the configured max context.
         try:
             import urllib.request as _ur, json as _j
-            from ui_helpers import sanitize_host
+            from ui_helpers import sanitize_host, host_port
             host_val = sanitize_host(params.get("--host", "localhost") or "localhost")
-            slots_url = f"http://{host_val}:8080/slots"
+            slots_url = f"http://{host_val}:{host_port(params.get('--host', '') or '')}/slots"
             req = _ur.Request(slots_url, headers={"Accept": "application/json"})
             with _ur.urlopen(req, timeout=2) as _resp:
                 slots_data = _j.loads(_resp.read())
@@ -1454,9 +1454,9 @@ def get_vbr_degradation_info(
         closest_tier: Name of closest VBR tier (e.g. 't3')
         closest_bv: B/v of closest tier
     """
-    block_count = model_info.get("block_count", 65)
-    key_head_count = model_info.get("key_head_count", 4)
-    kv_head_dim = model_info.get("kv_head_dim", 256)
+    block_count = model_info.get("block_count")
+    key_head_count = model_info.get("key_head_count")
+    kv_head_dim = model_info.get("kv_head_dim")
     tensor_bytes = model_info.get("tensor_bytes", 0)
 
     # Default result if we can't calculate
@@ -1465,13 +1465,15 @@ def get_vbr_degradation_info(
         "bv_degraded": 0.0,
         "layers_f16": 0,
         "layers_degraded": 0,
-        "total_layers": block_count,
+        "total_layers": block_count or 0,
         "closest_tier": "",
         "closest_bv": 0.0,
     }
 
-    # Need all inputs to be valid
-    if gpu_used_mb <= 0 or used_tokens <= 0 or tensor_bytes <= 0:
+    # Need all inputs to be valid — fail loud (empty result) when the model
+    # geometry is missing instead of guessing with 65/4/256 defaults.
+    if (gpu_used_mb <= 0 or used_tokens <= 0 or tensor_bytes <= 0
+            or not block_count or not key_head_count or not kv_head_dim):
         return result
 
     # Back-calculate cache size from GPU usage

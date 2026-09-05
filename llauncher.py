@@ -1068,11 +1068,12 @@ class llauncher(QMainWindow):
         port = "8080"
 
         # Read host/port from UI if set
-        from ui_helpers import sanitize_host
+        from ui_helpers import sanitize_host, host_port
 
         host_edit = self.param_sliders.get("--host", {}).get("edit")
         if host_edit and host_edit.text().strip():
             host = sanitize_host(host_edit.text().strip())
+            port = host_port(host_edit.text().strip())
 
         url = f"http://{host}:{port}/slots"
         self.debug_text.append(t("msg_vbr_calibrating", url=url))
@@ -1315,14 +1316,17 @@ class llauncher(QMainWindow):
         """
         try:
             host = "localhost"
+            port = "8080"
+            from ui_helpers import sanitize_host, host_port
             host_edit = getattr(self, "param_sliders", {}).get("--host", {}).get("edit")
             if host_edit:
                 h = host_edit.text().strip()
                 if h:
-                    host = h
+                    host = sanitize_host(h)
+                    port = host_port(h)
 
             result = subprocess.run(
-                ["curl", "-s", "--max-time", "2", f"http://{host}:8080/slots"],
+                ["curl", "-s", "--max-time", "2", f"http://{host}:{port}/slots"],
                 capture_output=True, text=True, timeout=4,
             )
             if result.returncode != 0 or not result.stdout.strip():

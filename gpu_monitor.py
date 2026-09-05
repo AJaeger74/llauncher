@@ -23,14 +23,14 @@ class GPUMonitor(QThread):
 
     def _get_slots_url(self):
         """Build slots URL from the window's --host field or fallback to default."""
-        from ui_helpers import sanitize_host
+        from ui_helpers import sanitize_host, host_port
 
         if hasattr(self, "_window") and self._window is not None:
             host_edit = getattr(self._window, "param_sliders", {}).get("--host", {}).get("edit")
             if host_edit:
                 host_text = host_edit.text().strip()
                 if host_text:
-                    return f"http://{sanitize_host(host_text)}:{self.slots_port}/slots"
+                    return f"http://{sanitize_host(host_text)}:{host_port(host_text, self.slots_port)}/slots"
         return f"http://localhost:{self.slots_port}/slots"
 
     def _query_slots(self):
