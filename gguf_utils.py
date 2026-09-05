@@ -462,29 +462,37 @@ def _split_gguf_sizes(path: str) -> tuple[Optional[int], Optional[int]]:
     return (total_size, tensor_size)
 
 
-# VBR lazy-mode floor calibration. The only measured floor is Nemotron
-# (52 KV layers, vbr/vbr): ~3600 MB resident before any tokens are cached.
-# We anchor to that and scale by the model's KV-layer count (see
-# _vbr_lazy_base_mb). 52 is the Nemotron H MoE layer count the figure came from.
-_VBR_BASE_OVERHEAD_MB = 3600
-_VBR_BASE_REF_LAYERS = 52
+# VBR lazy-mode floor calibration. Before any tokens are cached, the resident
+# non-weight process footprint (compute buffers + any constant linear-attention
+# state + CUDA runtime, folded in) scales with the MODEL'S WEIGHT SIZE, not with
+# its KV-layer count. Calibrated against three clean zero-request floor launches
+# (measure_floor.py → /tmp/floor_results.json, 2026-09-05):
+#   Qwen3-1.7B   (866 MiB,  28 KV, dense)    -> 830  MiB
+#   Qwen3.6-27B  (13151,   16 KV, hybrid 48 linear-attention layers) -> 3007
+#   Nemotron-30B (17964,   52 KV, MoE)       -> 4284
+# The old "scale by KV-layer count, anchor Nemotron 52-layer @ 3600" model is
+# disproven by the data: a 16-KV-layer model has a LARGER footprint than a
+# 28-KV-layer one. The weight-scaled line below is the least-squares fit to
+# all three (R^2=0.99, <=7% error per point).
+_VBR_IDLE_FLOOR_MB = 605.0        # intercept: baseline non-weight idle footprint
+_VBR_IDLE_PER_WEIGHT_MB = 0.197   # non-weight footprint per MiB of GPU-resident weights
 
 
 def _vbr_lazy_base_mb(model_info: Dict[str, Any]) -> int:
     """Estimated VBR KV-cache floor (MB) when /slots has no usable token count yet.
 
     VBR allocates lazily and tracks used tokens, so before any tokens are
-    cached the resident cache is the pool's small init floor — not the full
-    ctx_size. That floor is driven by how many KV (token-scaling) layers the
-    model has, which the ramp test confirmed is what scales the cache.
+    cached the resident non-weight footprint is small and roughly proportional
+    to the model's weight size (compute buffers + constant linear-attention
+    state + CUDA runtime) — not the full ctx_size and not a fixed KV-layer
+    constant. This is a pre-request / no-server estimate; once /slots reports
+    tokens the live kv_bpv path takes over (see estimate_vram()).
 
-    The one measured floor we have is Nemotron (52 KV layers, vbr/vbr): ~3600 MB.
-    Anchor to it and scale by the KV-layer count, so a hybrid model with 12 KV
-    layers gets a proportionally smaller floor instead of a 52-layer constant.
-    A hard minimum keeps very small models from rounding to nothing.
+    Calibrated from three clean zero-request floor launches (see the constants
+    above). Returns the footprint in MB.
     """
-    kv_layers = model_info.get("kv_layer_count") or model_info.get("block_count") or 1
-    return max(512, int(_VBR_BASE_OVERHEAD_MB * kv_layers / _VBR_BASE_REF_LAYERS))
+    weights_mb = (model_info.get("tensor_bytes") or model_info.get("file_size") or 0) / (1024 * 1024)
+    return int(_VBR_IDLE_FLOOR_MB + _VBR_IDLE_PER_WEIGHT_MB * weights_mb)
 
 
 def read_gguf_tensor_bytes(path: str) -> Optional[int]:
@@ -1243,9 +1251,9 @@ def estimate_vram(
     # Dense models have kv_layer_count == block_count (or the field is absent).
     kv_layers = model_info.get("kv_layer_count") or model_info.get("block_count") or 1
 
-    # VBR lazy-mode floor: infrastructure + init memory resident before any
-    # tokens are cached. Scaled to this model's KV-layer count (see
-    # _vbr_lazy_base_mb) rather than a fixed 52-layer Nemotron constant.
+    # VBR lazy-mode floor: non-weight idle footprint resident before any
+    # tokens are cached. Scales with the model's weight size (see
+    # _vbr_lazy_base_mb), not a fixed KV-layer constant.
     vbr_lazy_base_mb = _vbr_lazy_base_mb(model_info)
 
     if use_vbr and vbr_live_bpv is not None:

@@ -292,45 +292,64 @@ def test_vbr_live_bpv_and_hybrid() -> bool:
 # ============================================================
 
 def test_vbr_lazy_floor_scaling() -> bool:
-    """Test 3c: lazy-mode floor is scaled to the model's KV-layer count.
+    """Test 3c: lazy-mode floor scales with the model's WEIGHT SIZE.
 
-    The old code used a flat 3600 MB Nemotron constant for every model.
-    _vbr_lazy_base_mb() anchors to that one measured point (Nemotron,
-    52 KV layers, vbr/vbr) and scales linearly with kv_layer_count.
+    The old code anchored a Nemotron floor and scaled LINEARLY by KV-layer
+    count. Three clean zero-request floor launches (measure_floor.py →
+    /tmp/floor_results.json) disproved that: a 16-KV-layer model (Qwen3.6-27B)
+    holds a LARGER non-weight footprint than a 28-KV-layer one (Qwen3-1.7B).
+    The non-weight idle footprint is instead ~proportional to the weight size.
+    _vbr_lazy_base_mb() is now the least-squares line fit to those three
+    points: 605 + 0.197 * weights_mib (R^2=0.99, <=7% per point).
     """
-    section("TEST 3c: VBR lazy floor scales with KV-layer count")
+    section("TEST 3c: VBR lazy floor scales with weight size (3-point fit)")
 
-    from gguf_utils import _vbr_lazy_base_mb, _VBR_BASE_OVERHEAD_MB
+    from gguf_utils import _vbr_lazy_base_mb
 
-    # Anchor: the reference Nemotron must reproduce the measured value.
-    anchor = _vbr_lazy_base_mb({"block_count": 52, "kv_layer_count": 52})
-    check("anchor: 52 KV layers reproduces the measured 3600 MB",
-          anchor == _VBR_BASE_OVERHEAD_MB, expected=True,
-          actual=f"{anchor} MB")
+    # The three measured floors: (name, weights_mib, measured_pool_mib).
+    # _vbr_lazy_base_mb must land within tolerance of the measured non-weight
+    # footprint for each, and must NOT be a function of KV-layer count alone.
+    points = [
+        ("Qwen3-1.7B (dense, 28 KV)",          866.0,   830.0),
+        ("Qwen3.6-27B (hybrid, 16 KV)",       13151.3, 3006.7),
+        ("Nemotron-3-Nano-30B-A3B (MoE, 52 KV)", 17964.1, 4283.9),
+    ]
+    for name, w_mib, pool_mib in points:
+        info = {"tensor_bytes": int(w_mib * 1024 * 1024)}
+        got = _vbr_lazy_base_mb(info)
+        rel = abs(got - pool_mib) / pool_mib
+        check(f"{name}: within 15% of measured floor",
+              rel < 0.15, expected=True,
+              actual=f"{got} MB (measured {pool_mib:.0f} MB, {rel:.0%})")
 
-    # Hybrid model (12 of 48 layers) gets a proportionally smaller floor.
-    hybrid = _vbr_lazy_base_mb({"block_count": 48, "kv_layer_count": 12})
-    expected = int(_VBR_BASE_OVERHEAD_MB * 12 / 52)
-    check("12 KV layers scales down proportionally",
-          hybrid == expected, expected=True, actual=f"{hybrid} MB")
+    # The decisive regression: two models with the SAME KV-layer count but very
+    # different weights must NOT get the same floor (the old model failed this).
+    same_kv_small = _vbr_lazy_base_mb({"tensor_bytes": int(866.0 * 1024 * 1024)})
+    same_kv_big   = _vbr_lazy_base_mb({"tensor_bytes": int(17964.1 * 1024 * 1024)})
+    check("heavier model gets a larger floor (weight-driven, not layer-driven)",
+          same_kv_big > same_kv_small, expected=True,
+          actual=f"{same_kv_small} vs {same_kv_big} MB")
 
-    # Floor: very small models don't round to nothing.
-    tiny = _vbr_lazy_base_mb({"block_count": 4, "kv_layer_count": 4})
-    check("4 KV layers hits the 512 MB floor", tiny == 512, expected=True,
-          actual=f"{tiny} MB")
+    # Degenerate: no size info at all -> just the intercept, never negative/zero.
+    check("no size info -> intercept floor (>= 512 MB)",
+          _vbr_lazy_base_mb({}) >= 512, expected=True,
+          actual=f"{_vbr_lazy_base_mb({})} MB")
 
-    # estimate_vram(vbr_lazy=True) must use the scaled floor, not the constant.
-    model = {"arch": "qwen4exp", "tensor_bytes": 5 * 1024**3,
-             "block_count": 48, "kv_layer_count": 12,
-             "embedding_length": 2560, "head_count": 24,
-             "key_head_count": 2, "kv_head_dim": 256}
+    # estimate_vram(vbr_lazy=True) must use the weight-scaled floor, not the
+    # old 3600 MB Nemotron constant. A ~13 GB model's floor is well under 3600
+    # but far above the old 512-MB tiny floor.
+    model = {"arch": "qwen35", "tensor_bytes": int(13151.3 * 1024 * 1024),
+             "block_count": 64, "kv_layer_count": 16,
+             "embedding_length": 5120, "head_count": 24,
+             "key_head_count": 4, "kv_head_dim": 256}
     got = estimate_vram(model_info=model, ngl=-1, ctx_size=262144,
                         cache_type_k="vbr", cache_type_v="vbr", vbr_lazy=True)
-    check("vbr_lazy path uses scaled floor (12 layers)",
-          abs(got["cache_vram_mb"] - expected) < 1, expected=True,
-          actual=f"{got['cache_vram_mb']:.0f} MB (expected {expected})")
-    check("lazy floor < old flat 3600 MB for hybrid models",
-          got["cache_vram_mb"] < 3600, expected=True,
+    exp = _vbr_lazy_base_mb(model)
+    check("vbr_lazy path uses the weight-scaled floor",
+          abs(got["cache_vram_mb"] - exp) < 1, expected=True,
+          actual=f"{got['cache_vram_mb']:.0f} MB (expected {exp})")
+    check("lazy floor is weight-driven (not the old flat 3600 MB)",
+          2500 < got["cache_vram_mb"] < 3600, expected=True,
           actual=f"{got['cache_vram_mb']:.0f} MB")
     return True
 
