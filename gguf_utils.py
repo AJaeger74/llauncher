@@ -770,7 +770,21 @@ def get_model_info(path: str) -> Dict[str, Any]:
     )
     if kv_head_dim is None and embedding_length and head_count:
         kv_head_dim = embedding_length // head_count
-    
+
+    # Hybrid / sliding-attention layer count. Some models (e.g. Qwen "Flash-Next"
+    # qwen4exp) interleave full-attention layers with linear/SSM layers that keep
+    # only a CONSTANT state, so their KV does not scale with context. Only the
+    # full-attention layers contribute token-scaling KV cache.
+    #   full_attention_interval = N  ->  1 in every N blocks has full attention.
+    # Dense models leave the interval unset -> kv_layer_count == block_count.
+    full_attention_interval = (
+        read_gguf_integer(path, f"{arch}.full_attention_interval", min_val=1, max_val=4096) or
+        read_gguf_integer(path, "full_attention_interval", min_val=1, max_val=4096)
+    )
+    kv_layer_count = block_count
+    if full_attention_interval and full_attention_interval > 1 and block_count:
+        kv_layer_count = (block_count + full_attention_interval - 1) // full_attention_interval
+
     # Feed-forward dimension (for expert/MoE models)
     ff_length = (
         read_gguf_integer(path, f"{arch}.feed_forward_length", min_val=1, max_val=10000000) or
@@ -811,6 +825,8 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "head_count": head_count,
         "key_head_count": key_head_count,
         "kv_head_dim": kv_head_dim,
+        "full_attention_interval": full_attention_interval,
+        "kv_layer_count": kv_layer_count,
         "ff_length": ff_length,
     }
     
@@ -937,17 +953,69 @@ def estimate_vram_from_preset(
     cache_type_v = params.get("--cache-type-v", "f16")
     use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
 
-    # nemotron_h_moe override: use actual token count from running server
-    # when available, instead of the configured max context.
-    # This prevents overestimation for partial-load scenarios.
+    # VBR introspection via /slots — keyed off VBR being active (any architecture),
+    # not a specific model family. VBR allocates lazily and tracks USED tokens,
+    # so the preset max context (-c) is NOT the startup/actual VRAM.
+    #
+    # PRIMARY signal: the live `kv_bpv` from /slots. It is the effective
+    # bits-per-value averaged over all K+V layer tensors and updates as VBR
+    # degrades (verified live: 16.0 -> 9.76 -> 6.1 as context grew). Combined
+    # with the used-token count it gives cache size directly — no nvidia-smi,
+    # no shed_offer back-calculation (those are kept only for cross-checking).
     arch = info.get("arch")
-    vbr_lazy = False  # True when VBR is active but /slots is unavailable
-    if arch == "nemotron_h_moe":
+    vbr_lazy = False       # VBR active but /slots has no usable token data yet
+    vbr_live_bpv = None    # live effective bits-per-value from /slots
+
+    if use_vbr:
         try:
             import urllib.request as _ur, json as _j
-            # Try to read host from preset, fallback to localhost
             from ui_helpers import sanitize_host
-
+            host_val = sanitize_host(params.get("--host", "localhost") or "localhost")
+            slots_url = f"http://{host_val}:8080/slots"
+            req = _ur.Request(slots_url, headers={"Accept": "application/json"})
+            with _ur.urlopen(req, timeout=2) as _resp:
+                slots_data = _j.loads(_resp.read())
+            if slots_data:
+                # Pick an active slot (any token activity), else fall back to slot 0.
+                slot = None
+                for s in slots_data:
+                    _n_dec = (s.get("next_token") or [{}])[0].get("n_decoded", 0)
+                    if (s.get("n_prompt_tokens", 0) > 0
+                            or s.get("n_prompt_tokens_processed", 0) > 0
+                            or _n_dec > 0):
+                        slot = s
+                        break
+                if slot is None:
+                    slot = slots_data[0]
+                # Verify it's our model: /slots doesn't report a model name, so
+                # cross-check n_ctx against the preset context size. A mismatch
+                # means a different server occupies this port — don't trust its
+                # token count or bpv, fall back to the lazy (no-token) estimate.
+                slot_ctx = slot.get("n_ctx", 0)
+                if slot_ctx > 0 and slot_ctx != ctx_size:
+                    vbr_lazy = True
+                else:
+                    prompt = slot.get("n_prompt_tokens", 0)
+                    processed = slot.get("n_prompt_tokens_processed", 0)
+                    decoded = (slot.get("next_token") or [{}])[0].get("n_decoded", 0)
+                    used = max(prompt, processed) + decoded
+                    if used > 0:
+                        ctx_size = used
+                        vbr_live_bpv = slot.get("kv_bpv")
+                    else:
+                        # Server running but no tokens yet — VBR has allocated
+                        # nothing. Using full preset ctx_size massively overestimates.
+                        vbr_lazy = True
+        except Exception:
+            # /slots unavailable — server not started or no request yet.
+            if use_vbr:
+                vbr_lazy = True
+    elif arch == "nemotron_h_moe":
+        # Pre-existing override (unchanged): for non-VBR nemotron, reflect the
+        # actual running token count instead of the configured max context.
+        try:
+            import urllib.request as _ur, json as _j
+            from ui_helpers import sanitize_host
             host_val = sanitize_host(params.get("--host", "localhost") or "localhost")
             slots_url = f"http://{host_val}:8080/slots"
             req = _ur.Request(slots_url, headers={"Accept": "application/json"})
@@ -955,36 +1023,17 @@ def estimate_vram_from_preset(
                 slots_data = _j.loads(_resp.read())
             if slots_data:
                 slot = slots_data[0]
-                # Verify this is actually our Nemotron model. /slots doesn't
-                # always report a model name, so cross-check n_ctx against the
-                # preset context size. If they don't match, it's a different server.
                 slot_ctx = slot.get("n_ctx", 0)
                 if slot_ctx > 0 and slot_ctx != ctx_size:
-                    # Different model running on this port — use lazy fallback
-                    if use_vbr:
-                        ctx_size = 0
-                        vbr_lazy = True
-                    else:
-                        ctx_size = slot_ctx
+                    ctx_size = slot_ctx
                 else:
-                    # Same server or no ctx info — use token count
                     prompt = slot.get("n_prompt_tokens", 0)
-                    decoded = slot.get("next_token", [{}])[0].get("n_decoded", 0)
+                    decoded = (slot.get("next_token") or [{}])[0].get("n_decoded", 0)
                     used = prompt + decoded
                     if used > 0:
                         ctx_size = used
-                    elif use_vbr:
-                        # Server running but no tokens yet — VBR hasn't allocated
-                        # lazily. Using full preset ctx_size would massively overestimate.
-                        ctx_size = 0
-                        vbr_lazy = True
         except Exception:
-            # /slots unavailable — server not yet ready or no requests made.
-            # VBR allocates lazily, so using the full preset ctx_size massively
-            # overestimates VRAM at startup. Use a realistic VBR base instead.
-            if use_vbr:
-                ctx_size = 0
-                vbr_lazy = True
+            pass
 
     np_slots = params.get("-np", 1)
 
@@ -1014,6 +1063,7 @@ def estimate_vram_from_preset(
         mmproj_size=mmproj_size,
         vbr_calibrated_v_bytes=calibrated_v_bytes,
         vbr_lazy=vbr_lazy,
+        vbr_live_bpv=vbr_live_bpv,
     )
 
 
@@ -1028,6 +1078,7 @@ def estimate_vram(
     vbr_vram_mb: int | None = None,
     vbr_calibrated_v_bytes: float | None = None,
     vbr_lazy: bool = False,
+    vbr_live_bpv: float | None = None,
 ) -> Dict[str, Any]:
     """Estimate VRAM usage for a model given the current parameters.
 
@@ -1100,31 +1151,68 @@ def estimate_vram(
         model_vram_bytes *= 1.02 if is_moe else 1.05
 
     # ── KV Cache VRAM ───────────────────────────────────────────────
-    # Per llama.cpp llama-kv-cache:
-    #   K tensor: ne[0]=head_dim, ne[1]=n_head_k, ne[2]=n_ctx
-    #   V tensor: ne[0]=head_dim, ne[1]=1 (transposed), ne[2]=n_ctx
-    # Per-layer: (key_heads + 1) × head_dim × row_bytes × ctx
-    # Total: n_layers × kv_per_layer × n_slots
+    # Per llama.cpp llama-kv-cache, per full-attention layer:
+    #   K tensor: ctx × key_heads × head_dim values
+    #   V tensor: ctx × key_heads × head_dim values (transposed, same count)
+    # Total: kv_layers × (K + V) × n_slots, where kv_layers is the number of
+    # layers whose KV actually scales with context (see below).
     use_vbr = cache_type_k.lower() == "vbr" or cache_type_v.lower() == "vbr"
+
+    # Number of layers with token-scaling KV cache. Hybrid / sliding-attention
+    # models (e.g. Qwen "Flash-Next" qwen4exp, full_attention_interval=4) keep
+    # only a CONSTANT state on most layers, so their KV does not grow with
+    # context — counting them with block_count overestimates the cache 4x.
+    # Dense models have kv_layer_count == block_count (or the field is absent).
+    kv_layers = model_info.get("kv_layer_count") or model_info.get("block_count") or 1
 
     # VBR base overhead: infrastructure memory allocated at startup even with
     # zero tokens. Measured on Nemotron (52 layers, vbr/vbr): ~3600 MB.
-    # Used as fallback when /slots API is unavailable (server not started).
+    # Used only when VBR is active but /slots has no usable token count yet.
     VBR_BASE_OVERHEAD_MB = 3600
 
-    if vbr_lazy and use_vbr:
+    if use_vbr and vbr_live_bpv is not None:
+        # PRIMARY live path. The running server reports the effective
+        # bits-per-value averaged over ALL K+V layer tensors (kv_bpv) and the
+        # used-token count has already been substituted into ctx_size by
+        # estimate_vram_from_preset(). VBR allocates lazily and tracks used
+        # tokens, so this is the actual current cache size — no static type
+        # map, no nvidia-smi / shed_offer back-calculation (those remain a
+        # cross-check only). Verified live on qwen4exp: this reproduces the
+        # measured per-token F16 slope to <1%.
+        if ctx_size > 0 and key_head_count:
+            head_dim = model_info.get("kv_head_dim") or (
+                (embedding_length // head_count) if embedding_length and head_count else 1
+            )
+            per_tensor_bytes = ctx_size * key_head_count * head_dim * (max(vbr_live_bpv, 0.0) / 8.0)
+            total_cache_bytes = int(2 * per_tensor_bytes * np_slots * kv_layers)
+            # Sanity guard: some server builds report the cache ENTRY type
+            # (always F16=16.0) instead of the live effective bpv, so kv_bpv
+            # stays at 16.0 even after heavy degradation. A near-F16 reading
+            # whose implied cache would FAR exceed the GPU's free memory
+            # cannot be real — fall back to the lazy base instead of
+            # overestimating. A genuinely-F16 cache sits at ~100-110% of free
+            # (it fits by definition); a stale 16.0 on an already-degraded
+            # cache was measured at ~220%. 1.5x separates the two.
+            if vbr_live_bpv >= 15.0:
+                gpu = read_gpu_vram()
+                if gpu:
+                    free_bytes = gpu["free_mb"] * 1024 * 1024
+                    if total_cache_bytes > free_bytes * 1.5:
+                        total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
+        else:
+            total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
+    elif vbr_lazy and use_vbr:
         # Server not started or no requests yet — VBR allocates lazily.
-        # Use fixed base overhead instead of token-based formula.
+        # Use fixed base overhead instead of the token-based formula.
         total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
     elif use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
         # VBR with explicit budget — use the budget directly as cache size.
         # RoPE is computed on-the-fly in llama.cpp (not stored in KV cache).
         total_cache_bytes = int(vbr_vram_mb * 1024 * 1024)
     elif embedding_length and head_count:
-        # Prefer explicit KV head dimension (e.g. from attention.key_length)
-        # over the naive embedding_length // head_count derivation.
-        # MTP/Qwen3.6 models store a separate key_length that differs from
-        # the Q-head dimension, so embedding/head_count gives wrong head_dim.
+        # Static (non-VBR-live) path: derive bytes/value from the configured
+        # cache type, or from calibration when VBR is active without a live
+        # server. Used for startup estimates before any /slots data exists.
         head_dim = model_info.get("kv_head_dim") or (embedding_length // head_count)
 
         cache_bytes_k = KV_CACHE_TYPE_SIZES.get(cache_type_k, 2)  # default f16
@@ -1156,10 +1244,9 @@ def estimate_vram(
         kv_v_per_slot = ctx_size * key_head_count * head_dim * cache_bytes_v
         kv_per_slot = kv_k_per_slot + kv_v_per_slot
 
-        # Multiply by layers (each layer has its own KV cache) and slots.
+        # Multiply by the token-scaling layer count and slots.
         # RoPE embeddings are computed on-the-fly in llama.cpp, NOT stored.
-        n_layers = model_info.get("block_count") or 1
-        total_cache_bytes = kv_per_slot * np_slots * n_layers
+        total_cache_bytes = kv_per_slot * np_slots * kv_layers
     else:
         # Fallback: rough f16 estimate
         total_cache_bytes = (

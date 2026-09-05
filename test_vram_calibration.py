@@ -241,6 +241,53 @@ def test_display_rendering(vram_results: Dict) -> bool:
 
 
 # ============================================================
+# TEST 3b: VBR live-bpv + hybrid kv_layer_count (no server needed)
+# ============================================================
+
+def test_vbr_live_bpv_and_hybrid() -> bool:
+    """Test 3b: live kv_bpv primary path and hybrid layer count.
+
+    Pure-formula check of estimate_vram() — no live server required.
+    Verifies:
+      * the live-bpv path computes cache = 2*ctx*kvh*hd*(bpv/8)*kv_layers*slots
+      * hybrid kv_layer_count (full_attention_interval) reduces the cache
+        vs. using block_count
+      * dense models (no kv_layer_count) fall back to block_count
+    """
+    section("TEST 3b: VBR live-bpv + hybrid kv_layer_count")
+
+    kvh, hd = 2, 256
+    ctx, bpv = 100000, 8.0
+
+    # Hybrid model: 48 blocks, full_attention_interval=4 -> 12 KV layers.
+    hybrid = {"arch": "qwen4exp", "tensor_bytes": 5 * 1024**3, "block_count": 48,
+              "kv_layer_count": 12, "full_attention_interval": 4,
+              "embedding_length": 2560, "head_count": 24,
+              "key_head_count": kvh, "kv_head_dim": hd}
+
+    got = estimate_vram(model_info=hybrid, ngl=-1, ctx_size=ctx,
+                        cache_type_k="vbr", cache_type_v="vbr", vbr_live_bpv=bpv)
+    expected = 2 * ctx * kvh * hd * (bpv / 8.0) * 12 / (1024**2)  # MiB
+    check("live-bpv path uses kv_layer_count=12 (hybrid)",
+          abs(got["cache_vram_mb"] - expected) < 1, expected=True,
+          actual=f"{got['cache_vram_mb']:.1f} MB (expected {expected:.1f})")
+
+    # Same model but WITHOUT the hybrid field -> must fall back to block_count=48.
+    dense_like = {k: v for k, v in hybrid.items() if k not in ("kv_layer_count", "full_attention_interval")}
+    got_all = estimate_vram(model_info=dense_like, ngl=-1, ctx_size=ctx,
+                            cache_type_k="vbr", cache_type_v="vbr", vbr_live_bpv=bpv)
+    expected_all = 2 * ctx * kvh * hd * (bpv / 8.0) * 48 / (1024**2)
+    check("no hybrid field -> falls back to block_count=48",
+          abs(got_all["cache_vram_mb"] - expected_all) < 1, expected=True,
+          actual=f"{got_all['cache_vram_mb']:.1f} MB (expected {expected_all:.1f})")
+
+    check("hybrid cache is 4x smaller than dense (interval=4)",
+          abs(got_all["cache_vram_mb"] / got["cache_vram_mb"] - 4.0) < 0.01, expected=True,
+          actual=f"ratio {got_all['cache_vram_mb'] / got['cache_vram_mb']:.2f}")
+    return True
+
+
+# ============================================================
 # TEST 4: VBR-Calibration
 # ============================================================
 
@@ -400,6 +447,16 @@ def main():
     except Exception as e:
         print(f"  {FAIL} Test 3 fehlgeschlagen: {e}")
         results["display_rendering"] = False
+        all_passed = False
+    
+    # Test 3b: VBR live-bpv + hybrid layer count
+    try:
+        live_ok = test_vbr_live_bpv_and_hybrid()
+        results["vbr_live_bpv_hybrid"] = live_ok
+        all_passed = all_passed and live_ok
+    except Exception as e:
+        print(f"  {FAIL} Test 3b fehlgeschlagen: {e}")
+        results["vbr_live_bpv_hybrid"] = False
         all_passed = False
     
     # Test 4: VBR-Calibration
