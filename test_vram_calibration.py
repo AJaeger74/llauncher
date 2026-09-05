@@ -288,6 +288,102 @@ def test_vbr_live_bpv_and_hybrid() -> bool:
 
 
 # ============================================================
+# TEST 3c: VBR lazy floor scales with KV-layer count (#3)
+# ============================================================
+
+def test_vbr_lazy_floor_scaling() -> bool:
+    """Test 3c: lazy-mode floor is scaled to the model's KV-layer count.
+
+    The old code used a flat 3600 MB Nemotron constant for every model.
+    _vbr_lazy_base_mb() anchors to that one measured point (Nemotron,
+    52 KV layers, vbr/vbr) and scales linearly with kv_layer_count.
+    """
+    section("TEST 3c: VBR lazy floor scales with KV-layer count")
+
+    from gguf_utils import _vbr_lazy_base_mb, _VBR_BASE_OVERHEAD_MB
+
+    # Anchor: the reference Nemotron must reproduce the measured value.
+    anchor = _vbr_lazy_base_mb({"block_count": 52, "kv_layer_count": 52})
+    check("anchor: 52 KV layers reproduces the measured 3600 MB",
+          anchor == _VBR_BASE_OVERHEAD_MB, expected=True,
+          actual=f"{anchor} MB")
+
+    # Hybrid model (12 of 48 layers) gets a proportionally smaller floor.
+    hybrid = _vbr_lazy_base_mb({"block_count": 48, "kv_layer_count": 12})
+    expected = int(_VBR_BASE_OVERHEAD_MB * 12 / 52)
+    check("12 KV layers scales down proportionally",
+          hybrid == expected, expected=True, actual=f"{hybrid} MB")
+
+    # Floor: very small models don't round to nothing.
+    tiny = _vbr_lazy_base_mb({"block_count": 4, "kv_layer_count": 4})
+    check("4 KV layers hits the 512 MB floor", tiny == 512, expected=True,
+          actual=f"{tiny} MB")
+
+    # estimate_vram(vbr_lazy=True) must use the scaled floor, not the constant.
+    model = {"arch": "qwen4exp", "tensor_bytes": 5 * 1024**3,
+             "block_count": 48, "kv_layer_count": 12,
+             "embedding_length": 2560, "head_count": 24,
+             "key_head_count": 2, "kv_head_dim": 256}
+    got = estimate_vram(model_info=model, ngl=-1, ctx_size=262144,
+                        cache_type_k="vbr", cache_type_v="vbr", vbr_lazy=True)
+    check("vbr_lazy path uses scaled floor (12 layers)",
+          abs(got["cache_vram_mb"] - expected) < 1, expected=True,
+          actual=f"{got['cache_vram_mb']:.0f} MB (expected {expected})")
+    check("lazy floor < old flat 3600 MB for hybrid models",
+          got["cache_vram_mb"] < 3600, expected=True,
+          actual=f"{got['cache_vram_mb']:.0f} MB")
+    return True
+
+
+# ============================================================
+# TEST 3d: split GGUF size summation (#4a)
+# ============================================================
+
+SPLIT_MODEL_PATH = "/opt/fast/ai/models/llama.cpp/unsloth_Qwen3.8-Flash-Next-GGUF/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf"
+
+
+def test_split_gguf_sizes() -> bool:
+    """Test 3d: split GGUF (-NNNNN-of-NNNNN) sums all shards.
+
+    llama.cpp writes all metadata into the metadata shard(s) and the tensor
+    data across the remaining shards. Before the fix, get_model_info() read
+    only shard 1 and reported ~9 MB for a 76 GB model. Now file_size is the
+    whole family's on-disk size and tensor_bytes the sum of the
+    tensor-bearing shards.
+    """
+    section("TEST 3d: split GGUF size summation")
+
+    if not os.path.exists(SPLIT_MODEL_PATH):
+        print(f"  {WARN} Split-Modell nicht gefunden, Test wird übersprungen: {SPLIT_MODEL_PATH}")
+        return True
+
+    info = get_model_info(SPLIT_MODEL_PATH)
+    file_size = info.get("file_size", 0)
+    tensor_bytes = info.get("tensor_bytes", 0)
+
+    print(f"  File Size (Familie): {file_size / (1024**3):.2f} GB")
+    print(f"  Tensor Bytes:        {tensor_bytes / (1024**3):.2f} GB")
+
+    check("file_size ist die gesammte Split-Familie (> 50 GB)",
+          file_size > 50 * 1024**3, expected=True,
+          actual=f"{file_size / (1024**3):.2f} GB")
+
+    # Tensor shards dominate; the metadata shard is ~10 MB, so tensor_bytes
+    # must be well above the 70% sanity threshold of the family total.
+    check("tensor_bytes > 99% der Familie (nur Metadaten-Shard fehlt)",
+          tensor_bytes > file_size * 0.99, expected=True,
+          actual=f"{(tensor_bytes / file_size * 100) if file_size else 0:.2f}%")
+
+    # Downstream: model VRAM must be in the tens-of-GB range, not ~9 MB.
+    vram = estimate_vram(model_info=info, ngl=-1, ctx_size=4096,
+                         cache_type_k="f16", cache_type_v="f16")
+    check("model_vram_mb ist > 10 GB (vorher ~9 MB)",
+          vram["model_vram_mb"] > 10 * 1024, expected=True,
+          actual=f"{vram['model_vram_mb'] / 1024:.1f} GB")
+    return True
+
+
+# ============================================================
 # TEST 4: VBR-Calibration
 # ============================================================
 
@@ -458,7 +554,27 @@ def main():
         print(f"  {FAIL} Test 3b fehlgeschlagen: {e}")
         results["vbr_live_bpv_hybrid"] = False
         all_passed = False
-    
+
+    # Test 3c: VBR lazy floor scaling
+    try:
+        lazy_ok = test_vbr_lazy_floor_scaling()
+        results["vbr_lazy_floor"] = lazy_ok
+        all_passed = all_passed and lazy_ok
+    except Exception as e:
+        print(f"  {FAIL} Test 3c fehlgeschlagen: {e}")
+        results["vbr_lazy_floor"] = False
+        all_passed = False
+
+    # Test 3d: split GGUF size summation
+    try:
+        split_ok = test_split_gguf_sizes()
+        results["split_gguf_sizes"] = split_ok
+        all_passed = all_passed and split_ok
+    except Exception as e:
+        print(f"  {FAIL} Test 3d fehlgeschlagen: {e}")
+        results["split_gguf_sizes"] = False
+        all_passed = False
+
     # Test 4: VBR-Calibration
     try:
         vbr_ok = test_vbr_calibration()

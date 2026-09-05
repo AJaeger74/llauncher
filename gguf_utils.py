@@ -4,6 +4,7 @@ llauncher – GGUF Utilities
 """
 
 import os
+import re
 import struct
 import subprocess
 from pathlib import Path
@@ -417,6 +418,75 @@ def _skip_gguf_kv_entry(data: bytes, offset: int) -> int:
         return val_off + sz
 
 
+def _split_gguf_sizes(path: str) -> tuple[Optional[int], Optional[int]]:
+    """Sizes for a split GGUF model, in bytes.
+
+    A split model is named ``<base>-<NNNNN>-of-<NNNNN>.gguf``. llama.cpp
+    writes all metadata into the metadata shard(s) and distributes the tensor
+    data across the remaining shards. Reading only shard 1 gives a tiny
+    file_size (metadata) and tensor_bytes=0, so the estimate collapses to ~9 MB
+    for a multi-shard model.
+
+    Returns ``(total_on_disk, tensor_bytes)``:
+      * total_on_disk = sum of every shard's size (the real model size).
+      * tensor_bytes  = sum of the shards that actually contain tensors
+        (header tensor_count > 0). For quantized models this IS the GPU weight
+        size — quantized weights stay in their packed form on VRAM, so no
+        metadata haircut is needed (that haircut is only for single-file models
+        where the tokenizer/vocab sits inline).
+
+    Returns ``(None, None)`` when the path is not part of a complete split family.
+    """
+    p = Path(path)
+    m = re.match(r"^(.*?)-(\d{5})-of-(\d{5})\.gguf$", p.name)
+    if not m:
+        return (None, None)
+    base, total = m.group(1), int(m.group(3))
+    total_size = 0
+    tensor_size = 0
+    for i in range(1, total + 1):
+        shard = p.with_name(f"{base}-{i:05d}-of-{total:05d}.gguf")
+        if not shard.exists():
+            return (None, None)  # incomplete split — single-file fallback
+        size = shard.stat().st_size
+        total_size += size
+        # tensor_count sits at a fixed offset in the GGUF header.
+        try:
+            with open(shard, "rb") as f:
+                head = f.read(24)
+            tc = struct.unpack("<Q", head[16:24])[0] if len(head) >= 24 else 0
+        except OSError:
+            tc = 0
+        if tc > 0:
+            tensor_size += size
+    return (total_size, tensor_size)
+
+
+# VBR lazy-mode floor calibration. The only measured floor is Nemotron
+# (52 KV layers, vbr/vbr): ~3600 MB resident before any tokens are cached.
+# We anchor to that and scale by the model's KV-layer count (see
+# _vbr_lazy_base_mb). 52 is the Nemotron H MoE layer count the figure came from.
+_VBR_BASE_OVERHEAD_MB = 3600
+_VBR_BASE_REF_LAYERS = 52
+
+
+def _vbr_lazy_base_mb(model_info: Dict[str, Any]) -> int:
+    """Estimated VBR KV-cache floor (MB) when /slots has no usable token count yet.
+
+    VBR allocates lazily and tracks used tokens, so before any tokens are
+    cached the resident cache is the pool's small init floor — not the full
+    ctx_size. That floor is driven by how many KV (token-scaling) layers the
+    model has, which the ramp test confirmed is what scales the cache.
+
+    The one measured floor we have is Nemotron (52 KV layers, vbr/vbr): ~3600 MB.
+    Anchor to it and scale by the KV-layer count, so a hybrid model with 12 KV
+    layers gets a proportionally smaller floor instead of a 52-layer constant.
+    A hard minimum keeps very small models from rounding to nothing.
+    """
+    kv_layers = model_info.get("kv_layer_count") or model_info.get("block_count") or 1
+    return max(512, int(_VBR_BASE_OVERHEAD_MB * kv_layers / _VBR_BASE_REF_LAYERS))
+
+
 def read_gguf_tensor_bytes(path: str) -> Optional[int]:
     """Parse the GGUF tensor table and return the total bytes of all tensors.
 
@@ -794,7 +864,19 @@ def get_model_info(path: str) -> Dict[str, Any]:
     # Parse tensor bytes from GGUF header (accurate, excludes metadata)
     tensor_bytes = read_gguf_tensor_bytes(path)
     file_size = stat.st_size
-    
+
+    # Split GGUF (-NNNNN-of-NNNNN): llama.cpp writes all metadata into the
+    # metadata shard(s) and the tensors across the remaining shards. Reading
+    # only shard 1 gives a tiny file_size (metadata) and tensor_bytes=0, so the
+    # estimate collapses to ~9 MB for a multi-shard model. Use the whole family
+    # instead: the real on-disk size for file_size, and the sum of the
+    # tensor-bearing shards as tensor_bytes (quantized weights stay packed on
+    # VRAM, so no metadata haircut is needed here).
+    split_total, split_tensor = _split_gguf_sizes(path)
+    if split_total:
+        file_size = split_total
+        tensor_bytes = split_tensor
+
     # Sanity check: the parser only handles standard llama/gpt-neox layouts.
     # For non-standard architectures (MTP, MoE, SSM) it may return garbage
     # — e.g. Qwen3.6-27B MTP returns only ~13% of file_size.  If the parser
@@ -802,12 +884,10 @@ def get_model_info(path: str) -> Dict[str, Any]:
     if tensor_bytes is not None and file_size > 0:
         if tensor_bytes < file_size * 0.7:
             tensor_bytes = None  # treat as parse failure
-    
+
     # Fallback: when the parser fails, use a fraction of file_size.
-    # GGUF metadata (tokenizer/vocab) is not loaded on GPU.  For these models
-    # the parser returns ~10-13% of file_size (structurally incomplete), so we
-    # fall back to a calibrated factor.  82% works for both MoE and Dense
-    # Qwen3.6 models — validated against nvidia-smi.
+    # GGUF metadata (tokenizer/vocab) is not loaded on GPU.  82% works for both
+    # MoE and Dense Qwen models — validated against nvidia-smi.
     if tensor_bytes is None:
         tensor_bytes = int(file_size * 0.82)
     
@@ -816,7 +896,7 @@ def get_model_info(path: str) -> Dict[str, Any]:
         "arch": arch,
         "name": name,
         "context_length": ctx_len,
-        "file_size": stat.st_size,
+        "file_size": file_size,
         "version": version,
         "tensor_count": tensor_count,
         "tensor_bytes": tensor_bytes,
@@ -866,8 +946,9 @@ def read_gpu_vram() -> Optional[Dict[str, int]]:
 # Source:  ggml/src/ggml-common.h (buun-llama-cpp master), ggml/src/ggml.c (type_traits)
 #
 # VBR (Variable Bit Rate) is a dynamic mode that degrades layer-by-layer.
-# When VBR is active, estimate_vram() uses --vbr-vram budget if set,
-# otherwise falls back to the floor tier for estimation.
+# When VBR is active, estimate_vram() prefers the live /slots kv_bpv when a
+# server is reachable; otherwise it uses a floor-tier estimate (0.38 B/v)
+# calibrated from full-degradation measurements.
 KV_CACHE_TYPE_SIZES = {
     # Full precision
     "f32": 4.0,
@@ -1075,7 +1156,6 @@ def estimate_vram(
     cache_type_k: str = "f16",
     cache_type_v: str = "f16",
     mmproj_size: int = 0,
-    vbr_vram_mb: int | None = None,
     vbr_calibrated_v_bytes: float | None = None,
     vbr_lazy: bool = False,
     vbr_live_bpv: float | None = None,
@@ -1096,8 +1176,6 @@ def estimate_vram(
         cache_type_k: KV cache type for keys (e.g. "f16", "q4_0", "vbr").
         cache_type_v: KV cache type for values.
         mmproj_size: Size of mmproj file in bytes (for vision models).
-        vbr_vram_mb: VBR VRAM budget in MB (--vbr-vram). When set and cache_type
-                     is "vbr" on either side, this overrides the computed cache size.
         vbr_calibrated_v_bytes: When VBR is active, use the live-calibrated V-cache
                      bytes/value from /slots API instead of the static type map.
                      Set by VBR-Calibrate button (e.g. 0.72 for ~5.8 bpv).
@@ -1165,10 +1243,10 @@ def estimate_vram(
     # Dense models have kv_layer_count == block_count (or the field is absent).
     kv_layers = model_info.get("kv_layer_count") or model_info.get("block_count") or 1
 
-    # VBR base overhead: infrastructure memory allocated at startup even with
-    # zero tokens. Measured on Nemotron (52 layers, vbr/vbr): ~3600 MB.
-    # Used only when VBR is active but /slots has no usable token count yet.
-    VBR_BASE_OVERHEAD_MB = 3600
+    # VBR lazy-mode floor: infrastructure + init memory resident before any
+    # tokens are cached. Scaled to this model's KV-layer count (see
+    # _vbr_lazy_base_mb) rather than a fixed 52-layer Nemotron constant.
+    vbr_lazy_base_mb = _vbr_lazy_base_mb(model_info)
 
     if use_vbr and vbr_live_bpv is not None:
         # PRIMARY live path. The running server reports the effective
@@ -1198,17 +1276,13 @@ def estimate_vram(
                 if gpu:
                     free_bytes = gpu["free_mb"] * 1024 * 1024
                     if total_cache_bytes > free_bytes * 1.5:
-                        total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
+                        total_cache_bytes = int(vbr_lazy_base_mb * 1024 * 1024)
         else:
-            total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
+            total_cache_bytes = int(vbr_lazy_base_mb * 1024 * 1024)
     elif vbr_lazy and use_vbr:
         # Server not started or no requests yet — VBR allocates lazily.
-        # Use fixed base overhead instead of the token-based formula.
-        total_cache_bytes = int(VBR_BASE_OVERHEAD_MB * 1024 * 1024)
-    elif use_vbr and vbr_vram_mb is not None and vbr_vram_mb > 0:
-        # VBR with explicit budget — use the budget directly as cache size.
-        # RoPE is computed on-the-fly in llama.cpp (not stored in KV cache).
-        total_cache_bytes = int(vbr_vram_mb * 1024 * 1024)
+        # Use the scaled floor instead of the token-based formula.
+        total_cache_bytes = int(vbr_lazy_base_mb * 1024 * 1024)
     elif embedding_length and head_count:
         # Static (non-VBR-live) path: derive bytes/value from the configured
         # cache type, or from calibration when VBR is active without a live
