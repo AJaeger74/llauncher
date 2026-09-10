@@ -171,7 +171,7 @@ def load_benchmarks() -> list:
 # Utility: Preset anwenden (benötigt llauncher-Instanz)
 # ────────────────────────────────────────────────────────────────
 
-def apply_preset(window, preset: dict):
+def apply_preset(window, preset: dict, name: Optional[str] = None):
     """
     Ein Preset auf eine llauncher-Instanz anwenden.
     
@@ -419,8 +419,9 @@ def apply_preset(window, preset: dict):
                     slider.setValue(0)
 
     # Debug: log loaded preset name
+    preset_name = name or preset.get("name", "<unnamed>")
+    sys.stderr.write(f"[preset] Loaded: {preset_name}\n")
     if hasattr(window, "debug_text") and window.debug_text:
-        preset_name = preset.get("name", "<unnamed>")
         window.debug_text.append(f"Preset loaded: {preset_name}")
     
     # Custom Commands aus Preset laden (immer setzen, bei alten Presets leeren)

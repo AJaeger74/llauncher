@@ -149,7 +149,7 @@ class llauncher(QMainWindow):
             from storage import load_preset_by_name
             preset = load_preset_by_name(self._preset_name)
             if preset:
-                apply_preset(self, preset)
+                apply_preset(self, preset, name=self._preset_name)
                 self._update_vram_estimate_from_preset(preset)
                 self.debug_text.append(t("msg_preset_loaded_cli", name=self._preset_name))
             else:
@@ -2300,7 +2300,7 @@ class llauncher(QMainWindow):
             return
         
         # Preset anwenden und Kommandozeile anzeigen
-        apply_preset(self, preset)
+        apply_preset(self, preset, name=name)
         
         # Re-display VRAM estimate with new preset parameters
         if hasattr(self, '_model_info') and self._model_info:
@@ -2375,8 +2375,9 @@ class llauncher(QMainWindow):
     def apply_presets(self):
         presets = load_presets()
         if presets:
-            last_preset = list(presets.values())[-1]
-            apply_preset(self, last_preset)
+            last_preset_name = list(presets.keys())[-1]
+            last_preset = presets[last_preset_name]
+            apply_preset(self, last_preset, name=last_preset_name)
             
             # Cache-Type Optionen nach Preset-Anwendung aktualisieren
             selected_exec = last_preset.get("selected_exe") or last_preset.get("selected_executable")
