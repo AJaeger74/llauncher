@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QWidget, QFrame
+    QPushButton, QLineEdit, QWidget, QFrame
 )
 
 # Import i18n gettext function
@@ -27,6 +27,7 @@ QLabel { color: #cccccc; }
 QPushButton { background-color: #0078d7; color: white; padding: 10px; border-radius: 3px; }
 QPushButton:hover { background-color: #006cc1; }
 QComboBox { padding: 5px; border-radius: 3px; background-color: #444; color: white; }
+QLineEdit { padding: 5px; border-radius: 3px; background-color: #444; color: white; border: 1px solid #555; font-family: monospace; }
 """
 
 LIGHT_THEME = """
@@ -35,6 +36,7 @@ QLabel { color: #333333; }
 QPushButton { background-color: #0078d7; color: white; padding: 10px; border-radius: 3px; }
 QPushButton:hover { background-color: #006cc1; }
 QComboBox { padding: 5px; border-radius: 3px; background-color: #ffffff; color: #333333; border: 1px solid #cccccc; }
+QLineEdit { padding: 5px; border-radius: 3px; background-color: #ffffff; color: #333333; border: 1px solid #cccccc; font-family: monospace; }
 """
 
 
@@ -43,11 +45,14 @@ class SettingsDialog(QDialog):
     
     settings_changed = pyqtSignal(bool, str)  # light_theme, language
     
-    def __init__(self, parent=None, current_light_theme: bool = False, current_language: str = 'en', lang_reload_callback=None):
+    def __init__(self, parent=None, current_light_theme: bool = False, current_language: str = 'en', lang_reload_callback=None,
+                 launch_cmd_start: str = "", launch_cmd_finish: str = ""):
         super().__init__(parent)
         self.current_light_theme = current_light_theme
         self.current_language = current_language
         self.lang_reload_callback = lang_reload_callback
+        self._launch_cmd_start = launch_cmd_start or ""
+        self._launch_cmd_finish = launch_cmd_finish or ""
         
         self.setup_ui()
         self.apply_theme(self.current_light_theme)
@@ -99,6 +104,39 @@ class SettingsDialog(QDialog):
         lang_row.addStretch()
         
         layout.addLayout(lang_row)
+
+        # Launch commands section (executed during manual model start)
+        cmd_group = QFrame()
+        cmd_group.setObjectName("cmd_group")
+        cmd_layout = QVBoxLayout(cmd_group)
+        cmd_layout.setContentsMargins(10, 10, 10, 10)
+
+        cmd_section_label = QLabel(gettext("lbl_launch_commands"))
+        cmd_section_label.setObjectName("cmd_section_label")
+        cmd_section_label.setStyleSheet("font-weight: bold;")
+        cmd_layout.addWidget(cmd_section_label)
+
+        cmd_start_label = QLabel(gettext("lbl_launch_cmd_start"))
+        cmd_start_label.setObjectName("cmd_start_label")
+        self.cmd_start_edit = QLineEdit()
+        self.cmd_start_edit.setObjectName("cmd_start_edit")
+        self.cmd_start_edit.setPlaceholderText(gettext("placeholder_launch_cmd_start"))
+        self.cmd_start_edit.setToolTip(gettext("tooltip_launch_cmd_start"))
+        self.cmd_start_edit.setText(self._launch_cmd_start)
+
+        cmd_finish_label = QLabel(gettext("lbl_launch_cmd_finish"))
+        cmd_finish_label.setObjectName("cmd_finish_label")
+        self.cmd_finish_edit = QLineEdit()
+        self.cmd_finish_edit.setObjectName("cmd_finish_edit")
+        self.cmd_finish_edit.setPlaceholderText(gettext("placeholder_launch_cmd_finish"))
+        self.cmd_finish_edit.setToolTip(gettext("tooltip_launch_cmd_finish"))
+        self.cmd_finish_edit.setText(self._launch_cmd_finish)
+
+        cmd_layout.addWidget(cmd_start_label)
+        cmd_layout.addWidget(self.cmd_start_edit)
+        cmd_layout.addWidget(cmd_finish_label)
+        cmd_layout.addWidget(self.cmd_finish_edit)
+        layout.addWidget(cmd_group)
         layout.addStretch()
         
         # Buttons
@@ -137,6 +175,23 @@ class SettingsDialog(QDialog):
             save_btn.setText(gettext("btn_save_settings"))
         if cancel_btn:
             cancel_btn.setText(gettext("btn_cancel"))
+        cmd_section_label = self.findChild(QLabel, "cmd_section_label")
+        if cmd_section_label:
+            cmd_section_label.setText(gettext("lbl_launch_commands"))
+        cmd_start_label = self.findChild(QLabel, "cmd_start_label")
+        if cmd_start_label:
+            cmd_start_label.setText(gettext("lbl_launch_cmd_start"))
+        cmd_finish_label = self.findChild(QLabel, "cmd_finish_label")
+        if cmd_finish_label:
+            cmd_finish_label.setText(gettext("lbl_launch_cmd_finish"))
+        cmd_start_edit = self.findChild(QLineEdit, "cmd_start_edit")
+        if cmd_start_edit:
+            cmd_start_edit.setPlaceholderText(gettext("placeholder_launch_cmd_start"))
+            cmd_start_edit.setToolTip(gettext("tooltip_launch_cmd_start"))
+        cmd_finish_edit = self.findChild(QLineEdit, "cmd_finish_edit")
+        if cmd_finish_edit:
+            cmd_finish_edit.setPlaceholderText(gettext("placeholder_launch_cmd_finish"))
+            cmd_finish_edit.setToolTip(gettext("tooltip_launch_cmd_finish"))
     
     def apply_theme(self, use_light: bool):
         """Apply theme to dialog."""
@@ -145,7 +200,7 @@ class SettingsDialog(QDialog):
     
     def accept(self):
         """Handle save button click - return flag for app restart if language changed."""
-        _, new_lang = self.get_settings()
+        _, new_lang, _, _ = self.get_settings()
         self.restart_on_language_change = (new_lang != self.current_language)
         super().accept()
     
@@ -154,5 +209,8 @@ class SettingsDialog(QDialog):
         selected_theme = self.theme_combo.currentData()
         light_mode = (selected_theme == "light")
         selected_lang = self.lang_combo.currentData()
-        
-        return light_mode, selected_lang
+
+        launch_cmd_start = self.cmd_start_edit.text().strip() if hasattr(self, 'cmd_start_edit') else ""
+        launch_cmd_finish = self.cmd_finish_edit.text().strip() if hasattr(self, 'cmd_finish_edit') else ""
+
+        return light_mode, selected_lang, launch_cmd_start, launch_cmd_finish

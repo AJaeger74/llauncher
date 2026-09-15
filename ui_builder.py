@@ -591,7 +591,7 @@ def build_llauncher_ui(window):
 
     window.start_stop_btn = QPushButton(gettext("btn_start"))
     window.start_stop_btn.setObjectName("start_stop_btn")
-    window.start_stop_btn.clicked.connect(window.toggle_process)
+    window.start_stop_btn.clicked.connect(lambda: window.toggle_process(manual=True))
     window.start_stop_btn.setMinimumHeight(40)
     window.start_stop_btn.setStyleSheet("font-size: 16px; padding: 10px;")
 

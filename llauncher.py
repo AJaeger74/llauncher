@@ -277,7 +277,7 @@ class llauncher(QMainWindow):
             line.setStyleSheet("")
 
     def show_settings_dialog(self):
-        """Show settings dialog for theme and language."""
+        """Show settings dialog for theme, language and launch commands."""
         # Get current config
         try:
             with open(Path.home() / ".llauncher" / "config.json", 'r') as f:
@@ -285,9 +285,13 @@ class llauncher(QMainWindow):
                 config = json.load(f)
             use_light = config.get("theme") == "light"
             lang = config.get("language", "en")
+            launch_cmd_start = config.get("launch_cmd_start", "")
+            launch_cmd_finish = config.get("launch_cmd_finish", "")
         except Exception:
             use_light = False
             lang = "en"
+            launch_cmd_start = ""
+            launch_cmd_finish = ""
         
         def reload_language(new_lang):
                 """Callback to reload language immediately."""
@@ -295,9 +299,11 @@ class llauncher(QMainWindow):
                 I18nManager.get_instance().reload(new_lang)
                 self.status_label.setText(gettext("status_ready"))
         
-        dialog = SettingsDialog(self, use_light, lang)
+        dialog = SettingsDialog(self, use_light, lang,
+                                launch_cmd_start=launch_cmd_start,
+                                launch_cmd_finish=launch_cmd_finish)
         if dialog.exec() == 1:  # QDialog.DialogCode.Accepted
-            new_light, new_lang = dialog.get_settings()
+            new_light, new_lang, cmd_start, cmd_finish = dialog.get_settings()
             
             # Save settings to config
             try:
@@ -305,6 +311,8 @@ class llauncher(QMainWindow):
                     config = json.load(f)
                 config["theme"] = "light" if new_light else "dark"
                 config["language"] = new_lang
+                config["launch_cmd_start"] = cmd_start
+                config["launch_cmd_finish"] = cmd_finish
                 with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
                     json.dump(config, f, indent=2)
             except Exception:
@@ -326,6 +334,8 @@ class llauncher(QMainWindow):
                     config = json.load(f)
                 config["theme"] = "light" if new_light else "dark"
                 config["language"] = new_lang
+                config["launch_cmd_start"] = cmd_start
+                config["launch_cmd_finish"] = cmd_finish
                 with open(Path.home() / ".llauncher" / "config.json", 'w') as f:
                     json.dump(config, f, indent=2)
             except Exception:
@@ -1726,7 +1736,63 @@ class llauncher(QMainWindow):
             # Show token count as tooltip
             self.bench_progress_bar.setToolTip(f"Tokens: {token_count}")
     
-    def toggle_process(self):
+    def _run_launch_cmd(self, key: str, command: str) -> int:
+        """Führe ein Launch-Command sequenziell aus und gib den Exit-Code zurück.
+
+        Wird synchron (blocking) ausgeführt — bewusst so, damit
+        launch_cmd_start VOR dem Modell-Laden (im GUI-Thread, vor runner.start())
+        und launch_cmd_finish NACH dem Laden (im Runner-Thread, via on_output)
+        läuft, nicht parallel im Hintergrund. Beim finish-Run pausiert nur das
+        Einlesen des Server-Outputs; der llama-server selbst läuft weiter.
+
+        Output wird zeilenweise in den Debug-Text geleitet.
+        """
+        command = (command or "").strip()
+        if not command:
+            return 0
+
+        label = {"launch_cmd_start": "start", "launch_cmd_finish": "finish"}.get(key, key)
+        self.debug_text.append(f"\n[launch_cmd:{label}] $ {command}")
+        self.debug_text.ensureCursorVisible()
+
+        try:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except Exception as e:
+            self.debug_text.append(f"[launch_cmd:{label}] ERROR: {e}")
+            self.debug_text.ensureCursorVisible()
+            sys.stderr.write(f"[launch_cmd:{label}] ERROR: {e}\n")
+            sys.stderr.flush()
+            return -1
+
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                line = line.rstrip("\n")
+                self.debug_text.append(f"  [launch_cmd:{label}] {line}")
+                self.debug_text.ensureCursorVisible()
+            return_code = proc.wait()
+        except Exception as e:
+            self.debug_text.append(f"[launch_cmd:{label}] ERROR: {e}")
+            self.debug_text.ensureCursorVisible()
+            sys.stderr.write(f"[launch_cmd:{label}] ERROR: {e}\n")
+            sys.stderr.flush()
+            return -1
+
+        self.debug_text.append(f"[launch_cmd:{label}] exit code: {return_code}")
+        self.debug_text.ensureCursorVisible()
+        sys.stderr.write(f"[launch_cmd:{label}] exit code: {return_code}\n")
+        sys.stderr.flush()
+        return return_code
+
+    def toggle_process(self, manual: bool = True):
         if hasattr(self, 'external_runner_pid') and self.external_runner_pid:
             # Externer Prozess stoppen über terminate_by_pid (SIGINT×2 → SIGTERM → SIGKILL)
             self.start_stop_btn.setText(gettext("btn_stop"))
@@ -1783,6 +1849,28 @@ class llauncher(QMainWindow):
             self.start_stop_btn.setObjectName("StartButton")
             self.status_label.setText(gettext("status_loading_model"))
             self.status_label.setStyleSheet("color: orange; font-weight: bold;")
+
+            # Launch Commands aus config.json laden (Quelle der Wahrheit)
+            try:
+                cfg = load_config()
+                launch_cmd_start = (cfg.get("launch_cmd_start") or "").strip()
+                launch_cmd_finish = (cfg.get("launch_cmd_finish") or "").strip()
+            except Exception:
+                launch_cmd_start = ""
+                launch_cmd_finish = ""
+
+            # launch_cmd_finish: läuft EINMAL, wenn "listening on http://" oder
+            # "all slots are idle" im Prozess-Output erscheint (Modell geladen).
+            # Nur bei manuellem Start. _finish_cmd=None → on_output springt übers.
+            self._finish_cmd = launch_cmd_finish if (manual and launch_cmd_finish) else None
+            self._finish_cmd_text = launch_cmd_finish
+
+            # launch_cmd_start: sequenziell als ERSTER Schritt des manuellen Starts.
+            # Fehler (Exit != 0) werden nur gewarnt — das Modell wird trotzdem geladen.
+            if manual and launch_cmd_start:
+                code = self._run_launch_cmd("launch_cmd_start", launch_cmd_start)
+                if code != 0:
+                    self.debug_text.append(gettext("msg_launch_cmd_start_failed").format(code=code))
 
             # argv-Liste direkt aus UI-Werten bauen — OHNE String-Roundtrip.
             # shlex.split(build_full_command()) würde Werte mit Leerzeichen
@@ -1925,9 +2013,10 @@ class llauncher(QMainWindow):
 
                         dialog = _CrashRestartDialog(self, exit_code)
                         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.restart_requested:
-                            # Prozess neu starten
+                            # Prozess neu starten (manual=False → Launch-Commands
+                            # werden NICHT erneut ausgeführt, nur der GUI-Start-Button)
                             self.debug_text.append(f"\u26a1 Restarting process after crash...")
-                            self.toggle_process()
+                            self.toggle_process(manual=False)
             
             # Output überwachen für "all slots are idle" Signal
            # Output überwachen für "all slots are idle" Signal
@@ -1950,7 +2039,24 @@ class llauncher(QMainWindow):
                         window.bench_progress_bar.setToolTip(f"Progress: {progress:.2%}")
                     except (ValueError, TypeError):
                         pass
-                
+
+                # launch_cmd_finish: läuft EINMAL, wenn das Modell geladen ist
+                # ("listening on http://" / "all slots are idle" in der Zeile).
+                # Nur wenn bei manuellem Start gesetzt (_finish_cmd != None).
+                # Läuft synchron (sequenziell) im Runner-Thread, damit der
+                # Output im Debug-Text vor dem Statuswechsel erscheint.
+                if getattr(self, '_finish_cmd', None) \
+                        and not getattr(self, 'benchmark_running', False) \
+                        and ("all slots are idle" in line or "listening on http://" in line):
+                    # Load-Signal-ZEILE zuerst loggen, dann finish ausführen —
+                    # sonst steht der finish-Output im Debug-Text VOR der
+                    # "listening on"-Zeile, die beim Lesen im Pipe-Puffer
+                    # steckte und erst danach verarbeitet wurde.
+                    self.debug_text.append(line)
+                    self._finish_cmd = None
+                    self._run_launch_cmd("launch_cmd_finish", getattr(self, '_finish_cmd_text', ''))
+                    return
+
                 if "all slots are idle" in line and not getattr(self, 'benchmark_running', False):
                     self.status_label.setText(gettext("status_idle"))
                     self.status_label.setStyleSheet("color: green; font-weight: bold;")

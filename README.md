@@ -66,6 +66,18 @@ Free-text field for external/unmanaged CLI parameters not covered by the built-i
 - Theme toggle (light / dark)
 - Language selection (German / English)
 - Model directory and llama.cpp path configuration
+- Launch commands (see below)
+
+◆ **Launch Commands (manual start)**
+Two free-form shell commands, configured in the Settings dialog, stored in
+`~/.llauncher/config.json` as `launch_cmd_start` / `launch_cmd_finish`:
+- `launch_cmd_start` runs sequentially as the FIRST step of a manual start,
+  before the model is loaded. If it exits non-zero, a warning is logged and
+  the model will still be started (best effort).
+- `launch_cmd_finish` runs once, after the model has loaded successfully.
+- Both run sequentially (blocking), not in parallel/background — output is
+  streamed to the debug console.
+- Only on manual start via the Start button, not on crash auto-restart.
 
 ◆ **Internationalization (i18n)**
 Full UI translation for German (`de`) and English (`en`).
@@ -146,6 +158,7 @@ python3 llauncher.py
 ├── model_inspector.py        # GGUF metadata on model selection
 ├── model_info_fetcher.py     # Running model info via HTTP API
 ├── test_vram_calibration.py  # VRAM estimation calibration tests
+├── test_launch_cmds.py       # Launch-Command smoke test (offscreen)
 ├── verify_estimate.py        # Quick VRAM estimate verification script
 ├── i18n.py                   # I18nManager + gettext system
 ├── i18n_util.py              # Language helpers (auto-detect, defaults)
