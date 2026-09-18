@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QListWidget,
     QLineEdit,
+    QCheckBox,
     QDialog,
     QGridLayout,
     QGroupBox,
@@ -92,6 +93,9 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     def on_preset_double_click(index):
         item = preset_list.item(index.row())
         name_edit.setText(item.text())
+        # Checkbox auf den gespeicherten Wert des Presets setzen
+        existing = presets.get(item.text()) or {}
+        skip_launch_cmds_cb.setChecked(bool(existing.get("skip_launch_cmds", False)))
     
     preset_list.doubleClicked.connect(on_preset_double_click)
     preset_list.setMinimumWidth(320)
@@ -102,7 +106,12 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
     name_label = QLabel(gettext("lbl_preset_name"))
     layout.addWidget(name_label)
     layout.addWidget(name_edit)
-    
+
+    # Option: Launch-Commands (config.json) bei diesem Preset überspringen
+    skip_launch_cmds_cb = QCheckBox(gettext("chk_skip_launch_cmds"))
+    skip_launch_cmds_cb.setToolTip(gettext("tooltip_skip_launch_cmds"))
+    layout.addWidget(skip_launch_cmds_cb)
+
     # Buttons
     btn_layout = QVBoxLayout()
     save_btn = QPushButton(gettext("save"))
@@ -149,6 +158,9 @@ def show_preset_save_dialog(window, param_sliders, PARAM_DEFINITIONS,
             "mmproj_path": mmproj_path,
             "params": {},
         }
+
+        # Skip-Flag für Launch-Commands (config.json) aus der Checkbox
+        preset["skip_launch_cmds"] = skip_launch_cmds_cb.isChecked()
         
         # Parameter aus Slidern sammeln
         for param_key, config in PARAM_DEFINITIONS.items():

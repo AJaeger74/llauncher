@@ -9,6 +9,7 @@ Fälle:
   T2  Normalfall: Reihenfolge PRE → (server läuft) → POST, server lief.
   T3  pre mit exit 1 → Warnung, server startet trotzdem, POST läuft danach.
   T4  manual=False (Crash-Restart) → keine Launch-Commands.
+  T5  Preset mit skip_launch_cmds → keine Launch-Commands (manueller Start).
 
 Kein echtes Modell/Binary nötig: Dummy-Binary + monkeygepatchte Arch-Checks.
 """
@@ -156,8 +157,18 @@ def main():
         win.runner = None
         app.processEvents()
 
+    def fresh_start():
+        """Frischen Start-Zustand erzwingen, OHNE dass der 1s-Timer
+        dazwischen einen Prozess neu adoptieren kann."""
+        win.process_check_timer.stop()
+        app.processEvents()
+        win.runner = None
+        win.external_runner_pid = None
+        win.external_runner_args = None
+
     try:
         # ── T2: Normalfall — PRE vor Prozess, POST nach load ─────────────
+        fresh_start()
         reset_marker()
         set_cfg(str(PRE), str(POST))
         win.toggle_process(manual=True)
@@ -177,6 +188,7 @@ def main():
         stop_and_cleanup()
 
         # ── T3: pre exit 1 → Warnung, Modell startet trotzdem, finish läuft ─
+        fresh_start()
         reset_marker()
         set_cfg(str(PRE_FAIL), str(POST))
         win.toggle_process(manual=True)
@@ -191,6 +203,7 @@ def main():
         stop_and_cleanup()
 
         # ── T4: manual=False → keine Launch-Commands ─────────────────────
+        fresh_start()
         reset_marker()
         set_cfg(str(PRE), str(POST))
         win.toggle_process(manual=False)
@@ -201,6 +214,28 @@ def main():
         seq = read_marker()
         assert seq == [], f"Skripte liefen trotz manual=False: {seq}"
         print("T4 OK: manual=False → keine Launch-Commands")
+        stop_and_cleanup()
+
+        # ── T5: Preset mit skip_launch_cmds → keine Launch-Commands ───────
+        fresh_start()
+        reset_marker()
+        set_cfg(str(PRE), str(POST))
+        win._current_preset = {"skip_launch_cmds": True}
+        win.toggle_process(manual=True)
+        # Warten bis das Load-Signal im Debug-Output steht (finish hätte
+        # asynchron danach feuern können) + kurze Nachlaufzeit.
+        t0 = time.time()
+        while "listening on http://" not in win.debug_text.toPlainText() \
+                and time.time() - t0 < 15:
+            app.processEvents(); time.sleep(0.05)
+        for _ in range(40):
+            app.processEvents(); time.sleep(0.05)
+        seq = read_marker()
+        assert seq == [], f"Skripte liefen trotz skip_launch_cmds: {seq}"
+        dt = win.debug_text.toPlainText()
+        assert "skip_launch_cmds" in dt, "Skip-Info im Debug-Output fehlt"
+        print("T5 OK: skip_launch_cmds → keine Launch-Commands, Info geloggt")
+        win._current_preset = None
         stop_and_cleanup()
 
         print("\nALLE TESTS OK")

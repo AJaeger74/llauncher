@@ -132,6 +132,7 @@ class llauncher(QMainWindow):
         self.external_runner_args: Optional[list] = None  # Echte Prozess-Args (für build_full_command)
         self.external_runner_pid: Optional[int] = None
         self._preset_name = preset_name  # CLI preset (wird nach UI-Setup angewendet)
+        self._current_preset = None  # aktives Preset-Dict (None = manuell / kein Preset geladen)
         
         # Theme
         self.light_theme = False
@@ -150,6 +151,7 @@ class llauncher(QMainWindow):
             preset = load_preset_by_name(self._preset_name)
             if preset:
                 apply_preset(self, preset, name=self._preset_name)
+                self._current_preset = preset
                 self._update_vram_estimate_from_preset(preset)
                 self.debug_text.append(t("msg_preset_loaded_cli", name=self._preset_name))
             else:
@@ -1859,6 +1861,16 @@ class llauncher(QMainWindow):
                 launch_cmd_start = ""
                 launch_cmd_finish = ""
 
+            # Preset-Override: "skip_launch_cmds" im aktiven Preset verhindert,
+            # dass beide Skripte laufen (z.B. wenn das Modell zu viel VRAM frisst
+            # und die GPU vor dem Start freigespart werden soll).
+            if manual and self._current_preset \
+                    and self._current_preset.get("skip_launch_cmds") \
+                    and (launch_cmd_start or launch_cmd_finish):
+                self.debug_text.append(gettext("msg_launch_cmds_skipped_preset"))
+                launch_cmd_start = ""
+                launch_cmd_finish = ""
+
             # launch_cmd_finish: läuft EINMAL, wenn "listening on http://" oder
             # "all slots are idle" im Prozess-Output erscheint (Modell geladen).
             # Nur bei manuellem Start. _finish_cmd=None → on_output springt übers.
@@ -2407,6 +2419,7 @@ class llauncher(QMainWindow):
         
         # Preset anwenden und Kommandozeile anzeigen
         apply_preset(self, preset, name=name)
+        self._current_preset = preset
         
         # Re-display VRAM estimate with new preset parameters
         if hasattr(self, '_model_info') and self._model_info:
@@ -2484,6 +2497,7 @@ class llauncher(QMainWindow):
             last_preset_name = list(presets.keys())[-1]
             last_preset = presets[last_preset_name]
             apply_preset(self, last_preset, name=last_preset_name)
+            self._current_preset = last_preset
             
             # Cache-Type Optionen nach Preset-Anwendung aktualisieren
             selected_exec = last_preset.get("selected_exe") or last_preset.get("selected_executable")

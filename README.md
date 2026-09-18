@@ -78,6 +78,9 @@ Two free-form shell commands, configured in the Settings dialog, stored in
 - Both run sequentially (blocking), not in parallel/background — output is
   streamed to the debug console.
 - Only on manual start via the Start button, not on crash auto-restart.
+- A preset can opt out: the "Skip launch commands" checkbox in the Save
+  Preset dialog stores `skip_launch_cmds` in `presets.json`; while such a
+  preset is active, neither script runs (useful for VRAM-tight presets).
 
 ◆ **Internationalization (i18n)**
 Full UI translation for German (`de`) and English (`en`).
