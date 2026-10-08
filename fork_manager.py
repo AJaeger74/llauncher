@@ -675,6 +675,9 @@ class ForkManagerDialog(QDialog):
             sys.stderr.flush()
 
         default_cmd = gettext("msg_default_build_cmd")
+        if sys.platform == "darwin":
+            default_cmd = ("cmake -S . -B build -DGGML_METAL=ON -DGGML_CUDA=OFF "
+                           f"&& cmake --build build --config Release -j {os.cpu_count() or 1}")
         dialog = QDialog(self)
         dialog.setWindowTitle(gettext("lbl_building"))
         dialog.setMinimumWidth(550)

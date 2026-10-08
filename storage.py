@@ -27,6 +27,8 @@ def ensure_config_dir():
 
 def _default_build_env() -> dict:
     """Standard-Build-Environment-Vars fuer neue Configs."""
+    if sys.platform == "darwin":
+        return {}
     return {
         "CC": "/usr/bin/gcc-12",
         "CXX": "/usr/bin/g++-12",

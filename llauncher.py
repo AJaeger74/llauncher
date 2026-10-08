@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -122,6 +123,10 @@ class llauncher(QMainWindow):
     def __init__(self, preset_name: str = None):
         super().__init__()
         self.llama_cpp_path = str(Path.home() / "llama.cpp")
+        if sys.platform == "darwin" and not Path(self.llama_cpp_path).exists():
+            binary = shutil.which("llama-server")
+            if binary:
+                self.llama_cpp_path = str(Path(binary).parent)
         self.model_directory = str(Path.home() / "models")
         self.selected_model: Optional[str] = None
         self.mmproj_path: Optional[str] = None
@@ -143,6 +148,8 @@ class llauncher(QMainWindow):
         
  
         build_llauncher_ui(self)
+        if sys.platform == "darwin":
+            self.stats_label.setText("Apple Metal · GPU-Messwerte nicht verfügbar")
         setup_timers_and_load(self)
         
         # CLI-Preset anwenden (wenn angegeben)
@@ -1008,6 +1015,8 @@ class llauncher(QMainWindow):
 
     def update_gpu_display(self, data: dict) -> None:
         """Update the GPU stats label with current data + VRAM estimation."""
+        if "total_mb" not in data:
+            return  # Slot/API updates can arrive without NVIDIA telemetry.
         power_str = f"{data.get('power_draw', 0.0):.1f}W" if data.get("power_draw") else "--W"
         total_gb = data["total_mb"] / 1024
         used_gb = data["used_mb"] / 1024
@@ -1827,6 +1836,10 @@ class llauncher(QMainWindow):
 
             # Prozess stoppen (SIGINT → SIGINT → SIGTERM → SIGKILL)
             stopped = self.runner.terminate_process()
+            if not stopped or not self.runner.wait(3000):
+                self.status_label.setText(gettext("status_failed"))
+                self.debug_text.append("Could not stop llama-server; process remains attached.")
+                return
             
             # QThread warten bis er fertig ist (max 3 Sekunden für alle Signals)
             start_time = time.time()
@@ -1893,7 +1906,7 @@ class llauncher(QMainWindow):
             args_str = " ".join(args)  # nur für Logging/Display
 
             if not args or "-m" not in args:
-                QMessageBox.warning(self, gettext("msg_no_model_selected"))
+                QMessageBox.warning(self, "llauncher", gettext("msg_no_model_selected"))
                 self.start_stop_btn.setText(gettext("btn_start"))
                 self.start_stop_btn.setObjectName("StopButton")
                 self.status_label.setText("")
@@ -1977,6 +1990,8 @@ class llauncher(QMainWindow):
 
             # Status auf "Fehlgeschlagen" setzen wenn Prozess fehlschlägt
             def on_process_finished(exit_code):
+                if started_runner.stop_requested:
+                    return
                 print(f"[DEBUG on_process_finished] Exit code: {exit_code}")
                 if exit_code != 0:
                     sys.stderr.write(f"[llauncher] Process exited with code {exit_code}\n")
@@ -2118,6 +2133,7 @@ class llauncher(QMainWindow):
             # Prozess starten
             workdir = str(Path(self.llama_cpp_path))
             self.runner = ProcessRunner(args, workdir)
+            started_runner = self.runner
             self.runner.output_signal.connect(on_output)
             self.runner.finished_signal.connect(on_process_finished)
             self.runner.start()
@@ -2523,12 +2539,17 @@ class llauncher(QMainWindow):
         """Fenster-Geometrie und Splitter-State speichern + Timer stoppen"""
         from ui_persistence import save_window_state as up_save_state
         up_save_state(self)
-        
-        # Don't wait for QThread - just detach and let Python clean up on exit.
-        # This prevents the GUI from hanging if llama.cpp doesn't respond to signals.
-        if self.runner:
-            self.runner.force_exit()
-            self.runner = None  # Clear reference so Qt can destroy it
+        self.process_check_timer.stop()
+
+        if self.runner and self.runner.isRunning():
+            if not self.runner.terminate_process() or not self.runner.wait(3000):
+                self.debug_text.append("Could not stop llama-server; close postponed.")
+                self.process_check_timer.start()
+                event.ignore()
+                return
+        self.runner = None
+        if self.gpu_monitor:
+            self.gpu_monitor.stop()
         
         event.accept()
 

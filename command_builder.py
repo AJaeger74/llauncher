@@ -7,6 +7,7 @@ Liefert get_current_args() und build_full_command() als freie Funktionen.
 """
 
 from pathlib import Path
+from gguf_utils import get_binary_path
 
 
 def get_current_args(window) -> list:
@@ -19,7 +20,8 @@ def get_current_args(window) -> list:
         list: Kommandozeilen-Parameter als String-Liste
     """
     exe_name = window.exe_combo.currentText()
-    args = [str(Path(window.llama_cpp_path) / "build" / "bin" / exe_name)]
+    binary = get_binary_path(window)
+    args = [binary or str(Path(window.llama_cpp_path) / "build" / "bin" / exe_name)]
     
     # Modell-Pfad (nur einmal!)
     if window.selected_model:

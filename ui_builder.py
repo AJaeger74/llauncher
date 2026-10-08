@@ -872,7 +872,8 @@ def setup_timers_and_load(window):
     # Cache-Type K/V Dropdowns nach Startup initialisieren (Signal feuert nicht bei programmatischer Auswahl!)
     exe_name = window.exe_combo.currentText().strip()
     if exe_name and exe_name != "llama.cpp nicht gefunden":
-        exe_full_path = str(Path(window.llama_cpp_path) / exe_name)
+        from gguf_utils import get_binary_path
+        exe_full_path = get_binary_path(window)
         try:
             window.update_cache_type_options(exe_full_path)
         except Exception as e:
