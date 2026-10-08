@@ -125,6 +125,36 @@ Arch Linux: `pacman -S python-pyqt6 python-psutil`
 python3 llauncher.py
 ```
 
+### macOS / Apple Silicon
+
+Install the Python dependencies in a project-local environment:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+./Start.command
+```
+
+`Start.command` also works by double-clicking it in Finder. A native
+`llama-server` must already be installed (for example via Homebrew's
+`llama.cpp` package). On a fresh configuration the launcher looks for it
+on PATH when `~/llama.cpp` does not exist. Alternatively, select the
+directory containing `llama-server` or a llama.cpp source/build directory
+in Settings, then choose a directory containing your GGUF models.
+
+macOS build defaults use Metal and the system compiler. Saved custom build
+commands/environment variables are preserved; replace Linux CUDA/GCC
+settings when importing an old configuration. Slot files are stored in
+`~/.llauncher/slots`. NVIDIA GPU telemetry and automatic VRAM fitting are
+unavailable on Apple GPUs; the launcher does not treat unified RAM as VRAM.
+Closing the window stops a server started by this launcher; an independently
+started server is left running.
+
+Run the portable process tests with
+`.venv/bin/python -m unittest test_process_portability -v`.
+With `llama-server` on PATH, `.venv/bin/python test_macos_smoke.py` also checks
+GUI initialization and the native server invocation using temporary settings.
+
 ## File Structure
 
 ```

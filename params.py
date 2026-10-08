@@ -154,9 +154,13 @@ def get_param_definitions():
         dict: Vollständige Parameter-Definitionen
     """
     import copy
+    import sys
+    from pathlib import Path
     from gguf_utils import get_cpu_count
     
     definitions = copy.deepcopy(PARAM_DEFINITIONS_BASE)
+    if sys.platform == "darwin":
+        definitions["--slot-save-path"]["default"] = str(Path.home() / ".llauncher" / "slots")
     
     # CPU Count ersetzen
     cpu_count = get_cpu_count()

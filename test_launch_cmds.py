@@ -127,6 +127,7 @@ def main():
     # (Dummy-Binary exitet auf SIGINT mit 0 → kein Crash-Dialog beim Stoppen.)
 
     win.llama_cpp_path = str(WORK / "llama.cpp")
+    win.exe_line.setText(win.llama_cpp_path)
     win.exe_combo.blockSignals(True)
     win.exe_combo.addItem("llama-server")
     win.exe_combo.setCurrentText("llama-server")  # Placeholder ("...nicht gefunden") überspringen
@@ -237,6 +238,24 @@ def main():
         print("T5 OK: skip_launch_cmds → keine Launch-Commands, Info geloggt")
         win._current_preset = None
         stop_and_cleanup()
+
+        # Intentional stop must not open the crash/restart dialog after SIGKILL.
+        dummy.write_text("#!/bin/sh\ntrap '' INT TERM\necho 'srv listening on http://127.0.0.1:8080'\nwhile :; do sleep 0.2; done\n")
+        fresh_start()
+        set_cfg("", "")
+        win.toggle_process(manual=True)
+        deadline = time.monotonic() + 5
+        while not win.runner.get_pid() and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.05)
+        time.sleep(0.2)  # Allow the child's signal traps to be installed.
+        from unittest.mock import patch
+        with patch.object(QDialog, "exec", return_value=QDialog.DialogCode.Rejected) as dialog_exec:
+            win.toggle_process()
+            app.processEvents()
+            assert win.runner is None, "Stop did not release the finished runner"
+            dialog_exec.assert_not_called()
+        print("T6 OK: intentional forced stop does not restart")
 
         print("\nALLE TESTS OK")
     finally:

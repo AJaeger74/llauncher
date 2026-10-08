@@ -4,10 +4,10 @@
 import os
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
 import shlex
+import psutil
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 
 
@@ -20,6 +20,7 @@ class ProcessRunner(QThread):
         self.args = args
         self.workdir = workdir
         self._process = None
+        self.stop_requested = False
 
     def start(self):
         """Start the process. Delegates to QThread's native threading."""
@@ -37,7 +38,7 @@ class ProcessRunner(QThread):
                 errors="replace",
                 cwd=self.workdir,
                 bufsize=1,
-                preexec_fn=os.setsid if hasattr(os, 'setsid') else None,
+                start_new_session=True,
             )
         except Exception as e:
             self.output_signal.emit(f"ERROR: {e}")
@@ -76,55 +77,39 @@ class ProcessRunner(QThread):
         return None
 
     def get_args_from_proc(self) -> list[str]:
-        """Parameter aus /proc/[pid]/cmdline lesen (Linux-spezifisch)"""
+        """Return arguments of the running process on Linux and macOS."""
         pid = self.get_pid()
         if not pid:
             return []
-
         try:
-            cmdline_path = f'/proc/{pid}/cmdline'
-            with open(cmdline_path, 'r') as f:
-                content = f.read()
-            args = [arg for arg in content.split('\x00') if arg]
-            return args[1:]
-        except (FileNotFoundError, PermissionError, IOError):
+            return psutil.Process(pid).cmdline()[1:]
+        except psutil.Error:
             return []
 
     @staticmethod
     def terminate_by_pid(pid: int, timeout_sec: float = 3.0) -> bool:
-        """Terminiere externen Prozess via PID (SIGINT -> SIGTERM -> SIGKILL)."""
+        """Escalate signals and confirm termination without Linux /proc."""
         if pid is None:
             return True
-
-        for attempt in range(2):
-            try:
-                os.kill(pid, signal.SIGINT)
-                start = time.time()
-                while os.path.exists(f'/proc/{pid}') and (time.time() - start) < timeout_sec / 2:
-                    time.sleep(0.1)
-                if not os.path.exists(f'/proc/{pid}'):
-                    return True
-            except ProcessLookupError:
-                return True
-
+        if pid <= 0 or pid == os.getpid():
+            return False
         try:
-            os.kill(pid, signal.SIGTERM)
-            start = time.time()
-            while os.path.exists(f'/proc/{pid}') and (time.time() - start) < timeout_sec / 2:
-                time.sleep(0.1)
-            if not os.path.exists(f'/proc/{pid}'):
-                return True
-        except ProcessLookupError:
+            process = psutil.Process(pid)
+            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+                process.send_signal(sig)
+                deadline = time.monotonic() + max(timeout_sec, 0.1)
+                while True:
+                    # Do not use Process.wait(): it can reap our Popen child
+                    # before the runner thread has collected its exit code.
+                    if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+                        return True
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.05)
+        except psutil.NoSuchProcess:
             return True
-
-        try:
-            os.kill(pid, signal.SIGKILL)
-            time.sleep(0.5)
-            return True
-        except ProcessLookupError:
-            pass
-
-        print(f"Failed to kill process {pid}")
+        except psutil.AccessDenied:
+            return False
         return False
 
     def force_exit(self):
@@ -144,6 +129,7 @@ class ProcessRunner(QThread):
             self._process = None
 
     def terminate_process(self) -> bool:
+        self.stop_requested = True
         if not self._process or self._process.poll() is not None:
             return True
         pid = self._process.pid
@@ -152,17 +138,22 @@ class ProcessRunner(QThread):
 
 
 def find_llama_processes():
-    """Findet alle laufenden llama-server Prozesse."""
+    """Find server executables, not shells mentioning them in arguments."""
+    pids = []
     try:
-        out = subprocess.check_output(
-            ["pgrep", "-f", "llama-server"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
-        pids = [int(pid) for pid in out.strip().split('\n') if pid]
-        return pids
-    except subprocess.CalledProcessError:
-        return []
+        for process in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                info = process.info
+                args = info['cmdline'] or []
+                executable = Path(args[0]).name if args else info['name']
+                if executable in ('llama-server', 'llama-server.exe'):
+                    pids.append(info['pid'])
+            except psutil.Error:
+                continue
+    except (psutil.Error, OSError):
+        # macOS may deny process enumeration inside a sandbox.
+        pass
+    return pids
 
 
 def check_running_processes():
@@ -170,18 +161,13 @@ def check_running_processes():
     pids = find_llama_processes()
     if not pids:
         return "Kein llama-server Prozess gefunden."
-
     result = []
     for pid in pids:
         try:
-            cmdline_path = f'/proc/{pid}/cmdline'
-            with open(cmdline_path, 'r') as f:
-                cmdline = f.read()
-            args = [arg for arg in cmdline.split('\x00') if arg]
-            result.append(f"PID {pid}: {' '.join(args)}")
-        except (FileNotFoundError, PermissionError):
+            args = psutil.Process(pid).cmdline()
+            result.append(f"PID {pid}: {shlex.join(args)}")
+        except psutil.Error:
             result.append(f"PID {pid}: Zugriff verweigert")
-
     return '\n'.join(result)
 
 
@@ -193,15 +179,13 @@ def read_running_llama_args() -> tuple[dict, str, str, int]:
 
     for pid in pids:
         try:
-            cmdline_path = f'/proc/{pid}/cmdline'
-            with open(cmdline_path, 'r') as f:
-                cmdline = f.read()
-            args = [arg for arg in cmdline.split('\x00') if arg]
+            process = psutil.Process(pid)
+            args = process.cmdline()
 
             if len(args) < 2:
                 continue
 
-            exe_path = args[0] if args[0].startswith('/') else f'/proc/{pid}/exe'
+            exe_path = process.exe()
             model_path = None
             param_dict = {}
 
@@ -249,7 +233,7 @@ def read_running_llama_args() -> tuple[dict, str, str, int]:
                     i += 1
 
             return param_dict, model_path, exe_path, True
-        except (FileNotFoundError, PermissionError, IOError):
+        except psutil.Error:
             continue
 
     return None, None, None, False
@@ -415,7 +399,7 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
             print(f"[DEBUG] Processing batch-size: key={key}, value={value}")
 
       # First try standard mapping (--param -> -param)
-        mapped_key = PARAM_ALIAS_MAP.get(key, key)
+        mapped_key = PARAM_ALIAS_MAP.get(key) or key
         
         # If mapped_key still has --, check reverse map (-param -> --param)
         if mapped_key.startswith('--'):
@@ -526,7 +510,7 @@ def read_and_apply_running_args(window, ui_components=None, param_keys=None):
     # After processing all parameters, build normalized_args with unmapped params
     for key, value in external_args.items():
         # Check if this parameter or its mapped form was managed
-        mapped_key = PARAM_ALIAS_MAP.get(key, key)
+        mapped_key = PARAM_ALIAS_MAP.get(key) or key
         if mapped_key.startswith('--'):
             mapped_key = ALIAS_TO_LONG_MAP.get(mapped_key, mapped_key)
         elif mapped_key.startswith('-'):
